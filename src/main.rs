@@ -3,6 +3,7 @@ mod display;
 mod events;
 mod journal;
 mod loot;
+mod sage;
 mod state;
 mod zones;
 
@@ -39,6 +40,9 @@ enum Commands {
         /// Exit code of the command
         #[arg(long, default_value_t = 0)]
         exit_code: i32,
+        /// Force the update sage to appear (for testing)
+        #[arg(long, hide = true)]
+        test_sage: bool,
     },
     /// Print or install the shell hook
     Hook {
@@ -56,6 +60,8 @@ enum Commands {
     Prestige,
     /// Reset your character (start over)
     Reset,
+    /// Update sq to the latest version
+    Update,
 }
 
 fn main() {
@@ -70,10 +76,12 @@ fn main() {
             cmd,
             cwd,
             exit_code,
-        } => cmd_tick(&cmd, &cwd, exit_code),
+            test_sage,
+        } => cmd_tick(&cmd, &cwd, exit_code, test_sage),
         Commands::Hook { shell, install, file } => cmd_hook(&shell, install || file.is_some(), file),
         Commands::Prestige => cmd_prestige(),
         Commands::Reset => cmd_reset(),
+        Commands::Update => cmd_update(),
     }
 }
 
@@ -257,13 +265,18 @@ fn cmd_journal() {
     }
 }
 
-fn cmd_tick(cmd: &str, cwd: &str, exit_code: i32) {
+fn cmd_tick(cmd: &str, cwd: &str, exit_code: i32, test_sage: bool) {
     let mut game = match state::load() {
         Ok(g) => g,
         Err(_) => return, // Silently skip if no character
     };
 
     events::tick(&mut game, cmd, cwd, exit_code);
+    if test_sage {
+        sage::force_show_sage(&mut game);
+    } else {
+        sage::maybe_show_sage(&mut game);
+    }
     game.last_tick = chrono::Utc::now();
 
     if let Err(e) = state::save(&game) {
@@ -524,5 +537,71 @@ fn cmd_reset() {
         }
     } else {
         println!("{}", "Cancelled.".dimmed());
+    }
+}
+
+fn cmd_update() {
+    use std::process::Command;
+
+    println!();
+    println!(
+        "{}",
+        "⬆️  Updating shellquest...".bold().cyan()
+    );
+    println!(
+        "{}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".dimmed()
+    );
+
+    // Try cargo install from crates.io first (simplest path)
+    println!(
+        "  {} Installing latest version from {}...",
+        "📦".bold(),
+        "crates.io".cyan()
+    );
+
+    let status = Command::new("cargo")
+        .args(["install", "shellquest", "--force"])
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            println!();
+            println!(
+                "{}",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".dimmed()
+            );
+            println!(
+                "{} {} Restart your shell or run {} to use the new version.",
+                "✅".bold(),
+                "Update complete!".green().bold(),
+                "sq status".cyan()
+            );
+            println!(
+                "{}",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".dimmed()
+            );
+            println!();
+        }
+        Ok(_) => {
+            eprintln!(
+                "{} {} Try manually: {}",
+                "❌".bold(),
+                "Update failed.".red(),
+                "cargo install shellquest --force".dimmed()
+            );
+        }
+        Err(e) => {
+            eprintln!(
+                "{} Failed to run cargo: {}",
+                "❌".bold(),
+                e.to_string().red()
+            );
+            eprintln!(
+                "  Make sure {} is installed: {}",
+                "cargo".bold(),
+                "https://rustup.rs".dimmed()
+            );
+        }
     }
 }
