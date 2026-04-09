@@ -1,3 +1,4 @@
+mod boss;
 mod character;
 mod display;
 mod events;
