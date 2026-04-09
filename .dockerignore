@@ -1,0 +1,6 @@
+target/
+.omc/
+.git/
+*.md
+LICENSE
+install.sh
