@@ -73,10 +73,10 @@ enum Commands {
     },
     /// Browse the shop (must be in home directory)
     Shop,
-    /// Buy an item from the shop
+    /// Buy an item from the shop by number (see `sq shop` for numbered list)
     Buy {
-        /// Item name (or partial match)
-        name: Vec<String>,
+        /// Item number from the shop list
+        number: usize,
     },
     /// Drink a potion from inventory to restore HP
     Drink {
@@ -107,7 +107,7 @@ fn main() {
         } => cmd_tick(&cmd, &cwd, exit_code, test_sage),
         Commands::Hook { shell, install, file } => cmd_hook(&shell, install || file.is_some(), file),
         Commands::Shop => cmd_shop(),
-        Commands::Buy { name } => cmd_buy(&name.join(" ")),
+        Commands::Buy { number } => cmd_buy(number),
         Commands::Equip { name } => cmd_equip(&name.join(" ")),
         Commands::Wield { name } => cmd_wield(&name.join(" ")),
         Commands::Drop { name } => cmd_drop_item(&name.join(" ")),
@@ -647,7 +647,7 @@ fn cmd_shop() {
     println!("{}", "─".repeat(50).dimmed());
     println!(
         "  Use {} to purchase an item.",
-        "sq buy <item name>".cyan()
+        "sq buy <number>".cyan()
     );
     println!(
         "  Shop refreshes daily at {}.",
@@ -660,12 +660,13 @@ fn cmd_shop() {
     }
 }
 
-fn cmd_buy(name: &str) {
-    if name.is_empty() {
+fn cmd_buy(number: usize) {
+    if number == 0 {
         eprintln!(
-            "{} Usage: {}",
+            "{} Usage: {} (see {} for numbered list)",
             "❌".bold(),
-            "sq buy <item name>".cyan()
+            "sq buy <number>".cyan(),
+            "sq shop".cyan()
         );
         return;
     }
@@ -697,28 +698,17 @@ fn cmd_buy(name: &str) {
 
     refresh_shop_if_needed(&mut game);
 
-    let name_lower = name.to_lowercase();
-    let idx = game
-        .shop_items
-        .iter()
-        .position(|i| i.name.to_lowercase() == name_lower)
-        .or_else(|| {
-            game.shop_items
-                .iter()
-                .position(|i| i.name.to_lowercase().contains(&name_lower))
-        });
-
-    let idx = match idx {
-        Some(i) => i,
-        None => {
-            println!(
-                "{} No item matching {} in the shop.",
-                "⚠️".yellow(),
-                format!("\"{}\"", name).white().bold()
-            );
-            return;
-        }
-    };
+    let idx = number - 1;
+    if idx >= game.shop_items.len() {
+        println!(
+            "{} Invalid item number {}. The shop has {} items. Run {} to see the list.",
+            "⚠️".yellow(),
+            format!("{}", number).white().bold(),
+            format!("{}", game.shop_items.len()).white().bold(),
+            "sq shop".cyan()
+        );
+        return;
+    }
 
     let price = loot::item_price(&game.shop_items[idx]);
 
