@@ -257,3 +257,109 @@ pub fn item_price(item: &Item) -> u32 {
     };
     (item.power as u32) * multiplier + multiplier
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roll_loot_returns_non_empty_name() {
+        for _ in 0..20 {
+            let item = roll_loot(1);
+            assert!(!item.name.is_empty(), "item name should not be empty");
+        }
+    }
+
+    #[test]
+    fn roll_loot_returns_positive_power() {
+        for _ in 0..20 {
+            let item = roll_loot(1);
+            assert!(item.power > 0, "item power should be positive, got {}", item.power);
+        }
+    }
+
+    #[test]
+    fn roll_shop_loot_never_epic_or_legendary() {
+        for i in 0..1000 {
+            let item = roll_shop_loot();
+            match item.rarity {
+                Rarity::Epic | Rarity::Legendary => {
+                    panic!("shop loot returned Epic/Legendary on iteration {}: {}", i, item.name);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn roll_shop_loot_returns_valid_rarity() {
+        for _ in 0..50 {
+            let item = roll_shop_loot();
+            match item.rarity {
+                Rarity::Common | Rarity::Uncommon | Rarity::Rare => {}
+                _ => panic!("unexpected rarity from shop: {:?}", item.rarity),
+            }
+        }
+    }
+
+    #[test]
+    fn item_price_scales_by_rarity() {
+        let common = Item {
+            name: "A".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 5,
+            rarity: Rarity::Common,
+        };
+        let uncommon = Item {
+            name: "B".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 5,
+            rarity: Rarity::Uncommon,
+        };
+        let rare = Item {
+            name: "C".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 5,
+            rarity: Rarity::Rare,
+        };
+        let common_price = item_price(&common);
+        let uncommon_price = item_price(&uncommon);
+        let rare_price = item_price(&rare);
+        assert!(
+            common_price < uncommon_price,
+            "common ({}) should be cheaper than uncommon ({})",
+            common_price,
+            uncommon_price
+        );
+        assert!(
+            uncommon_price < rare_price,
+            "uncommon ({}) should be cheaper than rare ({})",
+            uncommon_price,
+            rare_price
+        );
+    }
+
+    #[test]
+    fn item_price_formula_correct() {
+        let item = Item {
+            name: "X".to_string(),
+            slot: ItemSlot::Armor,
+            power: 3,
+            rarity: Rarity::Common,
+        };
+        // multiplier = 5; price = 3 * 5 + 5 = 20
+        assert_eq!(item_price(&item), 20);
+    }
+
+    #[test]
+    fn item_price_legendary_formula() {
+        let item = Item {
+            name: "X".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 10,
+            rarity: Rarity::Legendary,
+        };
+        // multiplier = 100; price = 10 * 100 + 100 = 1100
+        assert_eq!(item_price(&item), 1100);
+    }
+}

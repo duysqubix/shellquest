@@ -100,3 +100,74 @@ pub fn load() -> Result<GameState, String> {
     let data = fs::read_to_string(&path).map_err(|e| format!("Failed to read save: {}", e))?;
     serde_json::from_str(&data).map_err(|e| format!("Failed to parse save: {}", e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::character::{Character, Class, Race};
+    use crate::journal::{EventType, JournalEntry};
+
+    fn make_character() -> Character {
+        Character::new("Tester".to_string(), Class::Wizard, Race::Elf)
+    }
+
+    #[test]
+    fn game_state_new_initializes_correctly() {
+        let c = make_character();
+        let state = GameState::new(c);
+        assert!(state.journal.is_empty());
+        assert!(state.latest_version.is_none());
+        assert!(state.last_version_check.is_none());
+        assert!(state.last_sage_shown.is_none());
+        assert!(state.shop_items.is_empty());
+        assert!(state.shop_refreshed.is_none());
+        assert_eq!(state.character.name, "Tester");
+    }
+
+    #[test]
+    fn game_state_new_timestamps_near_now() {
+        let before = chrono::Utc::now();
+        let state = GameState::new(make_character());
+        let after = chrono::Utc::now();
+        assert!(state.created_at >= before);
+        assert!(state.created_at <= after);
+        assert!(state.last_tick >= before);
+        assert!(state.last_tick <= after);
+    }
+
+    #[test]
+    fn add_journal_appends_entry() {
+        let mut state = GameState::new(make_character());
+        let entry = JournalEntry::new(EventType::Combat, "A fight!".to_string());
+        state.add_journal(entry);
+        assert_eq!(state.journal.len(), 1);
+        assert_eq!(state.journal[0].message, "A fight!");
+    }
+
+    #[test]
+    fn add_journal_caps_at_100_entries() {
+        let mut state = GameState::new(make_character());
+        for i in 0..=110 {
+            state.add_journal(JournalEntry::new(
+                EventType::Travel,
+                format!("entry {}", i),
+            ));
+        }
+        assert_eq!(state.journal.len(), 100);
+        // The oldest entries were pruned; last entry should be the most recent
+        assert_eq!(state.journal.last().unwrap().message, "entry 110");
+    }
+
+    #[test]
+    fn save_dir_ends_with_shellquest() {
+        let dir = save_dir();
+        assert_eq!(dir.file_name().unwrap(), ".shellquest");
+    }
+
+    #[test]
+    fn save_path_is_save_json_inside_save_dir() {
+        let path = save_path();
+        assert_eq!(path.file_name().unwrap(), "save.json");
+        assert_eq!(path.parent().unwrap(), save_dir());
+    }
+}
