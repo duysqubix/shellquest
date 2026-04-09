@@ -281,7 +281,7 @@ fn handle_forge(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
             format!("{}", item.rarity).dimmed());
         display::print_loot(&colored, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Craft, plain));
-        auto_equip(state, item);
+        add_to_inventory(state, item);
     } else {
         let xp = rng.gen_range(8..=20);
         state.character.gain_xp(xp);
@@ -375,7 +375,7 @@ fn handle_alchemy(state: &mut GameState, rng: &mut impl Rng) {
         let msg = format!("Your package install transmutes into: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
         display::print_loot(&msg, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Loot, msg));
-        auto_equip(state, item);
+        add_to_inventory(state, item);
     } else {
         let xp = rng.gen_range(5..=15);
         let leveled = state.character.gain_xp(xp);
@@ -409,7 +409,7 @@ fn handle_scrying(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
         let msg = format!("Your search reveals a hidden treasure: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
         display::print_loot(&msg, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Loot, msg));
-        auto_equip(state, item);
+        add_to_inventory(state, item);
     } else {
         let xp = rng.gen_range(8..=16);
         let leveled = state.character.gain_xp(xp);
@@ -489,7 +489,7 @@ fn handle_treasure_chest(state: &mut GameState, _rng: &mut impl Rng, cwd: &str) 
     let msg = format!("You crack open an archive! Inside you find: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
     display::print_loot(&msg, &item.rarity);
     state.add_journal(JournalEntry::new(EventType::Loot, msg));
-    auto_equip(state, item);
+    add_to_inventory(state, item);
 }
 
 fn handle_echo_spell(state: &mut GameState, rng: &mut impl Rng) {
@@ -521,7 +521,7 @@ fn handle_container_forge(state: &mut GameState, rng: &mut impl Rng, cwd: &str) 
         let msg = format!("The container forge blazes! Layers fuse into: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
         display::print_loot(&msg, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Craft, msg));
-        auto_equip(state, item);
+        add_to_inventory(state, item);
     } else {
         let xp = rng.gen_range(12..=25);
         let leveled = state.character.gain_xp(xp);
@@ -595,7 +595,7 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, cwd: &str)
             let msg = format!("You found: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
             display::print_loot(&msg, &item.rarity);
             state.add_journal(JournalEntry::new(EventType::Loot, msg));
-            auto_equip(state, item);
+            add_to_inventory(state, item);
         }
         61..=75 => {
             // Find gold
@@ -717,24 +717,6 @@ fn combat(state: &mut GameState, rng: &mut impl Rng, monster_name: &str, monster
             mname, "circle each other".dimmed(), "retreats".dimmed().italic());
         display::print_combat_draw(&colored);
         state.add_journal(JournalEntry::new(EventType::Combat, plain));
-    }
-}
-
-fn auto_equip(state: &mut GameState, item: crate::character::Item) {
-    use crate::character::ItemSlot;
-    let dominated = match item.slot {
-        ItemSlot::Weapon => state.character.weapon.as_ref().map_or(true, |w| item.power > w.power),
-        ItemSlot::Armor => state.character.armor.as_ref().map_or(true, |a| item.power > a.power),
-        ItemSlot::Ring => state.character.ring.as_ref().map_or(true, |r| item.power > r.power),
-        ItemSlot::Potion => false,
-    };
-
-    if dominated {
-        if let Some(old) = state.character.equip(item) {
-            add_to_inventory(state, old);
-        }
-    } else {
-        add_to_inventory(state, item);
     }
 }
 

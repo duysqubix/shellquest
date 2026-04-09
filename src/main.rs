@@ -56,6 +56,26 @@ enum Commands {
         #[arg(long)]
         file: Option<String>,
     },
+    /// Equip armor or ring from inventory
+    Equip {
+        /// Item name (or partial match)
+        name: Vec<String>,
+    },
+    /// Wield a weapon from inventory
+    Wield {
+        /// Item name (or partial match)
+        name: Vec<String>,
+    },
+    /// Drop an item from inventory permanently
+    Drop {
+        /// Item name (or partial match)
+        name: Vec<String>,
+    },
+    /// Drink a potion from inventory to restore HP
+    Drink {
+        /// Item name (or partial match)
+        name: Vec<String>,
+    },
     /// Prestige: reset to level 1 with a subclass and bonus stats
     Prestige,
     /// Reset your character (start over)
@@ -79,6 +99,10 @@ fn main() {
             test_sage,
         } => cmd_tick(&cmd, &cwd, exit_code, test_sage),
         Commands::Hook { shell, install, file } => cmd_hook(&shell, install || file.is_some(), file),
+        Commands::Equip { name } => cmd_equip(&name.join(" ")),
+        Commands::Wield { name } => cmd_wield(&name.join(" ")),
+        Commands::Drop { name } => cmd_drop_item(&name.join(" ")),
+        Commands::Drink { name } => cmd_drink(&name.join(" ")),
         Commands::Prestige => cmd_prestige(),
         Commands::Reset => cmd_reset(),
         Commands::Update => cmd_update(),
@@ -513,6 +537,268 @@ fn cmd_prestige() {
         Err(e) => {
             eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
         }
+    }
+}
+
+fn find_inventory_item(game: &state::GameState, name: &str) -> Option<usize> {
+    let name_lower = name.to_lowercase();
+    // Try exact match first, then partial
+    game.character
+        .inventory
+        .iter()
+        .position(|i| i.name.to_lowercase() == name_lower)
+        .or_else(|| {
+            game.character
+                .inventory
+                .iter()
+                .position(|i| i.name.to_lowercase().contains(&name_lower))
+        })
+}
+
+fn cmd_equip(name: &str) {
+    if name.is_empty() {
+        eprintln!(
+            "{} Usage: {} or {}",
+            "❌".bold(),
+            "sq equip <armor name>".cyan(),
+            "sq equip <ring name>".cyan()
+        );
+        return;
+    }
+
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    let idx = match find_inventory_item(&game, name) {
+        Some(i) => i,
+        None => {
+            println!(
+                "{} No item matching {} in your inventory.",
+                "⚠️".yellow(),
+                format!("\"{}\"", name).white().bold()
+            );
+            return;
+        }
+    };
+
+    let item = &game.character.inventory[idx];
+    match item.slot {
+        character::ItemSlot::Weapon => {
+            println!(
+                "{} {} is a weapon. Use {} instead.",
+                "⚠️".yellow(),
+                item.name.cyan().bold(),
+                "sq wield".cyan()
+            );
+            return;
+        }
+        character::ItemSlot::Potion => {
+            println!(
+                "{} {} is a potion and cannot be equipped.",
+                "⚠️".yellow(),
+                item.name.cyan().bold()
+            );
+            return;
+        }
+        character::ItemSlot::Armor | character::ItemSlot::Ring => {}
+    }
+
+    let item = game.character.inventory.remove(idx);
+    let item_name = item.name.clone();
+    let slot_name = format!("{}", item.slot);
+
+    if let Some(old) = game.character.equip(item) {
+        let old_name = old.name.clone();
+        game.character.inventory.push(old);
+        println!(
+            "{} Equipped {}! (replaced {})",
+            "🛡️".bold(),
+            item_name.green().bold(),
+            old_name.dimmed()
+        );
+    } else {
+        println!(
+            "{} Equipped {} in {} slot!",
+            "🛡️".bold(),
+            item_name.green().bold(),
+            slot_name.cyan()
+        );
+    }
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+    }
+}
+
+fn cmd_wield(name: &str) {
+    if name.is_empty() {
+        eprintln!(
+            "{} Usage: {}",
+            "❌".bold(),
+            "sq wield <weapon name>".cyan()
+        );
+        return;
+    }
+
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    let idx = match find_inventory_item(&game, name) {
+        Some(i) => i,
+        None => {
+            println!(
+                "{} No item matching {} in your inventory.",
+                "⚠️".yellow(),
+                format!("\"{}\"", name).white().bold()
+            );
+            return;
+        }
+    };
+
+    let item = &game.character.inventory[idx];
+    if item.slot != character::ItemSlot::Weapon {
+        println!(
+            "{} {} is not a weapon. Use {} to wear armor or rings.",
+            "⚠️".yellow(),
+            item.name.cyan().bold(),
+            "sq equip".cyan()
+        );
+        return;
+    }
+
+    let item = game.character.inventory.remove(idx);
+    let item_name = item.name.clone();
+
+    if let Some(old) = game.character.equip(item) {
+        let old_name = old.name.clone();
+        game.character.inventory.push(old);
+        println!(
+            "{} Now wielding {}! (sheathed {})",
+            "⚔️".bold(),
+            item_name.green().bold(),
+            old_name.dimmed()
+        );
+    } else {
+        println!(
+            "{} Now wielding {}!",
+            "⚔️".bold(),
+            item_name.green().bold()
+        );
+    }
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+    }
+}
+
+fn cmd_drink(name: &str) {
+    if name.is_empty() {
+        eprintln!(
+            "{} Usage: {}",
+            "❌".bold(),
+            "sq drink <potion name>".cyan()
+        );
+        return;
+    }
+
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    let idx = match find_inventory_item(&game, name) {
+        Some(i) => i,
+        None => {
+            println!(
+                "{} No item matching {} in your inventory.",
+                "⚠️".yellow(),
+                format!("\"{}\"", name).white().bold()
+            );
+            return;
+        }
+    };
+
+    let item = &game.character.inventory[idx];
+    if item.slot != character::ItemSlot::Potion {
+        println!(
+            "{} {} is not drinkable.",
+            "⚠️".yellow(),
+            item.name.cyan().bold()
+        );
+        return;
+    }
+
+    let item = game.character.inventory.remove(idx);
+    let heal = item.power;
+    let item_name = item.name.clone();
+    game.character.heal(heal);
+
+    println!(
+        "{} You drink the {}! Restored {} HP. HP: {}/{}",
+        "🧪".bold(),
+        item_name.green().bold(),
+        format!("+{}", heal).green().bold(),
+        format!("{}", game.character.hp).white().bold(),
+        game.character.max_hp
+    );
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+    }
+}
+
+fn cmd_drop_item(name: &str) {
+    if name.is_empty() {
+        eprintln!(
+            "{} Usage: {}",
+            "❌".bold(),
+            "sq drop <item name>".cyan()
+        );
+        return;
+    }
+
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    let idx = match find_inventory_item(&game, name) {
+        Some(i) => i,
+        None => {
+            println!(
+                "{} No item matching {} in your inventory.",
+                "⚠️".yellow(),
+                format!("\"{}\"", name).white().bold()
+            );
+            return;
+        }
+    };
+
+    let item = game.character.inventory.remove(idx);
+    println!(
+        "{} Dropped {} forever. It vanishes into the void.",
+        "🗑️".bold(),
+        item.name.red().bold()
+    );
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
 
