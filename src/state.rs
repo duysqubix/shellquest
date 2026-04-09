@@ -27,6 +27,8 @@ pub struct GameState {
     /// Date the shop was last refreshed (UTC midnight)
     #[serde(default)]
     pub shop_refreshed: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub active_boss: Option<crate::boss::Boss>,
 }
 
 impl GameState {
@@ -42,6 +44,7 @@ impl GameState {
             last_sage_shown: None,
             shop_items: Vec::new(),
             shop_refreshed: None,
+            active_boss: None,
         }
     }
 
@@ -169,5 +172,21 @@ mod tests {
         let path = save_path();
         assert_eq!(path.file_name().unwrap(), "save.json");
         assert_eq!(path.parent().unwrap(), save_dir());
+    }
+
+    #[test]
+    fn game_state_new_has_no_active_boss() {
+        let state = GameState::new(make_character());
+        assert!(state.active_boss.is_none());
+    }
+
+    #[test]
+    fn game_state_serializes_and_deserializes_boss() {
+        use crate::boss::{Boss, spawn_boss};
+        let mut state = GameState::new(make_character());
+        state.active_boss = Some(spawn_boss());
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: GameState = serde_json::from_str(&json).unwrap();
+        assert!(restored.active_boss.is_some());
     }
 }
