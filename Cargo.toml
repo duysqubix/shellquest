@@ -1,0 +1,18 @@
+[package]
+name = "shellquest"
+version = "0.1.0"
+edition = "2021"
+description = "A passive RPG that lives in your terminal — your shell is the dungeon"
+
+[[bin]]
+name = "sq"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+colored = "2"
+dirs = "5"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
