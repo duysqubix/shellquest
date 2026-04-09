@@ -3,6 +3,12 @@ name = "shellquest"
 version = "0.1.0"
 edition = "2021"
 description = "A passive RPG that lives in your terminal — your shell is the dungeon"
+license = "MIT"
+repository = "https://github.com/USER/shellquest"
+homepage = "https://github.com/USER/shellquest"
+readme = "README.md"
+keywords = ["rpg", "terminal", "game", "cli", "passive"]
+categories = ["command-line-utilities", "games"]
 
 [[bin]]
 name = "sq"

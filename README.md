@@ -6,15 +6,21 @@ Every command you run has a chance to trigger an encounter. Your character gains
 
 ## Install
 
-One-liner (requires Rust and git):
+### From crates.io
+
+```bash
+cargo install shellquest
+```
+
+### One-liner (auto-setup)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/USER/shellquest/main/install.sh | bash
 ```
 
-This will clone the repo, build the binary, install `sq` to `~/.cargo/bin/`, and add the shell hook automatically.
+This clones, builds, installs `sq`, and adds the shell hook automatically.
 
-### Manual install
+### From source
 
 ```bash
 git clone https://github.com/USER/shellquest.git
@@ -26,7 +32,6 @@ sq hook --shell zsh >> ~/.zshrc   # or bash/fish
 ### Requirements
 
 - [Rust](https://rustup.rs) (cargo)
-- git
 
 ## Quick Start
 
