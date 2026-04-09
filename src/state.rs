@@ -21,6 +21,12 @@ pub struct GameState {
     /// When the sage last appeared (to avoid spamming)
     #[serde(default)]
     pub last_sage_shown: Option<DateTime<Utc>>,
+    /// Cached shop items
+    #[serde(default)]
+    pub shop_items: Vec<crate::character::Item>,
+    /// Date the shop was last refreshed (UTC midnight)
+    #[serde(default)]
+    pub shop_refreshed: Option<DateTime<Utc>>,
 }
 
 impl GameState {
@@ -34,6 +40,8 @@ impl GameState {
             latest_version: None,
             last_version_check: None,
             last_sage_shown: None,
+            shop_items: Vec::new(),
+            shop_refreshed: None,
         }
     }
 

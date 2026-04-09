@@ -233,3 +233,27 @@ pub fn roll_loot(_danger_level: u32) -> Item {
         Rarity::Legendary => pick_from(&mut rng, LEGENDARY, Rarity::Legendary),
     }
 }
+
+/// Roll loot for the shop — Common, Uncommon, or Rare only (no Epic/Legendary).
+pub fn roll_shop_loot() -> Item {
+    let mut rng = rand::thread_rng();
+    // Redistribute: Common 70%, Uncommon 25%, Rare 5%
+    let roll = rng.gen_range(0u32..100);
+    match roll {
+        0..=69 => pick_from(&mut rng, COMMON, Rarity::Common),
+        70..=94 => pick_from(&mut rng, UNCOMMON, Rarity::Uncommon),
+        _ => pick_from(&mut rng, RARE, Rarity::Rare),
+    }
+}
+
+/// Calculate a gold price for an item based on rarity and power.
+pub fn item_price(item: &Item) -> u32 {
+    let multiplier = match item.rarity {
+        Rarity::Common => 5,
+        Rarity::Uncommon => 10,
+        Rarity::Rare => 20,
+        Rarity::Epic => 40,
+        Rarity::Legendary => 100,
+    };
+    (item.power as u32) * multiplier + multiplier
+}
