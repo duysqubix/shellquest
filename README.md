@@ -6,23 +6,38 @@ Every command you run has a chance to trigger an encounter. Your character gains
 
 ## Install
 
+One-liner (requires Rust and git):
+
 ```bash
-cargo install --path .
+curl -fsSL https://raw.githubusercontent.com/USER/shellquest/main/install.sh | bash
 ```
+
+This will clone the repo, build the binary, install `sq` to `~/.cargo/bin/`, and add the shell hook automatically.
+
+### Manual install
+
+```bash
+git clone https://github.com/USER/shellquest.git
+cd shellquest
+cargo install --path .
+sq hook --shell zsh >> ~/.zshrc   # or bash/fish
+```
+
+### Requirements
+
+- [Rust](https://rustup.rs) (cargo)
+- git
 
 ## Quick Start
 
 ```bash
-# Create your character
+# 1. Reload your shell (or restart terminal)
+source ~/.zshrc
+
+# 2. Create your character
 sq init
 
-# Install the shell hook (pick your shell)
-sq hook --shell zsh >> ~/.zshrc
-sq hook --shell bash >> ~/.bashrc
-sq hook --shell fish >> ~/.config/fish/config.fish
-
-# Reload your shell
-source ~/.zshrc  # or restart your terminal
+# 3. Just use your terminal -- events happen automatically!
 
 # Check your stats anytime
 sq status
