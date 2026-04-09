@@ -12,6 +12,15 @@ pub struct GameState {
     pub journal: Vec<JournalEntry>,
     pub created_at: DateTime<Utc>,
     pub last_tick: DateTime<Utc>,
+    /// Cached latest version from crates.io
+    #[serde(default)]
+    pub latest_version: Option<String>,
+    /// When we last checked crates.io for a new version
+    #[serde(default)]
+    pub last_version_check: Option<DateTime<Utc>>,
+    /// When the sage last appeared (to avoid spamming)
+    #[serde(default)]
+    pub last_sage_shown: Option<DateTime<Utc>>,
 }
 
 impl GameState {
@@ -22,6 +31,9 @@ impl GameState {
             journal: Vec::new(),
             created_at: now,
             last_tick: now,
+            latest_version: None,
+            last_version_check: None,
+            last_sage_shown: None,
         }
     }
 
