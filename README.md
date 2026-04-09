@@ -1,8 +1,25 @@
 # shellquest (sq)
 
+[![Crates.io](https://img.shields.io/crates/v/shellquest)](https://crates.io/crates/shellquest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub](https://img.shields.io/github/stars/duysqubix/shellquest?style=social)](https://github.com/duysqubix/shellquest)
+
 A passive RPG that lives in your terminal. Your shell is the dungeon.
 
 Every command you run has a chance to trigger an encounter. Your character gains XP, finds loot, fights monsters, and levels up -- all while you're just doing your normal work.
+
+```
+$ git push
+  🏆 Quest complete! You pushed your code to the realm! +21 XP +8 gold
+$ cargo build
+  💎 ★·.· The forge burns hot! You crafted: ★Vorpal Pointer★ (+18 Weapon) [Epic] ·.·★
+$ docker compose up
+  🏆 The orchestration ritual completes! A symphony of microservices plays! +23 XP +9 gold
+$ cat README.md
+  🐾 You befriend a friendly daemon! It heals you for 5 HP. HP: 47/47
+$ rm -rf node_modules
+  ⚔️  A Dependency Hell Hound appears! You strike true! Victory! +22 XP
+```
 
 ## Install
 
