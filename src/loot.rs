@@ -234,6 +234,34 @@ pub fn roll_loot(_danger_level: u32) -> Item {
     }
 }
 
+fn roll_item_of_rarity(rarity: Rarity, _danger_level: u32) -> Item {
+    let mut rng = rand::thread_rng();
+    match rarity {
+        Rarity::Common => pick_from(&mut rng, COMMON, Rarity::Common),
+        Rarity::Uncommon => pick_from(&mut rng, UNCOMMON, Rarity::Uncommon),
+        Rarity::Rare => pick_from(&mut rng, RARE, Rarity::Rare),
+        Rarity::Epic => pick_from(&mut rng, EPIC, Rarity::Epic),
+        Rarity::Legendary => pick_from(&mut rng, LEGENDARY, Rarity::Legendary),
+    }
+}
+
+/// Roll boss loot — no Commons, weighted toward Rare/Epic/Legendary.
+/// Uncommon 40%, Rare ~47%, Epic ~10%, Legendary ~3%
+pub fn roll_boss_loot() -> Item {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let rarity = if rng.gen_ratio(3, 100) {
+        Rarity::Legendary
+    } else if rng.gen_ratio(10, 97) {
+        Rarity::Epic
+    } else if rng.gen_ratio(47, 87) {
+        Rarity::Rare
+    } else {
+        Rarity::Uncommon
+    };
+    roll_item_of_rarity(rarity, 3)
+}
+
 /// Roll loot for the shop — Common, Uncommon, or Rare only (no Epic/Legendary).
 pub fn roll_shop_loot() -> Item {
     let mut rng = rand::thread_rng();
@@ -361,5 +389,23 @@ mod tests {
         };
         // multiplier = 100; price = 10 * 100 + 100 = 1100
         assert_eq!(item_price(&item), 1100);
+    }
+
+    #[test]
+    fn boss_loot_never_rolls_common() {
+        for _ in 0..200 {
+            let item = roll_boss_loot();
+            assert!(
+                !matches!(item.rarity, crate::character::Rarity::Common),
+                "boss loot rolled Common"
+            );
+        }
+    }
+
+    #[test]
+    fn boss_loot_returns_valid_item() {
+        let item = roll_boss_loot();
+        assert!(!item.name.is_empty());
+        assert!(item.power > 0);
     }
 }
