@@ -343,3 +343,59 @@ pub fn print_journal(entries: &[JournalEntry]) {
     }
     println!();
 }
+
+pub fn print_boss_spawn(boss: &crate::boss::Boss) {
+    eprintln!();
+    eprintln!("{}", "╔══════════════════════════════════════════════╗".red().bold());
+    eprintln!("{} {} {}",
+        "║".red().bold(),
+        format!("⚠️  WORLD BOSS: {} HAS APPEARED!", boss.name).red().bold(),
+        "║".red().bold());
+    eprintln!("{} {} {}",
+        "║".red().bold(),
+        format!("   HP: {}  ATK: {}  — Defeat it for legendary rewards!", boss.max_hp, boss.attack).red(),
+        "║".red().bold());
+    eprintln!("{}", "╚══════════════════════════════════════════════╝".red().bold());
+    eprintln!();
+}
+
+pub fn print_boss_tick(boss: &crate::boss::Boss, player_dmg: Option<i32>, boss_dmg: Option<i32>) {
+    if let Some(dmg) = player_dmg {
+        eprintln!("{} {} You strike for {}! (HP: {}/{})",
+            "💀".bold(),
+            format!("[BOSS] {}!", boss.name).red().bold(),
+            format!("{}", dmg).green().bold(),
+            boss.hp.max(0), boss.max_hp);
+    } else {
+        eprintln!("{} {} You swing and miss!",
+            "💀".bold(),
+            format!("[BOSS] {}!", boss.name).red().dimmed());
+    }
+    if let Some(dmg) = boss_dmg {
+        eprintln!("   {} {}",
+            "It retaliates —".red(),
+            format!("took {} damage.", dmg).red().bold());
+    }
+}
+
+pub fn print_boss_victory(boss: &crate::boss::Boss, xp: u32, gold: u32) {
+    eprintln!();
+    eprintln!("{}", "╔══════════════════════════════════════════════╗".yellow().bold());
+    eprintln!("{} {} {}",
+        "║".yellow().bold(),
+        format!("🏆  {} HAS BEEN DEFEATED!", boss.name).yellow().bold(),
+        "║".yellow().bold());
+    eprintln!("{} {} {}",
+        "║".yellow().bold(),
+        format!("   +{} XP  +{} gold  — Loot awaits!", xp, gold).yellow(),
+        "║".yellow().bold());
+    eprintln!("{}", "╚══════════════════════════════════════════════╝".yellow().bold());
+    eprintln!();
+}
+
+pub fn print_boss_flee(boss_name: &str, reason: &str) {
+    eprintln!("{} {} {}",
+        "👻".bold(),
+        "[BOSS]".red().dimmed(),
+        format!("{} {}.", boss_name, reason).dimmed().italic());
+}
