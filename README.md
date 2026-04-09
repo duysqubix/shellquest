@@ -219,26 +219,17 @@ Not every command triggers something. Each command type has its own trigger chan
 
 ## Loot
 
-80+ dev-themed items across 5 rarity tiers, each with its own visual flair:
+150+ dev-themed items across 5 rarity tiers with realistic drop rates:
 
-```
-  📦 You found: Rusty Pipe (+2 Weapon) [Common]
-  📦 ~ You crafted: Mace of Makefile (+6 Weapon) [Uncommon]
-  📦 ~~ Your search reveals: Scythe of Segfault (+13 Weapon) [Rare] ~~
-  💎 ★·.· The forge burns hot! You crafted: ★Mjolnir of Monorepo★ (+19 Weapon) [Epic] ·.·★
-  ╔═══════════════════════════════════════════╗
-  ║ ✦✦✦ Mass Migration Blade of the Kernel (+31 Weapon) [LEGENDARY] ✦✦✦ ║
-  ╚═══════════════════════════════════════════╝
-```
+| Rarity | Drop Rate | Visual | Example |
+|--------|-----------|--------|---------|
+| Common | 70% | plain white | Rusty Pipe, Hoodie of Comfort, Potion of Coffee |
+| Uncommon | 25% | gray `~` | Sword of Regex, Cape of CI/CD, Brew of Debugging |
+| Rare | 4% | green `~~` | Blade of Sudo, Crown of CloudFormation |
+| Epic | 0.99% | purple `★stars★` | Excalibash, Aegis of the Load Balancer |
+| Legendary | 0.01% | gold boxed frame | Mass Migration Blade of the Kernel |
 
-**Sample items:**
-
-| Slot | Common | Rare | Legendary |
-|------|--------|------|-----------|
-| Weapon | Rusty Pipe, Floppy Disk Shuriken | Blade of Sudo, Trident of TypeScript | Mass Migration Fork Bomb |
-| Armor | Hoodie of Comfort, Pajama Pants of WFH | Shield of CORS, Greaves of GraphQL | Divine Armor of /dev/null |
-| Ring | Ring of Tab Completion | Band of the Borrow Checker | Eternal Band of Uptime |
-| Potion | Potion of Coffee | Draught of Deep Work | Elixir of Infinite Context |
+Items span weapons, armor, rings, and potions -- all dev/tech themed. Good luck finding a legendary.
 
 ---
 
