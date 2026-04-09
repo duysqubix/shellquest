@@ -71,6 +71,13 @@ enum Commands {
         /// Item name (or partial match)
         name: Vec<String>,
     },
+    /// Browse the shop (must be in home directory)
+    Shop,
+    /// Buy an item from the shop
+    Buy {
+        /// Item name (or partial match)
+        name: Vec<String>,
+    },
     /// Drink a potion from inventory to restore HP
     Drink {
         /// Item name (or partial match)
@@ -99,6 +106,8 @@ fn main() {
             test_sage,
         } => cmd_tick(&cmd, &cwd, exit_code, test_sage),
         Commands::Hook { shell, install, file } => cmd_hook(&shell, install || file.is_some(), file),
+        Commands::Shop => cmd_shop(),
+        Commands::Buy { name } => cmd_buy(&name.join(" ")),
         Commands::Equip { name } => cmd_equip(&name.join(" ")),
         Commands::Wield { name } => cmd_wield(&name.join(" ")),
         Commands::Drop { name } => cmd_drop_item(&name.join(" ")),
@@ -537,6 +546,208 @@ fn cmd_prestige() {
         Err(e) => {
             eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
         }
+    }
+}
+
+fn refresh_shop_if_needed(game: &mut state::GameState) {
+    use chrono::Utc;
+
+    let now = Utc::now();
+    let today_midnight = now.date_naive().and_hms_opt(0, 0, 0).unwrap();
+
+    let needs_refresh = match game.shop_refreshed {
+        None => true,
+        Some(last) => last.date_naive() < today_midnight.date(),
+    };
+
+    if needs_refresh {
+        game.shop_items.clear();
+        for _ in 0..6 {
+            game.shop_items.push(loot::roll_shop_loot());
+        }
+        game.shop_refreshed = Some(now);
+    }
+}
+
+fn cmd_shop() {
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    if cwd != home {
+        println!(
+            "{} The shop is only accessible from your {}. You are in {}",
+            "🏠".bold(),
+            "home directory".cyan().bold(),
+            cwd.dimmed()
+        );
+        println!(
+            "  Run {} to return home first.",
+            "cd ~".cyan()
+        );
+        return;
+    }
+
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    refresh_shop_if_needed(&mut game);
+
+    println!();
+    println!(
+        "{}",
+        "🏪 The Terminal Bazaar".bold().yellow()
+    );
+    println!("{}", "─".repeat(50).dimmed());
+    println!(
+        "  {} {}",
+        "Your gold:".bold(),
+        format!("{}", game.character.gold).yellow().bold()
+    );
+    println!("{}", "─".repeat(50).dimmed());
+
+    if game.shop_items.is_empty() {
+        println!("{}", "  The shop is empty... come back tomorrow.".dimmed());
+    } else {
+        for (i, item) in game.shop_items.iter().enumerate() {
+            let price = loot::item_price(item);
+            let rarity_str = match item.rarity {
+                character::Rarity::Common => format!("{}", "[Common]".dimmed()),
+                character::Rarity::Uncommon => format!("{}", "[Uncommon]".dimmed().bold()),
+                character::Rarity::Rare => format!("{}", "[Rare]".green().bold()),
+                _ => format!("{}", item.rarity),
+            };
+            let affordable = if game.character.gold >= price {
+                "".to_string()
+            } else {
+                format!(" {}", "(can't afford)".red().dimmed())
+            };
+            println!(
+                "  {}. {} (+{} {}) {} — {} gold{}",
+                format!("{}", i + 1).dimmed(),
+                item.name.white().bold(),
+                item.power,
+                format!("{}", item.slot).dimmed(),
+                rarity_str,
+                format!("{}", price).yellow().bold(),
+                affordable
+            );
+        }
+    }
+
+    println!("{}", "─".repeat(50).dimmed());
+    println!(
+        "  Use {} to purchase an item.",
+        "sq buy <item name>".cyan()
+    );
+    println!(
+        "  Shop refreshes daily at {}.",
+        "midnight UTC".dimmed()
+    );
+    println!();
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+    }
+}
+
+fn cmd_buy(name: &str) {
+    if name.is_empty() {
+        eprintln!(
+            "{} Usage: {}",
+            "❌".bold(),
+            "sq buy <item name>".cyan()
+        );
+        return;
+    }
+
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    if cwd != home {
+        println!(
+            "{} The shop is only accessible from your {}.",
+            "🏠".bold(),
+            "home directory".cyan().bold()
+        );
+        return;
+    }
+
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    refresh_shop_if_needed(&mut game);
+
+    let name_lower = name.to_lowercase();
+    let idx = game
+        .shop_items
+        .iter()
+        .position(|i| i.name.to_lowercase() == name_lower)
+        .or_else(|| {
+            game.shop_items
+                .iter()
+                .position(|i| i.name.to_lowercase().contains(&name_lower))
+        });
+
+    let idx = match idx {
+        Some(i) => i,
+        None => {
+            println!(
+                "{} No item matching {} in the shop.",
+                "⚠️".yellow(),
+                format!("\"{}\"", name).white().bold()
+            );
+            return;
+        }
+    };
+
+    let price = loot::item_price(&game.shop_items[idx]);
+
+    if game.character.gold < price {
+        println!(
+            "{} Not enough gold! {} costs {} gold, you have {}.",
+            "⚠️".yellow(),
+            game.shop_items[idx].name.white().bold(),
+            format!("{}", price).yellow().bold(),
+            format!("{}", game.character.gold).yellow()
+        );
+        return;
+    }
+
+    let item = game.shop_items.remove(idx);
+    let item_name = item.name.clone();
+    game.character.gold -= price;
+    game.character.inventory.push(item);
+
+    println!(
+        "{} Purchased {} for {} gold! ({} gold remaining)",
+        "💰".bold(),
+        item_name.green().bold(),
+        format!("{}", price).yellow().bold(),
+        format!("{}", game.character.gold).yellow()
+    );
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
 
