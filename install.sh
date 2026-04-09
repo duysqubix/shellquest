@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # shellquest installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/USER/shellquest/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/duysqubix/shellquest/main/install.sh | bash
 
-REPO="https://github.com/USER/shellquest.git"
+REPO="https://github.com/duysqubix/shellquest.git"
 INSTALL_DIR="${SHELLQUEST_DIR:-$HOME/.shellquest-src}"
 BINARY_NAME="sq"
 

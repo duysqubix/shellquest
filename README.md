@@ -15,7 +15,7 @@ cargo install shellquest
 ### One-liner (auto-setup)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/USER/shellquest/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/duysqubix/shellquest/main/install.sh | bash
 ```
 
 This clones, builds, installs `sq`, and adds the shell hook automatically.
@@ -23,7 +23,7 @@ This clones, builds, installs `sq`, and adds the shell hook automatically.
 ### From source
 
 ```bash
-git clone https://github.com/USER/shellquest.git
+git clone https://github.com/duysqubix/shellquest.git
 cd shellquest
 cargo install --path .
 sq hook --shell zsh >> ~/.zshrc   # or bash/fish
