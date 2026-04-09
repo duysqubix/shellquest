@@ -297,8 +297,15 @@ Prestige title tiers: **Prestigious** > **Exalted** > **Transcendent** > **Mythi
 | `sq status` | View your character sheet |
 | `sq inventory` | Check your gear and potions |
 | `sq journal` | Adventure log (last 20 events) |
+| `sq shop` | Browse the shop (must be in home directory) |
+| `sq buy <number>` | Buy item by number from `sq shop` list |
+| `sq equip <name>` | Equip armor or ring from inventory |
+| `sq wield <name>` | Wield a weapon from inventory |
+| `sq drink <name>` | Drink a potion to restore HP |
+| `sq drop <name>` | Permanently drop an item from inventory |
 | `sq prestige` | Ascend with a subclass (requires level 150) |
 | `sq hook --shell zsh` | Print shell hook code |
+| `sq update` | Update sq to the latest version via cargo |
 | `sq reset` | Permanently delete your character |
 
 ---
@@ -325,8 +332,6 @@ PRs welcome! Some ideas:
 - More monsters, loot, and events
 - Achievement system
 - Multiplayer leaderboards (shared server)
-- `sq shop` -- spend gold on items
-- `sq use <potion>` -- consume potions
 - ASCII art boss encounters
 - Sound effects via terminal bell
 

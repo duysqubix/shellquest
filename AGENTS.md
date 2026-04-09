@@ -32,9 +32,14 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - The `tick` subcommand must remain fast and silent on error (no character = silent return)
 
 ### Testing Requirements
-- `cargo build` to verify compilation
-- `cargo clippy` for lint checks
-- No test suite exists yet — manual testing via `sq init`, `sq status`, `sq tick --cmd "test" --cwd "." --exit-code 0`
+- `cargo build` to verify compilation (`cargo clippy` is not installed in the current toolchain — skip it)
+- No test suite exists — manual testing only:
+  - `sq init` → create character
+  - `sq status` → view sheet
+  - `sq tick --cmd "git commit" --cwd "." --exit-code 0` → trigger craft event
+  - `sq tick --cmd "bad" --cwd "." --exit-code 1` → trigger trap
+  - `cd ~ && sq shop` → shop only works from home directory; shows numbered item list
+  - `cd ~ && sq buy 1` → buy item by **number** (1-indexed), not by name
 
 ### Common Patterns
 - Serde for all data structures (JSON serialization)
