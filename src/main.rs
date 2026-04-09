@@ -40,11 +40,17 @@ enum Commands {
         #[arg(long, default_value_t = 0)]
         exit_code: i32,
     },
-    /// Print shell hook installation code
+    /// Print or install the shell hook
     Hook {
         /// Shell type: bash, zsh, or fish
         #[arg(long, default_value = "zsh")]
         shell: String,
+        /// Install hook directly to a file (default: ~/.zshrc, ~/.bashrc, or fish config)
+        #[arg(long)]
+        install: bool,
+        /// Custom file to install the hook to (implies --install)
+        #[arg(long)]
+        file: Option<String>,
     },
     /// Prestige: reset to level 1 with a subclass and bonus stats
     Prestige,
@@ -65,7 +71,7 @@ fn main() {
             cwd,
             exit_code,
         } => cmd_tick(&cmd, &cwd, exit_code),
-        Commands::Hook { shell } => cmd_hook(&shell),
+        Commands::Hook { shell, install, file } => cmd_hook(&shell, install || file.is_some(), file),
         Commands::Prestige => cmd_prestige(),
         Commands::Reset => cmd_reset(),
     }
@@ -265,43 +271,113 @@ fn cmd_tick(cmd: &str, cwd: &str, exit_code: i32) {
     }
 }
 
-fn cmd_hook(shell: &str) {
+fn hook_code(shell: &str) -> Option<String> {
     match shell {
-        "bash" => {
-            println!(r#"# sq shell hook — add to your ~/.bashrc
-__sq_hook() {{
+        "bash" => Some(r#"
+# shellquest (sq) — passive terminal RPG hook
+__sq_hook() {
     local exit_code=$?
     local cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]* *//')
-    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code" 2>/dev/null &
+    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code" &
     disown 2>/dev/null
-}}
-PROMPT_COMMAND="__sq_hook;$PROMPT_COMMAND""#);
-        }
-        "zsh" => {
-            println!(r#"# sq shell hook — add to your ~/.zshrc
-__sq_hook() {{
+}
+PROMPT_COMMAND="__sq_hook;$PROMPT_COMMAND"
+"#.to_string()),
+        "zsh" => Some(r#"
+# shellquest (sq) — passive terminal RPG hook
+__sq_hook() {
     local exit_code=$?
     local cmd=$(fc -ln -1)
-    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code" 2>/dev/null &
+    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code" &
     disown 2>/dev/null
-}}
-precmd_functions+=(__sq_hook)"#);
-        }
-        "fish" => {
-            println!(r#"# sq shell hook — add to your ~/.config/fish/config.fish
+}
+precmd_functions+=(__sq_hook)
+"#.to_string()),
+        "fish" => Some(r#"
+# shellquest (sq) — passive terminal RPG hook
 function __sq_hook --on-event fish_postexec
     set -l cmd $argv[1]
     set -l exit_code $status
-    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code" 2>/dev/null &
+    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code" &
     disown 2>/dev/null
-end"#);
-        }
-        _ => {
+end
+"#.to_string()),
+        _ => None,
+    }
+}
+
+fn default_rc_file(shell: &str) -> Option<String> {
+    let home = dirs::home_dir()?;
+    match shell {
+        "bash" => Some(home.join(".bashrc").to_string_lossy().to_string()),
+        "zsh" => Some(home.join(".zshrc").to_string_lossy().to_string()),
+        "fish" => Some(home.join(".config/fish/config.fish").to_string_lossy().to_string()),
+        _ => None,
+    }
+}
+
+fn cmd_hook(shell: &str, install: bool, file: Option<String>) {
+    let code = match hook_code(shell) {
+        Some(c) => c,
+        None => {
             eprintln!(
                 "{} Unknown shell: {}. Supported: bash, zsh, fish",
                 "❌".bold(),
                 shell.red()
             );
+            return;
+        }
+    };
+
+    if !install {
+        // Just print the hook code
+        print!("{}", code);
+        return;
+    }
+
+    // Install mode: write to file
+    let target = file.or_else(|| default_rc_file(shell));
+    let target = match target {
+        Some(t) => t,
+        None => {
+            eprintln!("{} Could not determine rc file for shell: {}", "❌".bold(), shell.red());
+            return;
+        }
+    };
+
+    // Check if hook already installed
+    if let Ok(contents) = std::fs::read_to_string(&target) {
+        if contents.contains("__sq_hook") {
+            println!(
+                "{} Hook already installed in {}",
+                "✓".green().bold(),
+                target.cyan()
+            );
+            return;
+        }
+    }
+
+    // Append hook
+    use std::fs::OpenOptions;
+    match OpenOptions::new().create(true).append(true).open(&target) {
+        Ok(mut f) => {
+            use std::io::Write;
+            if let Err(e) = f.write_all(code.as_bytes()) {
+                eprintln!("{} Failed to write hook: {}", "❌".bold(), e.to_string().red());
+                return;
+            }
+            println!(
+                "{} Hook installed to {}",
+                "✓".green().bold(),
+                target.cyan()
+            );
+            println!(
+                "  Run {} or restart your terminal to activate.",
+                format!("source {}", target).dimmed()
+            );
+        }
+        Err(e) => {
+            eprintln!("{} Failed to open {}: {}", "❌".bold(), target, e.to_string().red());
         }
     }
 }
