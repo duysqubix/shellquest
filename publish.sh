@@ -22,28 +22,38 @@ BOLD='\033[1m'
 DIM='\033[2m'
 RESET='\033[0m'
 
-info()  { echo -e "${CYAN}${BOLD}>>>${RESET} $1"; }
-ok()    { echo -e "${GREEN}${BOLD}  ✓${RESET} $1"; }
-warn()  { echo -e "${YELLOW}${BOLD}  !${RESET} $1"; }
-fail()  { echo -e "${RED}${BOLD}  ✗${RESET} $1"; exit 1; }
+info() { echo -e "${CYAN}${BOLD}>>>${RESET} $1"; }
+ok() { echo -e "${GREEN}${BOLD}  ✓${RESET} $1"; }
+warn() { echo -e "${YELLOW}${BOLD}  !${RESET} $1"; }
+fail() {
+  echo -e "${RED}${BOLD}  ✗${RESET} $1"
+  exit 1
+}
 
 # ── Parse args ──
 BUMP="${1:-}"
 if [ -z "$BUMP" ]; then
-    echo "Usage: ./publish.sh <patch|minor|major|X.Y.Z>"
-    exit 1
+  echo "Usage: ./publish.sh <patch|minor|major|X.Y.Z>"
+  exit 1
 fi
 
 # ── Get current version ──
 CURRENT=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
-IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+IFS='.' read -r MAJOR MINOR PATCH <<<"$CURRENT"
 
 case "$BUMP" in
-    patch) PATCH=$((PATCH + 1)) ;;
-    minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-    major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-    *.*.*)  IFS='.' read -r MAJOR MINOR PATCH <<< "$BUMP" ;;
-    *)     fail "Invalid bump: $BUMP. Use patch, minor, major, or X.Y.Z" ;;
+patch) PATCH=$((PATCH + 1)) ;;
+minor)
+  MINOR=$((MINOR + 1))
+  PATCH=0
+  ;;
+major)
+  MAJOR=$((MAJOR + 1))
+  MINOR=0
+  PATCH=0
+  ;;
+*.*.*) IFS='.' read -r MAJOR MINOR PATCH <<<"$BUMP" ;;
+*) fail "Invalid bump: $BUMP. Use patch, minor, major, or X.Y.Z" ;;
 esac
 
 NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
@@ -62,7 +72,7 @@ command -v docker &>/dev/null || fail "docker not found"
 
 # Check for uncommitted changes
 if [ -n "$(git status --porcelain)" ]; then
-    fail "Uncommitted changes. Commit or stash first."
+  fail "Uncommitted changes. Commit or stash first."
 fi
 ok "Working tree clean"
 
@@ -82,42 +92,16 @@ ok "Pushed to GitHub"
 # ── GitHub release ──
 info "Creating GitHub release..."
 gh release create "v${NEW_VERSION}" \
-    --title "v${NEW_VERSION}" \
-    --generate-notes \
-    --latest \
-    2>&1 | tail -1
+  --title "v${NEW_VERSION}" \
+  --generate-notes \
+  --latest \
+  2>&1 | tail -1
 ok "GitHub release v${NEW_VERSION} created"
 
 # ── Cargo publish ──
 info "Publishing to crates.io..."
 cargo publish 2>&1 | tail -1
 ok "Published shellquest v${NEW_VERSION} to crates.io"
-
-# ── Docker build & push (multi-arch) ──
-info "Building & pushing Docker image (amd64 + arm64)..."
-
-# Ensure buildx builder exists
-docker buildx inspect shellquest-builder &>/dev/null 2>&1 || \
-    docker buildx create --name shellquest-builder --use &>/dev/null 2>&1
-
-if docker buildx build \
-    --builder shellquest-builder \
-    --platform linux/amd64,linux/arm64 \
-    -t "${DOCKER_REPO}:${NEW_VERSION}" \
-    -t "${DOCKER_REPO}:latest" \
-    --push . 2>&1 | tail -5; then
-    ok "Docker image pushed (amd64 + arm64)"
-else
-    warn "Docker multi-arch push failed. Falling back to local build..."
-    docker build -t "${DOCKER_REPO}:${NEW_VERSION}" -t "${DOCKER_REPO}:latest" . 2>&1 | tail -3
-    ok "Docker image built (local arch only)"
-    if docker push "${DOCKER_REPO}:${NEW_VERSION}" 2>&1 | tail -1; then
-        docker push "${DOCKER_REPO}:latest" 2>&1 | tail -1
-        ok "Docker image pushed"
-    else
-        warn "Docker push failed (not logged in?). Run: docker login"
-    fi
-fi
 
 # ── Done ──
 echo ""
