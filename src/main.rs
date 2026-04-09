@@ -278,8 +278,7 @@ fn hook_code(shell: &str) -> Option<String> {
 __sq_hook() {
     local exit_code=$?
     local cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]* *//')
-    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code" &
-    disown 2>/dev/null
+    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
 }
 PROMPT_COMMAND="__sq_hook;$PROMPT_COMMAND"
 "#.to_string()),
@@ -288,8 +287,7 @@ PROMPT_COMMAND="__sq_hook;$PROMPT_COMMAND"
 __sq_hook() {
     local exit_code=$?
     local cmd=$(fc -ln -1)
-    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code" &
-    disown 2>/dev/null
+    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
 }
 precmd_functions+=(__sq_hook)
 "#.to_string()),
@@ -298,8 +296,7 @@ precmd_functions+=(__sq_hook)
 function __sq_hook --on-event fish_postexec
     set -l cmd $argv[1]
     set -l exit_code $status
-    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code" &
-    disown 2>/dev/null
+    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
 end
 "#.to_string()),
         _ => None,
