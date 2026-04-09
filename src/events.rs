@@ -220,12 +220,14 @@ fn handle_craft(state: &mut GameState, rng: &mut impl Rng) {
     }
 }
 
+pub(crate) fn emit_level_up(state: &mut GameState) {
+    let plain = format!("LEVEL UP! You are now level {}! Title: {}", state.character.level, state.character.title);
+    display::print_level_up(&color_level_up(&state.character));
+    state.add_journal(JournalEntry::new(EventType::LevelUp, plain));
+}
+
 fn check_level_up(state: &mut GameState, leveled: bool) {
-    if leveled {
-        let plain = format!("LEVEL UP! You are now level {}! Title: {}", state.character.level, state.character.title);
-        display::print_level_up(&color_level_up(&state.character));
-        state.add_journal(JournalEntry::new(EventType::LevelUp, plain));
-    }
+    if leveled { emit_level_up(state); }
 }
 
 fn handle_quest(state: &mut GameState, rng: &mut impl Rng) {
@@ -720,18 +722,157 @@ fn combat(state: &mut GameState, rng: &mut impl Rng, monster_name: &str, monster
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::character::{Character, Class, Item, ItemSlot, Race, Rarity};
+    use crate::state::GameState;
+
+    fn make_state() -> GameState {
+        GameState::new(Character::new("Test".to_string(), Class::Warrior, Race::Human))
+    }
+
+    fn make_item(name: &str, slot: ItemSlot, power: i32, rarity: Rarity) -> Item {
+        Item { name: name.to_string(), slot, power, rarity }
+    }
+
+    #[test]
+    fn add_to_inventory_adds_item_when_space_available() {
+        let mut state = make_state();
+        add_to_inventory(&mut state, make_item("Sword", ItemSlot::Weapon, 5, Rarity::Common));
+        assert_eq!(state.character.inventory.len(), 1);
+        assert_eq!(state.character.inventory[0].name, "Sword");
+    }
+
+    #[test]
+    fn add_to_inventory_drops_weakest_droppable_when_full() {
+        let mut state = make_state();
+        for i in 0..20 {
+            state.character.inventory.push(make_item(&format!("Common {}", i), ItemSlot::Weapon, i as i32 + 1, Rarity::Common));
+        }
+        add_to_inventory(&mut state, make_item("New Sword", ItemSlot::Weapon, 99, Rarity::Rare));
+        assert_eq!(state.character.inventory.len(), 20);
+        assert!(state.character.inventory.iter().any(|i| i.name == "New Sword"));
+        assert!(!state.character.inventory.iter().any(|i| i.name == "Common 0"));
+    }
+
+    #[test]
+    fn add_to_inventory_does_not_drop_epics_when_full() {
+        let mut state = make_state();
+        for i in 0..20 {
+            state.character.inventory.push(make_item(&format!("Epic {}", i), ItemSlot::Weapon, i as i32 + 1, Rarity::Epic));
+        }
+        add_to_inventory(&mut state, make_item("New Sword", ItemSlot::Weapon, 5, Rarity::Common));
+        assert_eq!(state.character.inventory.len(), 20);
+        assert!(!state.character.inventory.iter().any(|i| i.name == "New Sword"));
+        assert_eq!(state.character.inventory.iter().filter(|i| matches!(i.rarity, Rarity::Epic)).count(), 20);
+    }
+
+    #[test]
+    fn add_to_inventory_does_not_drop_legendaries_when_full() {
+        let mut state = make_state();
+        for i in 0..20 {
+            state.character.inventory.push(make_item(&format!("Legendary {}", i), ItemSlot::Weapon, i as i32 + 1, Rarity::Legendary));
+        }
+        add_to_inventory(&mut state, make_item("Common Sword", ItemSlot::Weapon, 5, Rarity::Common));
+        assert_eq!(state.character.inventory.len(), 20);
+        assert!(!state.character.inventory.iter().any(|i| i.name == "Common Sword"));
+        assert_eq!(state.character.inventory.iter().filter(|i| matches!(i.rarity, Rarity::Legendary)).count(), 20);
+    }
+
+    #[test]
+    fn add_to_inventory_drops_weakest_droppable_from_mixed_inventory() {
+        let mut state = make_state();
+        for i in 0..18 {
+            state.character.inventory.push(make_item(&format!("Epic {}", i), ItemSlot::Weapon, 50 + i as i32, Rarity::Epic));
+        }
+        state.character.inventory.push(make_item("Weak Common", ItemSlot::Weapon, 1, Rarity::Common));
+        state.character.inventory.push(make_item("Medium Rare", ItemSlot::Weapon, 10, Rarity::Rare));
+        add_to_inventory(&mut state, make_item("New Epic", ItemSlot::Weapon, 99, Rarity::Epic));
+        assert_eq!(state.character.inventory.len(), 20);
+        assert!(state.character.inventory.iter().any(|i| i.name == "New Epic"));
+        assert!(!state.character.inventory.iter().any(|i| i.name == "Weak Common"));
+        assert!(state.character.inventory.iter().any(|i| i.name == "Medium Rare"));
+    }
+
+    #[test]
+    fn add_to_inventory_drops_rare_before_uncommon_if_rare_is_weaker() {
+        let mut state = make_state();
+        for i in 0..18 {
+            state.character.inventory.push(make_item(&format!("Epic {}", i), ItemSlot::Weapon, 50 + i as i32, Rarity::Epic));
+        }
+        state.character.inventory.push(make_item("Strong Uncommon", ItemSlot::Weapon, 20, Rarity::Uncommon));
+        state.character.inventory.push(make_item("Weak Rare", ItemSlot::Weapon, 5, Rarity::Rare));
+        add_to_inventory(&mut state, make_item("New Weapon", ItemSlot::Weapon, 99, Rarity::Legendary));
+        assert_eq!(state.character.inventory.len(), 20);
+        assert!(state.character.inventory.iter().any(|i| i.name == "New Weapon"));
+        assert!(!state.character.inventory.iter().any(|i| i.name == "Weak Rare"));
+        assert!(state.character.inventory.iter().any(|i| i.name == "Strong Uncommon"));
+    }
+}
+
+fn full_inventory_message(item: &crate::character::Item) -> String {
+    use crate::character::ItemSlot;
+    let n = &item.name;
+    let mut rng = rand::thread_rng();
+    let msgs: &[&str] = match item.slot {
+        ItemSlot::Weapon => &[
+            "{} reaches for your belt, but your legendary arsenal has no vacancy.",
+            "Your mythic blades hold council and vote to reject {}. Legends only.",
+            "{} dissolves — twenty legendary weapons leave no room.",
+        ],
+        ItemSlot::Armor => &[
+            "Your legendary armor rack is full — {} finds no peg to hang on.",
+            "Twenty legendary suits crowd your wardrobe. {} crumples sadly into the ether.",
+            "{} tries to squeeze in, but your hall of legendary protection refuses.",
+        ],
+        ItemSlot::Ring => &[
+            "Every finger already bears a legendary band. {} rolls sadly away into the void.",
+            "Your mythic jewelry box is sealed. {} vanishes with a soft chime.",
+            "{} spins longingly, but your legend-grade ring collection has no vacancy.",
+        ],
+        ItemSlot::Potion => &[
+            "Your legendary pouch rejects {}. It bubbles sadly and evaporates.",
+            "{} dissolves before you can grab it — your pack brims with legendary brews.",
+            "Twenty epic concoctions stare down {}. It doesn't belong here. Poof.",
+        ],
+    };
+    let idx = rng.gen_range(0..msgs.len());
+    msgs[idx].replace("{}", n)
+}
+
 fn add_to_inventory(state: &mut GameState, item: crate::character::Item) {
     const MAX_INVENTORY: usize = 20;
-    if state.character.inventory.len() >= MAX_INVENTORY {
-        // Drop lowest-power item to make room
-        if let Some(min_idx) = state.character.inventory.iter().enumerate().min_by_key(|(_, i)| i.power).map(|(idx, _)| idx) {
-            let dropped = state.character.inventory.remove(min_idx);
-            if item.power <= dropped.power {
-                // New item is worse, just drop it instead
-                state.character.inventory.push(dropped);
-                return;
-            }
-        }
+    if state.character.inventory.len() < MAX_INVENTORY {
+        state.character.inventory.push(item);
+        return;
     }
-    state.character.inventory.push(item);
+
+    let droppable_idx = state
+        .character
+        .inventory
+        .iter()
+        .enumerate()
+        .filter(|(_, i)| i.rarity.is_droppable())
+        .min_by_key(|(_, i)| i.power)
+        .map(|(idx, _)| idx);
+
+    if let Some(idx) = droppable_idx {
+        let dropped = state.character.inventory.remove(idx);
+        eprintln!(
+            "{} {} [{}] was discarded to make room for {}!",
+            "🗑️ ".bold(),
+            dropped.name.dimmed(),
+            format!("{}", dropped.rarity).dimmed(),
+            display::color_item_inline(&item.name, &item.rarity)
+        );
+        state.character.inventory.push(item);
+    } else {
+        let msg = full_inventory_message(&item);
+        eprintln!("{} {}", "📦".bold(), msg.yellow().italic());
+    }
+}
+
+pub(crate) fn add_to_inventory_pub(state: &mut GameState, item: crate::character::Item) {
+    add_to_inventory(state, item);
 }
