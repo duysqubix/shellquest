@@ -139,21 +139,21 @@ precmd_functions+=(__sq_hook)
 
 Not every command triggers something. Each command type has its own trigger chance:
 
-| Trigger | Chance |
-|---------|--------|
-| `git commit` (craft) | Always |
-| `git push` (quest) | Always |
-| `cargo build` (forge) | Always |
-| `docker compose` (orchestra) | 1 in 3 |
-| `rm` (angry spirit) | 1 in 3 |
-| `kill` (banish) | 1 in 3 |
-| `sudo` (power surge) | 1 in 4 |
-| `ssh`/`curl` (portal) | 1 in 4 |
-| `grep` (scrying) | 1 in 4 |
-| `cat`/`less` (familiar) | 1 in 6 |
-| `vim`/`nvim` (meditation) | 1 in 5 |
-| Everything else | ~15% (3 in 20) |
-| Failed command (trap) | Always |
+| Trigger | Chance | Effect |
+|---------|--------|--------|
+| `git commit` (craft) | Always | |
+| `git push` (quest) | Always | |
+| `cargo build` (forge) | Always | |
+| `docker compose` (orchestra) | 1 in 3 | |
+| `rm` (angry spirit) | 1 in 3 | |
+| `kill` (banish) | 1 in 3 | |
+| `sudo` (power surge) | 1 in 4 | |
+| `ssh`/`curl` (portal) | 1 in 4 | |
+| `grep` (scrying) | 1 in 4 | |
+| `cat`/`less` (familiar) | 1 in 6 | |
+| `vim`/`nvim` (meditation) | 1 in 5 | |
+| Everything else | ~15% (3 in 20) | |
+| Failed commands (trap) | 25% chance | Takes damage |
 
 ---
 
@@ -215,6 +215,36 @@ Not every command triggers something. Each command type has its own trigger chan
 - **150 Levels** with scaling XP curve
 - **15 Titles** from *Terminal Novice* to *Root Overlord*
 
+Each class has unique flavor text for every game event -- combat victories, quests, level-ups, traps, and more. Your Wizard commits "another page to the grimoire"; your Warrior "commits another battle-scroll to the archives."
+
+### Class Affinities
+Each class earns +50% XP on commands that match their specialization:
+
+| Class | Bonus XP Commands |
+|-------|-------------------|
+| Wizard | `python`, `node`, `ruby`, `vim`, `nvim`, `emacs`, `man`, `tldr` |
+| Warrior | `cargo`, `make`, `cmake`, `gcc`, `ninja` |
+| Rogue | `grep`, `rg`, `ssh`, `find`, `ls` |
+| Ranger | `curl`, `wget`, `docker`, `kubectl`, `terraform` |
+| Necromancer | `kill`, `pkill`, `rm`, `git` |
+
+---
+
+## Death & Permadeath
+
+### Standard Mode
+When you die (HP reaches 0), you're knocked back but not out:
+- XP resets to 0 for your current level
+- You lose 15% of your gold
+- HP restores to half your max
+
+### Permadeath Mode
+Enable at character creation (`sq init`). If you die:
+- A eulogy is printed with your character's final stats
+- Your save file is permanently deleted -- all is lost
+
+Permadeath status is shown on `sq status` with a `☠ PERMADEATH` indicator.
+
 ---
 
 ## Loot
@@ -248,6 +278,8 @@ Your current directory determines the biome. Higher danger = tougher monsters bu
 | `.git` | The Time Vaults | 3 | *Echoes of past commits whisper around you...* |
 | `/dev` | The Device Caverns | 4 | *Strange devices hum with raw power...* |
 | `node_modules` | The Abyss | 5 | *An infinite void of dependencies...* |
+
+> **Zone XP bonus:** Higher-danger zones award more XP. Working in `/tmp` (danger 3) gives 1.5× XP; `node_modules` (danger 5) gives 2×.
 
 ---
 
@@ -295,7 +327,7 @@ Prestige title tiers: **Prestigious** > **Exalted** > **Transcendent** > **Mythi
 |---------|-------------|
 | `sq init` | Create a new character |
 | `sq status` | View your character sheet |
-| `sq inventory` | Check your gear and potions |
+| `sq inventory` / `sq inv` | Check your gear and potions |
 | `sq journal` | Adventure log (last 20 events) |
 | `sq shop` | Browse the shop (must be in home directory) |
 | `sq buy <number>` | Buy item by number from `sq shop` list |
