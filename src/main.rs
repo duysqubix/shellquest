@@ -750,24 +750,52 @@ fn fuzzy_match_name(item_name: &str, query: &str) -> bool {
         .all(|token| name_lower.contains(token))
 }
 
-fn find_inventory_item(game: &state::GameState, name: &str) -> Option<usize> {
-    let name_lower = name.to_lowercase();
-    game.character
-        .inventory
-        .iter()
-        .position(|i| i.name.to_lowercase() == name_lower)
-        .or_else(|| {
-            game.character
-                .inventory
-                .iter()
-                .position(|i| i.name.to_lowercase().contains(&name_lower))
+fn find_inventory_items(game: &state::GameState, query: &str) -> Vec<usize> {
+    let query_lower = query.to_lowercase();
+    let inv = &game.character.inventory;
+    let mut matched: Vec<usize> = (0..inv.len())
+        .filter(|&i| {
+            let name_lower = inv[i].name.to_lowercase();
+            name_lower == query_lower
+                || name_lower.contains(&query_lower)
+                || fuzzy_match_name(&inv[i].name, query)
         })
-        .or_else(|| {
-            game.character
-                .inventory
-                .iter()
-                .position(|i| fuzzy_match_name(&i.name, name))
-        })
+        .collect();
+    matched.dedup();
+    matched
+}
+
+fn find_inventory_item(game: &state::GameState, name: &str) -> Result<Option<usize>, String> {
+    let (query, n) = if let Some(dot_pos) = name.rfind('.') {
+        let suffix = &name[dot_pos + 1..];
+        match suffix.parse::<usize>() {
+            Ok(0) => {
+                return Err("Item index must be 1 or higher (e.g. potion.1)".to_string());
+            }
+            Ok(n) => (&name[..dot_pos], n),
+            Err(_) => (name, 1usize),
+        }
+    } else {
+        (name, 1usize)
+    };
+
+    let matches = find_inventory_items(game, query);
+
+    if matches.is_empty() {
+        return Ok(None);
+    }
+
+    match matches.get(n - 1) {
+        Some(&idx) => Ok(Some(idx)),
+        None => Err(format!(
+            "Only {} '{}' item(s) found — use {}.1 … {}.{}",
+            matches.len(),
+            query,
+            query,
+            query,
+            matches.len()
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -828,37 +856,37 @@ mod tests {
     #[test]
     fn find_inventory_item_exact_match() {
         let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
-        assert_eq!(find_inventory_item(&state, "Big Sword of Awesome"), Some(0));
+        assert_eq!(find_inventory_item(&state, "Big Sword of Awesome"), Ok(Some(0)));
     }
 
     #[test]
     fn find_inventory_item_case_insensitive_exact() {
         let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
-        assert_eq!(find_inventory_item(&state, "big sword of awesome"), Some(0));
+        assert_eq!(find_inventory_item(&state, "big sword of awesome"), Ok(Some(0)));
     }
 
     #[test]
     fn find_inventory_item_substring_match() {
         let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
-        assert_eq!(find_inventory_item(&state, "big sw"), Some(0));
+        assert_eq!(find_inventory_item(&state, "big sw"), Ok(Some(0)));
     }
 
     #[test]
     fn find_inventory_item_fuzzy_non_contiguous_tokens() {
         let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
-        assert_eq!(find_inventory_item(&state, "big of"), Some(0));
+        assert_eq!(find_inventory_item(&state, "big of"), Ok(Some(0)));
     }
 
     #[test]
     fn find_inventory_item_fuzzy_case_insensitive() {
         let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
-        assert_eq!(find_inventory_item(&state, "BIG OF"), Some(0));
+        assert_eq!(find_inventory_item(&state, "BIG OF"), Ok(Some(0)));
     }
 
     #[test]
     fn find_inventory_item_no_match_returns_none() {
         let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
-        assert_eq!(find_inventory_item(&state, "hammer"), None);
+        assert_eq!(find_inventory_item(&state, "hammer"), Ok(None));
     }
 
     #[test]
@@ -867,7 +895,7 @@ mod tests {
             item("Small Shield"),
             item("Big Sword of Awesome"),
         ]);
-        assert_eq!(find_inventory_item(&state, "Big Sword of Awesome"), Some(1));
+        assert_eq!(find_inventory_item(&state, "Big Sword of Awesome"), Ok(Some(1)));
     }
 
     #[test]
@@ -876,7 +904,127 @@ mod tests {
             item("Big Dagger of Doom"),
             item("Big Sword of Awesome"),
         ]);
-        assert_eq!(find_inventory_item(&state, "big of"), Some(0));
+        assert_eq!(find_inventory_item(&state, "big of"), Ok(Some(0)));
+    }
+
+    #[test]
+    fn find_all_empty_inventory_returns_empty() {
+        let state = make_state_with_items(vec![]);
+        assert_eq!(find_inventory_items(&state, "potion"), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn find_all_single_word_matches_substring() {
+        let state = make_state_with_items(vec![
+            item("Potion of Coffee"),
+            item("Rusty Pipe"),
+            item("Potion of Sorrow"),
+        ]);
+        assert_eq!(find_inventory_items(&state, "potion"), vec![0, 2]);
+    }
+
+    #[test]
+    fn find_all_multi_token_requires_all_tokens() {
+        let state = make_state_with_items(vec![
+            item("Big Sword of Awesome"),
+            item("Small Dagger"),
+            item("Big Shield"),
+        ]);
+        assert_eq!(find_inventory_items(&state, "big sword"), vec![0]);
+    }
+
+    #[test]
+    fn find_all_case_insensitive() {
+        let state = make_state_with_items(vec![item("Potion of Coffee"), item("Rusty Pipe")]);
+        assert_eq!(find_inventory_items(&state, "POTION"), vec![0]);
+    }
+
+    #[test]
+    fn find_all_no_match_returns_empty() {
+        let state = make_state_with_items(vec![item("Rusty Pipe")]);
+        assert_eq!(find_inventory_items(&state, "xyz"), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn find_all_exact_and_partial_both_included_in_order() {
+        let state = make_state_with_items(vec![
+            item("Rusty Pipe"),
+            item("Pipewright Gauntlets"),
+            item("Sword"),
+        ]);
+        let result = find_inventory_items(&state, "pipe");
+        assert_eq!(result, vec![0, 1]);
+    }
+
+    #[test]
+    fn find_all_returns_stable_inventory_order() {
+        let state = make_state_with_items(vec![
+            item("Potion of Sorrow"),
+            item("Potion of Coffee"),
+            item("Rusty Pipe"),
+        ]);
+        let result = find_inventory_items(&state, "potion");
+        assert_eq!(result, vec![0, 1]);
+    }
+
+    #[test]
+    fn selector_no_suffix_returns_first_match() {
+        let state = make_state_with_items(vec![item("Potion of Coffee"), item("Potion of Sorrow")]);
+        assert_eq!(find_inventory_item(&state, "potion"), Ok(Some(0)));
+    }
+
+    #[test]
+    fn selector_explicit_dot_one_returns_first_match() {
+        let state = make_state_with_items(vec![item("Potion of Coffee"), item("Potion of Sorrow")]);
+        assert_eq!(find_inventory_item(&state, "potion.1"), Ok(Some(0)));
+    }
+
+    #[test]
+    fn selector_dot_two_returns_second_match() {
+        let state = make_state_with_items(vec![item("Potion of Coffee"), item("Potion of Sorrow")]);
+        assert_eq!(find_inventory_item(&state, "potion.2"), Ok(Some(1)));
+    }
+
+    #[test]
+    fn selector_dot_zero_returns_err() {
+        let state = make_state_with_items(vec![item("Potion of Coffee")]);
+        let result = find_inventory_item(&state, "potion.0");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("1 or higher"));
+    }
+
+    #[test]
+    fn selector_n_exceeds_match_count_returns_err() {
+        let state = make_state_with_items(vec![item("Potion of Coffee"), item("Potion of Sorrow")]);
+        let result = find_inventory_item(&state, "potion.5");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("Only 2"), "expected 'Only 2' in: {msg}");
+        assert!(msg.contains("potion"), "expected query name in: {msg}");
+    }
+
+    #[test]
+    fn selector_non_numeric_suffix_treated_as_query() {
+        let state = make_state_with_items(vec![item("Potion of Coffee")]);
+        assert_eq!(find_inventory_item(&state, "Potion.of.Coffee"), Ok(None));
+    }
+
+    #[test]
+    fn selector_no_match_no_suffix_returns_ok_none() {
+        let state = make_state_with_items(vec![item("Rusty Pipe")]);
+        assert_eq!(find_inventory_item(&state, "xyz"), Ok(None));
+    }
+
+    #[test]
+    fn selector_no_match_with_valid_suffix_returns_ok_none() {
+        let state = make_state_with_items(vec![item("Rusty Pipe")]);
+        assert_eq!(find_inventory_item(&state, "xyz.2"), Ok(None));
+    }
+
+    #[test]
+    fn selector_dot_n_on_exact_match_works() {
+        let state = make_state_with_items(vec![item("Rusty Pipe"), item("Rusty Sword")]);
+        assert_eq!(find_inventory_item(&state, "rusty.2"), Ok(Some(1)));
     }
 }
 
@@ -900,13 +1048,17 @@ fn cmd_equip(name: &str) {
     };
 
     let idx = match find_inventory_item(&game, name) {
-        Some(i) => i,
-        None => {
+        Ok(Some(i)) => i,
+        Ok(None) => {
             println!(
                 "{} No item matching {} in your inventory.",
                 "⚠️".yellow(),
                 format!("\"{}\"", name).white().bold()
             );
+            return;
+        }
+        Err(msg) => {
+            println!("{} {}", "⚠️".yellow(), msg);
             return;
         }
     };
@@ -979,13 +1131,17 @@ fn cmd_wield(name: &str) {
     };
 
     let idx = match find_inventory_item(&game, name) {
-        Some(i) => i,
-        None => {
+        Ok(Some(i)) => i,
+        Ok(None) => {
             println!(
                 "{} No item matching {} in your inventory.",
                 "⚠️".yellow(),
                 format!("\"{}\"", name).white().bold()
             );
+            return;
+        }
+        Err(msg) => {
+            println!("{} {}", "⚠️".yellow(), msg);
             return;
         }
     };
@@ -1045,13 +1201,17 @@ fn cmd_drink(name: &str) {
     };
 
     let idx = match find_inventory_item(&game, name) {
-        Some(i) => i,
-        None => {
+        Ok(Some(i)) => i,
+        Ok(None) => {
             println!(
                 "{} No item matching {} in your inventory.",
                 "⚠️".yellow(),
                 format!("\"{}\"", name).white().bold()
             );
+            return;
+        }
+        Err(msg) => {
+            println!("{} {}", "⚠️".yellow(), msg);
             return;
         }
     };
@@ -1104,13 +1264,17 @@ fn cmd_drop_item(name: &str) {
     };
 
     let idx = match find_inventory_item(&game, name) {
-        Some(i) => i,
-        None => {
+        Ok(Some(i)) => i,
+        Ok(None) => {
             println!(
                 "{} No item matching {} in your inventory.",
                 "⚠️".yellow(),
                 format!("\"{}\"", name).white().bold()
             );
+            return;
+        }
+        Err(msg) => {
+            println!("{} {}", "⚠️".yellow(), msg);
             return;
         }
     };
