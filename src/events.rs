@@ -171,6 +171,12 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
     if state.character.hp < state.character.max_hp && rng.gen_ratio(1, 4) {
         state.character.heal(1);
     }
+
+    // Boss tick (runs every tick if a boss is active)
+    crate::boss::tick_boss(state);
+
+    // Passive boss spawn check (very rare world event)
+    crate::boss::maybe_spawn(state);
 }
 
 fn handle_trap(state: &mut GameState, rng: &mut impl Rng) {
