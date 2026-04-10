@@ -18,7 +18,8 @@ All Rust source code for the `sq` binary. Organized as a flat module structure �
 | `display.rs` | Terminal rendering: colored output helpers, rarity-tiered loot formatting (Common through Legendary with box-drawing), status sheet with HP/XP bars, inventory list, journal display. All game output uses `eprintln!` |
 | `loot.rs` | Loot system: 150+ items across 5 rarity tiers with weighted drop rates (Common 70%, Uncommon 25%, Rare 4%, Epic 0.99%, Legendary 0.01%), organized by slot (Weapon, Armor, Ring, Potion) with power ranges |
 | `zones.rs` | Zone mapping: converts filesystem paths to themed zones (e.g., `/tmp` = "The Wasteland", `node_modules` = "The Abyss") with danger levels and colors, used for scaling combat and loot |
-| `state.rs` | Persistence: `GameState` struct wrapping character + journal + timestamps, atomic save via temp-file-then-rename to `~/.shellquest/save.json`, directory permissions set to 0o700 |
+| `sage.rs` | Update notifier: checks crates.io every 24h, guarantees sage appears once on the first tick a new version is detected, then falls back to 1/50 random (max 3×/day). Tracks `last_announced_version` in `GameState` to prevent repeat first-time announcements. |
+| `state.rs` | Persistence: `GameState` struct wrapping character + journal + timestamps + `permadeath: bool` + version-check cache (`latest_version`, `last_announced_version`), atomic save via temp-file-then-rename to `~/.shellquest/save.json` |
 | `journal.rs` | Journal system: `JournalEntry` with timestamp + `EventType` enum (Combat, Loot, Travel, Discovery, LevelUp, Death, Quest, Craft), capped at 100 entries |
 
 ## For AI Agents
@@ -36,7 +37,7 @@ All Rust source code for the `sq` binary. Organized as a flat module structure �
 ### Testing Requirements
 - `cargo build` — must compile without errors (`cargo clippy` is not installed in the current toolchain — skip it)
 - Manually test with: `sq tick --cmd "git commit" --cwd "/tmp" --exit-code 0` (triggers craft event)
-- Test failed commands: `sq tick --cmd "bad" --cwd "." --exit-code 1` (triggers trap)
+- Test failed commands: `sq tick --cmd "bad" --cwd "." --exit-code 1` — triggers trap at 25% chance (run several times to confirm ~1/4 trigger rate)
 - `cd ~ && sq shop` → shop only works from home directory; shows numbered item list
 - `cd ~ && sq buy 1` → buy item by **number** (1-indexed), not by name
 - Verify loot balance: ensure new items have power ranges consistent with their rarity tier
