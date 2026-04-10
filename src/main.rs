@@ -27,6 +27,7 @@ enum Commands {
     /// View your character sheet
     Status,
     /// Check your inventory
+    #[clap(alias = "inv")]
     Inventory,
     /// View your adventure journal
     Journal,
