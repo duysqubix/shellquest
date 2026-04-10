@@ -42,6 +42,9 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
   - `cd ~ && sq buy 1` → buy item by **number** (1-indexed), not by name
   - Force boss spawn for testing: temporarily set `gen_ratio(1, 1)` in `maybe_spawn()` in `src/boss.rs`, run `sq tick --cmd "ls" --cwd "." --exit-code 0`, then revert
   - Boss state lives at `active_boss` in the save file — can be cleared manually via JSON edit of `~/.shellquest/save.json`
+  - Test permadeath mode: set `"permadeath": true` in save.json, set `"hp": 1`, run `sq tick --cmd "bad" --cwd "." --exit-code 1` — eulogy should print, save file should be deleted
+  - Test class messages: run `sq tick --cmd "git commit" --cwd "." --exit-code 0` then `sq journal` — message should reflect your class flavor (Wizard: grimoire/arcane, Warrior: battle-scroll, etc.)
+  - Test zone XP scaling: run ticks from `$HOME` (danger 1) vs `/tmp` (danger 3) — XP in journal should be ~1.5× higher in /tmp
 
 ### Common Patterns
 - Serde for all data structures (JSON serialization)
