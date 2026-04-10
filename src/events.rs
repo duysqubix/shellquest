@@ -6,6 +6,36 @@ use crate::zones::{zone_from_path, travel_message};
 use colored::*;
 use rand::Rng;
 
+/// Scales base XP by zone danger level.
+/// danger 1 = 1.0×, danger 2 = 1.25×, danger 3 = 1.5×, danger 4 = 1.75×, danger 5 = 2.0×
+fn scaled_xp(base: u32, danger: u32) -> u32 {
+    let multiplier = 1.0 + (danger.saturating_sub(1) as f32) * 0.25;
+    ((base as f32) * multiplier).round() as u32
+}
+
+/// Returns 1.5 if the player's class has affinity with the given base command, else 1.0.
+fn affinity_multiplier(class: &crate::character::Class, cmd: &str) -> f32 {
+    use crate::character::Class;
+    let affinities: &[&str] = match class {
+        Class::Wizard      => &["python", "python3", "node", "ruby", "vim", "nvim", "emacs", "man", "tldr", "jupyter"],
+        Class::Warrior     => &["cargo", "make", "cmake", "gcc", "g++", "ninja", "meson", "mvn", "gradle"],
+        Class::Rogue       => &["grep", "rg", "ag", "ssh", "find", "fd", "ls", "eza", "locate"],
+        Class::Ranger      => &["curl", "wget", "http", "docker", "kubectl", "ansible", "terraform", "helm"],
+        Class::Necromancer => &["kill", "pkill", "killall", "rm", "del", "git", "shred"],
+    };
+    if affinities.iter().any(|&a| cmd == a || cmd.starts_with(&format!("{} ", a))) {
+        1.5
+    } else {
+        1.0
+    }
+}
+
+/// Apply both zone scaling and class affinity to a base XP amount.
+fn final_xp(base: u32, danger: u32, class: &crate::character::Class, cmd: &str) -> u32 {
+    let zone_scaled = scaled_xp(base, danger);
+    (zone_scaled as f32 * affinity_multiplier(class, cmd)).round() as u32
+}
+
 fn color_level_up(c: &crate::character::Character) -> String {
     format!("{} You are now level {}! Title: {}",
         "LEVEL UP!".yellow().bold(),
@@ -814,6 +844,40 @@ mod tests {
         assert!(state.character.inventory.iter().any(|i| i.name == "New Weapon"));
         assert!(!state.character.inventory.iter().any(|i| i.name == "Weak Rare"));
         assert!(state.character.inventory.iter().any(|i| i.name == "Strong Uncommon"));
+    }
+
+    #[test]
+    fn scaled_xp_danger_1_returns_base() {
+        assert_eq!(scaled_xp(20, 1), 20);
+    }
+
+    #[test]
+    fn scaled_xp_danger_3_returns_150_percent() {
+        assert_eq!(scaled_xp(20, 3), 30);
+    }
+
+    #[test]
+    fn scaled_xp_danger_5_returns_double() {
+        assert_eq!(scaled_xp(20, 5), 40);
+    }
+
+    #[test]
+    fn affinity_multiplier_wizard_python_returns_1_5() {
+        use crate::character::Class;
+        assert_eq!(affinity_multiplier(&Class::Wizard, "python"), 1.5);
+    }
+
+    #[test]
+    fn affinity_multiplier_warrior_no_affinity_returns_1_0() {
+        use crate::character::Class;
+        assert_eq!(affinity_multiplier(&Class::Warrior, "ls"), 1.0);
+    }
+
+    #[test]
+    fn final_xp_applies_both_bonuses() {
+        use crate::character::Class;
+        // Wizard in danger-3 zone with python: base 20 * 1.5 (zone) * 1.5 (affinity) = 45
+        assert_eq!(final_xp(20, 3, &Class::Wizard, "python"), 45);
     }
 }
 
