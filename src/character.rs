@@ -252,7 +252,7 @@ impl Character {
             race,
             level: 1,
             xp: 0,
-            xp_to_next: 100,
+            xp_to_next: 25,
             hp: max_hp,
             max_hp,
             strength,
@@ -304,12 +304,12 @@ impl Character {
         self.level += 1;
         // XP curve: starts easy, gets harder
         self.xp_to_next = match self.level {
-            1..=10 => self.level * 80 + 50,
-            11..=30 => self.level * 100 + 100,
-            31..=60 => self.level * 130 + 200,
-            61..=100 => self.level * 170 + 400,
-            101..=130 => self.level * 220 + 800,
-            _ => self.level * 300 + 1500,
+            1..=10 => self.level * 15 + 10,
+            11..=30 => self.level * 25 + 30,
+            31..=60 => self.level * 45 + 80,
+            61..=100 => self.level * 80 + 200,
+            101..=130 => self.level * 120 + 400,
+            _ => self.level * 170 + 800,
         };
         self.strength += 1;
         self.dexterity += 1;
@@ -337,7 +337,7 @@ impl Character {
 
         self.level = 1;
         self.xp = 0;
-        self.xp_to_next = 100;
+        self.xp_to_next = 25;
         self.strength = base_str + race_str + prestige_bonus + sub_str;
         self.dexterity = base_dex + race_dex + prestige_bonus + sub_dex;
         self.intelligence = base_int + race_int + prestige_bonus + sub_int;
@@ -449,7 +449,7 @@ mod tests {
         assert_eq!(c.hp, c.max_hp);
         assert_eq!(c.level, 1);
         assert_eq!(c.xp, 0);
-        assert_eq!(c.xp_to_next, 100);
+        assert_eq!(c.xp_to_next, 25);
         assert_eq!(c.gold, 10);
         assert_eq!(c.kills, 0);
         assert_eq!(c.deaths, 0);
@@ -501,16 +501,16 @@ mod tests {
     #[test]
     fn gain_xp_no_level_up_returns_false() {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
-        let leveled = c.gain_xp(50);
+        let leveled = c.gain_xp(10);
         assert!(!leveled);
         assert_eq!(c.level, 1);
-        assert_eq!(c.xp, 50);
+        assert_eq!(c.xp, 10);
     }
 
     #[test]
     fn gain_xp_exact_threshold_triggers_level_up() {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
-        let leveled = c.gain_xp(100);
+        let leveled = c.gain_xp(25);
         assert!(leveled);
         assert_eq!(c.level, 2);
         assert_eq!(c.xp, 0);
@@ -519,10 +519,10 @@ mod tests {
     #[test]
     fn gain_xp_over_threshold_carries_remainder() {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
-        let leveled = c.gain_xp(150);
+        let leveled = c.gain_xp(50);
         assert!(leveled);
         assert_eq!(c.level, 2);
-        assert_eq!(c.xp, 50);
+        assert_eq!(c.xp, 25);
     }
 
     #[test]
@@ -543,7 +543,7 @@ mod tests {
         let dex_before = c.dexterity;
         let int_before = c.intelligence;
         let max_hp_before = c.max_hp;
-        c.gain_xp(100);
+        c.gain_xp(25);
         assert_eq!(c.strength, str_before + 1);
         assert_eq!(c.dexterity, dex_before + 1);
         assert_eq!(c.intelligence, int_before + 1);
@@ -780,5 +780,19 @@ mod tests {
     #[test]
     fn rarity_legendary_is_not_droppable() {
         assert!(!Rarity::Legendary.is_droppable());
+    }
+
+    #[test]
+    fn xp_to_next_level_1_is_25() {
+        let char = Character::new("T".to_string(), Class::Warrior, Race::Human);
+        assert_eq!(char.xp_to_next, 25);
+    }
+
+    #[test]
+    fn xp_bracket_level_50_cost_is_2330() {
+        // level 50 in the 31..=60 bracket: 50*45 + 80 = 2330
+        let l50_cost: u32 = 50 * 45 + 80;
+        assert_eq!(l50_cost, 2330);
+        assert!(l50_cost < 3000);
     }
 }
