@@ -21,6 +21,9 @@ pub struct GameState {
     /// When the sage last appeared (to avoid spamming)
     #[serde(default)]
     pub last_sage_shown: Option<DateTime<Utc>>,
+    /// The last version we showed a first-time announcement for (so we only guarantee it once)
+    #[serde(default)]
+    pub last_announced_version: Option<String>,
     /// Cached shop items
     #[serde(default)]
     pub shop_items: Vec<crate::character::Item>,
@@ -44,6 +47,7 @@ impl GameState {
             latest_version: None,
             last_version_check: None,
             last_sage_shown: None,
+            last_announced_version: None,
             shop_items: Vec::new(),
             shop_refreshed: None,
             active_boss: None,
