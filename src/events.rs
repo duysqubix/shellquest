@@ -688,20 +688,48 @@ fn combat(
             state.add_journal(JournalEntry::new(EventType::Combat, plain));
             check_level_up(state, leveled);
         } else {
-            let gold_lost = gold_before.saturating_sub(state.character.gold);
-            let (plain, colored) = crate::messages::death_normal(&state.character.class, monster_name, gold_lost);
-            display::print_combat_tough(&colored, true);
-            state.add_journal(JournalEntry::new(EventType::Death, plain));
+            if state.permadeath {
+                crate::display::print_permadeath_eulogy(&state.character, monster_name);
+                let path = crate::state::save_path();
+                let _ = std::fs::remove_file(&path);
+                std::process::exit(0);
+            } else {
+                state.character.xp = 0;
+                let gold_loss = gold_before * 15 / 100;
+                state.character.gold = gold_before.saturating_sub(gold_loss);
+                state.character.hp = state.character.max_hp / 2;
+                let (plain, colored) = crate::messages::death_normal(
+                    &state.character.class,
+                    monster_name,
+                    gold_loss,
+                );
+                display::print_combat_lose(&colored, true);
+                state.add_journal(JournalEntry::new(EventType::Death, plain));
+            }
         }
     } else if !player_hits && monster_hits {
         let damage = (monster_atk - player_defense / 2).max(1);
         let gold_before = state.character.gold;
         let died = state.character.take_damage(damage);
         if died {
-            let gold_lost = gold_before.saturating_sub(state.character.gold);
-            let (plain, colored) = crate::messages::death_normal(&state.character.class, monster_name, gold_lost);
-            display::print_combat_lose(&colored, true);
-            state.add_journal(JournalEntry::new(EventType::Death, plain));
+            if state.permadeath {
+                crate::display::print_permadeath_eulogy(&state.character, monster_name);
+                let path = crate::state::save_path();
+                let _ = std::fs::remove_file(&path);
+                std::process::exit(0);
+            } else {
+                state.character.xp = 0;
+                let gold_loss = gold_before * 15 / 100;
+                state.character.gold = gold_before.saturating_sub(gold_loss);
+                state.character.hp = state.character.max_hp / 2;
+                let (plain, colored) = crate::messages::death_normal(
+                    &state.character.class,
+                    monster_name,
+                    gold_loss,
+                );
+                display::print_combat_lose(&colored, true);
+                state.add_journal(JournalEntry::new(EventType::Death, plain));
+            }
         } else {
             let (plain, colored) = crate::messages::combat_lose(&state.character.class, monster_name, damage);
             display::print_combat_lose(&colored, false);
