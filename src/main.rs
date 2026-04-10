@@ -248,7 +248,32 @@ fn cmd_init() {
     };
 
     let character = character::Character::new(name.clone(), class, race);
-    let game_state = state::GameState::new(character);
+    let mut game_state = state::GameState::new(character);
+
+    println!();
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".red().bold());
+    println!("{} {}", "💀".bold(), "PERMADEATH MODE".red().bold());
+    println!("  If you die, your character is gone forever. All is lost.");
+    println!("  In standard mode, death resets your XP to 0 and costs 15% gold.");
+    println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".red().bold());
+    let pd_answer = prompt("Enable permadeath? [y/N] ");
+    game_state.permadeath = pd_answer.trim().to_lowercase() == "y";
+
+    if game_state.permadeath {
+        println!(
+            "{} {}",
+            "☠".red().bold(),
+            "Permadeath enabled. May the void be merciful."
+                .red()
+                .dimmed()
+        );
+    } else {
+        println!(
+            "{} {}",
+            "✓".green(),
+            "Standard mode. Death is a setback, not the end.".dimmed()
+        );
+    }
 
     match state::save(&game_state) {
         Ok(()) => {
@@ -282,7 +307,7 @@ fn cmd_init() {
 
 fn cmd_status() {
     match state::load() {
-        Ok(game) => display::print_status(&game.character),
+        Ok(game) => display::print_status(&game.character, game.permadeath),
         Err(e) => eprintln!("{} {}", "❌".bold(), e.red()),
     }
 }
