@@ -742,9 +742,16 @@ fn cmd_buy(number: usize) {
     }
 }
 
+fn fuzzy_match_name(item_name: &str, query: &str) -> bool {
+    let name_lower = item_name.to_lowercase();
+    query
+        .to_lowercase()
+        .split_whitespace()
+        .all(|token| name_lower.contains(token))
+}
+
 fn find_inventory_item(game: &state::GameState, name: &str) -> Option<usize> {
     let name_lower = name.to_lowercase();
-    // Try exact match first, then partial
     game.character
         .inventory
         .iter()
@@ -755,6 +762,122 @@ fn find_inventory_item(game: &state::GameState, name: &str) -> Option<usize> {
                 .iter()
                 .position(|i| i.name.to_lowercase().contains(&name_lower))
         })
+        .or_else(|| {
+            game.character
+                .inventory
+                .iter()
+                .position(|i| fuzzy_match_name(&i.name, name))
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::character::{Character, Class, Item, ItemSlot, Race, Rarity};
+
+    fn make_state_with_items(items: Vec<Item>) -> state::GameState {
+        let mut s = state::GameState::new(Character::new("T".to_string(), Class::Rogue, Race::Human));
+        s.character.inventory = items;
+        s
+    }
+
+    fn item(name: &str) -> Item {
+        Item { name: name.to_string(), slot: ItemSlot::Weapon, power: 1, rarity: Rarity::Common }
+    }
+
+    #[test]
+    fn fuzzy_match_two_tokens_both_present() {
+        assert!(fuzzy_match_name("Big Sword of Awesome", "big of"));
+    }
+
+    #[test]
+    fn fuzzy_match_partial_word_token() {
+        assert!(fuzzy_match_name("Big Sword of Awesome", "big sw"));
+    }
+
+    #[test]
+    fn fuzzy_match_case_insensitive() {
+        assert!(fuzzy_match_name("Big Sword of Awesome", "BIG SWORD"));
+    }
+
+    #[test]
+    fn fuzzy_match_single_token_prefix() {
+        assert!(fuzzy_match_name("Big Sword of Awesome", "awe"));
+    }
+
+    #[test]
+    fn fuzzy_match_full_name_exact() {
+        assert!(fuzzy_match_name("Big Sword of Awesome", "Big Sword of Awesome"));
+    }
+
+    #[test]
+    fn fuzzy_match_token_missing_returns_false() {
+        assert!(!fuzzy_match_name("Big Sword of Awesome", "xyz"));
+    }
+
+    #[test]
+    fn fuzzy_match_one_token_absent_returns_false() {
+        assert!(!fuzzy_match_name("Big Sword of Awesome", "big xyz"));
+    }
+
+    #[test]
+    fn fuzzy_match_empty_query_returns_true() {
+        assert!(fuzzy_match_name("Big Sword of Awesome", ""));
+    }
+
+    #[test]
+    fn find_inventory_item_exact_match() {
+        let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
+        assert_eq!(find_inventory_item(&state, "Big Sword of Awesome"), Some(0));
+    }
+
+    #[test]
+    fn find_inventory_item_case_insensitive_exact() {
+        let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
+        assert_eq!(find_inventory_item(&state, "big sword of awesome"), Some(0));
+    }
+
+    #[test]
+    fn find_inventory_item_substring_match() {
+        let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
+        assert_eq!(find_inventory_item(&state, "big sw"), Some(0));
+    }
+
+    #[test]
+    fn find_inventory_item_fuzzy_non_contiguous_tokens() {
+        let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
+        assert_eq!(find_inventory_item(&state, "big of"), Some(0));
+    }
+
+    #[test]
+    fn find_inventory_item_fuzzy_case_insensitive() {
+        let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
+        assert_eq!(find_inventory_item(&state, "BIG OF"), Some(0));
+    }
+
+    #[test]
+    fn find_inventory_item_no_match_returns_none() {
+        let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
+        assert_eq!(find_inventory_item(&state, "hammer"), None);
+    }
+
+    #[test]
+    fn find_inventory_item_exact_wins_over_fuzzy() {
+        let state = make_state_with_items(vec![
+            item("Small Shield"),
+            item("Big Sword of Awesome"),
+        ]);
+        assert_eq!(find_inventory_item(&state, "Big Sword of Awesome"), Some(1));
+    }
+
+    #[test]
+    fn find_inventory_item_fuzzy_picks_first_among_multiple() {
+        let state = make_state_with_items(vec![
+            item("Big Dagger of Doom"),
+            item("Big Sword of Awesome"),
+        ]);
+        assert_eq!(find_inventory_item(&state, "big of"), Some(0));
+    }
 }
 
 fn cmd_equip(name: &str) {
