@@ -94,6 +94,12 @@ pub enum Rarity {
     Legendary,
 }
 
+impl Rarity {
+    pub fn is_droppable(&self) -> bool {
+        matches!(self, Rarity::Common | Rarity::Uncommon | Rarity::Rare)
+    }
+}
+
 impl fmt::Display for Rarity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -285,11 +291,12 @@ impl Character {
             return false; // At max level, prestige to continue
         }
         self.xp += amount;
-        if self.xp >= self.xp_to_next {
+        let mut leveled = false;
+        while self.xp >= self.xp_to_next && self.level < MAX_LEVEL {
             self.level_up();
-            return true;
+            leveled = true;
         }
-        false
+        leveled
     }
 
     fn level_up(&mut self) {
@@ -748,5 +755,30 @@ mod tests {
         assert!(matches!(subs[0], Subclass::Lich));
         assert!(matches!(subs[1], Subclass::Plaguebearer));
         assert!(matches!(subs[2], Subclass::SoulReaper));
+    }
+
+    #[test]
+    fn rarity_common_is_droppable() {
+        assert!(Rarity::Common.is_droppable());
+    }
+
+    #[test]
+    fn rarity_uncommon_is_droppable() {
+        assert!(Rarity::Uncommon.is_droppable());
+    }
+
+    #[test]
+    fn rarity_rare_is_droppable() {
+        assert!(Rarity::Rare.is_droppable());
+    }
+
+    #[test]
+    fn rarity_epic_is_not_droppable() {
+        assert!(!Rarity::Epic.is_droppable());
+    }
+
+    #[test]
+    fn rarity_legendary_is_not_droppable() {
+        assert!(!Rarity::Legendary.is_droppable());
     }
 }

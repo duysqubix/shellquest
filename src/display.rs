@@ -211,7 +211,7 @@ pub fn print_status(char: &Character) {
 
     // XP bar
     let xp_pct = char.xp as f32 / char.xp_to_next as f32;
-    let xp_filled = (xp_pct * bar_len as f32) as usize;
+    let xp_filled = ((xp_pct * bar_len as f32) as usize).min(bar_len);
     let xp_empty = bar_len - xp_filled;
     let xp_bar = format!("{}{}",
         "█".repeat(xp_filled),
