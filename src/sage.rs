@@ -97,32 +97,42 @@ pub fn force_show_sage(state: &mut GameState) {
 }
 
 /// Maybe show the sage during a tick. Very rare, max 3 times per day.
+/// On the first tick a new version is detected, the sage appears immediately (guaranteed).
+/// Subsequent appearances for the same version fall back to 1/50 random, max 3/day.
 pub fn maybe_show_sage(state: &mut GameState) {
     let mut rng = rand::thread_rng();
 
-    // 1 in 50 chance per tick
-    if !rng.gen_ratio(1, 50) {
-        return;
-    }
-
-    // Max 3 times per day (~8 hours apart)
-    if let Some(last_shown) = state.last_sage_shown {
-        if (Utc::now() - last_shown).num_hours() < 8 {
-            return;
-        }
-    }
-
-    // Check if update is actually available
+    // Check if update is actually available (cached every 24h)
     if !check_for_update(state) {
         return;
     }
 
-    let latest = state
-        .latest_version
+    let latest = state.latest_version.as_deref().unwrap_or("???").to_string();
+    let already_announced = state
+        .last_announced_version
         .as_deref()
-        .unwrap_or("???");
+        .map_or(false, |v| v == latest);
 
-    state.last_sage_shown = Some(Utc::now());
+    if !already_announced {
+        state.last_announced_version = Some(latest.clone());
+        state.last_sage_shown = Some(Utc::now());
+    } else {
+        // 1 in 50 chance per tick
+        if !rng.gen_ratio(1, 50) {
+            return;
+        }
+
+        // Max 3 times per day (~8 hours apart)
+        if let Some(last_shown) = state.last_sage_shown {
+            if (Utc::now() - last_shown).num_hours() < 8 {
+                return;
+            }
+        }
+
+        state.last_sage_shown = Some(Utc::now());
+    }
+
+    let latest = &latest;
 
     let messages = [
         format!(
