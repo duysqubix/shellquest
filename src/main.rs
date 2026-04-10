@@ -1,4 +1,5 @@
 mod boss;
+mod messages;
 mod character;
 mod display;
 mod events;
