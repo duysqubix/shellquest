@@ -152,7 +152,7 @@ pub fn print_level_up(msg: &str) {
     eprintln!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".yellow().bold());
 }
 
-pub fn print_status(char: &Character) {
+pub fn print_status(char: &Character, permadeath: bool) {
     let class_colored = format!("{}", char.class).cyan().bold();
     let race_colored = format!("{}", char.race).magenta();
 
@@ -280,6 +280,9 @@ pub fn print_status(char: &Character) {
         "Title:".bold(),
         char.title.yellow().italic()
     );
+    if permadeath {
+        println!("{}  {} {}", "│".dimmed(), "Mode:".bold(), "☠ PERMADEATH".red().bold());
+    }
     println!("{}", "└──────────────────────────────────────────┘".dimmed());
     println!();
 }
@@ -398,4 +401,55 @@ pub fn print_boss_flee(boss_name: &str, reason: &str) {
         "👻".bold(),
         "[BOSS]".red().dimmed(),
         format!("{} {}.", boss_name, reason).dimmed().italic());
+}
+
+pub fn print_permadeath_eulogy(char: &Character, killer: &str) {
+    eprintln!();
+    eprintln!("{}", "☠  ═══════════════════════════════════════════  ☠".red().bold());
+    eprintln!();
+    eprintln!("       {}", "Y O U   H A V E   D I E D".red().bold());
+    eprintln!();
+    eprintln!(
+        "  Here lies {}, the {} {}.",
+        char.name.bold().white(),
+        format!("{}", char.race).magenta(),
+        format!("{}", char.class).cyan().bold()
+    );
+    let subclass_str = char
+        .subclass
+        .as_ref()
+        .map_or(String::new(), |s| format!("{}", s).magenta().bold().to_string());
+    if !subclass_str.is_empty() {
+        eprintln!("  Known also as the {}.", subclass_str);
+    }
+    eprintln!(
+        "  Felled by {} at level {}.",
+        killer.red().bold(),
+        format!("{}", char.level).yellow().bold()
+    );
+    eprintln!(
+        "  After {} commands, {} kills, {} deaths.",
+        format!("{}", char.commands_run).cyan(),
+        format!("{}", char.kills).green(),
+        format!("{}", char.deaths + 1).red()
+    );
+    if char.gold > 0 {
+        eprintln!(
+            "  They carried {} gold into the grave.",
+            format!("{}", char.gold).yellow()
+        );
+    }
+    if let Some(w) = &char.weapon {
+        eprintln!("  Their blade: {}.", w.name.cyan().italic());
+    }
+    eprintln!("  Their legend: {}", char.title.yellow().italic());
+    eprintln!();
+    eprintln!(
+        "  {}",
+        "The save file has been deleted. All is lost."
+            .dimmed()
+            .italic()
+    );
+    eprintln!("{}", "☠  ═══════════════════════════════════════════  ☠".red().bold());
+    eprintln!();
 }
