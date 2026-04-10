@@ -36,13 +36,6 @@ fn final_xp(base: u32, danger: u32, class: &crate::character::Class, cmd: &str) 
     (zone_scaled as f32 * affinity_multiplier(class, cmd)).round() as u32
 }
 
-fn color_level_up(c: &crate::character::Character) -> String {
-    format!("{} You are now level {}! Title: {}",
-        "LEVEL UP!".yellow().bold(),
-        format!("{}", c.level).green().bold(),
-        c.title.cyan().bold().italic())
-}
-
 pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
     state.character.commands_run += 1;
     let mut rng = rand::thread_rng();
@@ -56,6 +49,7 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
     // Command-specific events
     let cmd_lower = command.to_lowercase();
     let cmd_base = cmd_lower.split_whitespace().next().unwrap_or("");
+    let zone = zone_from_path(cwd);
 
     match cmd_base {
         "cd" => {
@@ -65,23 +59,23 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
         }
         "git" => {
             if cmd_lower.contains("commit") {
-                handle_craft(state, &mut rng);
+                handle_craft(state, &mut rng, &zone, &cmd_lower);
             } else if cmd_lower.contains("push") {
-                handle_quest(state, &mut rng);
+                handle_quest(state, &mut rng, &zone, &cmd_lower);
             } else if rng.gen_ratio(1, 5) {
-                handle_discovery(state, &mut rng);
+                handle_discovery(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "cargo" | "make" | "npm" | "yarn" | "pnpm" => {
             if cmd_lower.contains("build") || cmd_lower.contains("compile") {
-                handle_forge(state, &mut rng, cwd);
+                handle_forge(state, &mut rng, &zone, &cmd_lower);
             } else if rng.gen_ratio(1, 5) {
-                handle_discovery(state, &mut rng);
+                handle_discovery(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "rm" | "del" => {
             if rng.gen_ratio(1, 3) {
-                handle_angry_spirit(state, &mut rng);
+                handle_angry_spirit(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "cat" | "bat" | "less" | "more" => {
@@ -96,12 +90,12 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
         }
         "ssh" | "curl" | "wget" => {
             if rng.gen_ratio(1, 4) {
-                handle_portal(state, &mut rng);
+                handle_portal(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "sudo" => {
             if rng.gen_ratio(1, 4) {
-                handle_power_surge(state, &mut rng);
+                handle_power_surge(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "docker" | "podman" | "docker-compose" => {
@@ -123,7 +117,7 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
                 }
             } else if cmd_lower.contains("compose") {
                 if rng.gen_ratio(1, 3) {
-                    handle_docker_orchestra(state, &mut rng);
+                    handle_docker_orchestra(state, &mut rng, &zone, &cmd_lower);
                 }
             } else if rng.gen_ratio(1, 4) {
                 handle_summon(state, &mut rng, "container golem");
@@ -131,7 +125,7 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
         }
         "python" | "python3" | "node" | "ruby" | "lua" => {
             if rng.gen_ratio(1, 5) {
-                handle_incantation(state, &mut rng);
+                handle_incantation(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "pip" | "pip3" | "gem" | "composer" => {
@@ -141,7 +135,7 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
         }
         "vim" | "nvim" | "emacs" | "nano" | "code" | "hx" => {
             if rng.gen_ratio(1, 5) {
-                handle_meditation(state, &mut rng);
+                handle_meditation(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "grep" | "rg" | "ag" | "ack" => {
@@ -171,7 +165,7 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
         }
         "kill" | "killall" | "pkill" => {
             if rng.gen_ratio(1, 3) {
-                handle_banish(state, &mut rng);
+                handle_banish(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "tar" | "zip" | "unzip" | "gzip" => {
@@ -186,13 +180,13 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
         }
         "man" | "tldr" | "help" => {
             if rng.gen_ratio(1, 4) {
-                handle_ancient_tome(state, &mut rng);
+                handle_ancient_tome(state, &mut rng, &zone, &cmd_lower);
             }
         }
         _ => {
             // Generic random encounter ~15% of the time
             if rng.gen_ratio(3, 20) {
-                handle_random_encounter(state, &mut rng, cwd);
+                handle_random_encounter(state, &mut rng, &zone, &cmd_lower);
             }
         }
     }
@@ -212,20 +206,12 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
 fn handle_trap(state: &mut GameState, rng: &mut impl Rng) {
     let damage = rng.gen_range(1..=3);
     let died = state.character.take_damage(damage);
-    let plain = if died {
-        format!("You triggered a trap! Took {} damage and fell in battle... Respawning with a gold penalty.", damage)
-    } else {
-        format!("You stumble on a trap! Took {} damage. HP: {}/{}", damage, state.character.hp, state.character.max_hp)
-    };
-    let colored = if died {
-        format!("{} a {}! Took {} damage and {} Respawning with a {} penalty.",
-            "You triggered".red(), "trap".red().bold(), display::color_damage(damage),
-            "fell in battle...".red().bold(), "gold".yellow())
-    } else {
-        format!("{} a {}! Took {} damage. {}",
-            "You stumble on".red(), "trap".red().bold(), display::color_damage(damage),
-            display::color_hp(state.character.hp, state.character.max_hp))
-    };
+    let (plain, colored) = crate::messages::trap(
+        &state.character.class,
+        damage,
+        state.character.hp,
+        state.character.max_hp,
+    );
     display::print_trap(&colored);
     let event_type = if died { EventType::Death } else { EventType::Combat };
     state.add_journal(JournalEntry::new(event_type, plain));
@@ -241,111 +227,96 @@ fn handle_travel(state: &mut GameState, cwd: &str) {
     state.add_journal(JournalEntry::new(EventType::Travel, plain));
 }
 
-fn handle_craft(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(10..=25);
+fn handle_craft(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(15..=35);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
-    let plain = format!("You committed your work to the archives! +{} XP", xp);
-    let colored = format!("{} your work to the {}! {}",
-        "You committed".cyan(), "archives".cyan().bold(), display::color_xp(xp));
+    let (plain, colored) = crate::messages::craft(&state.character.class, xp);
     display::print_craft(&colored);
     state.add_journal(JournalEntry::new(EventType::Craft, plain));
-    if leveled {
-        let lvl_msg = format!("LEVEL UP! You are now level {}! Title: {}", state.character.level, state.character.title);
-        display::print_level_up(&color_level_up(&state.character));
-        state.add_journal(JournalEntry::new(EventType::LevelUp, lvl_msg));
-    }
+    check_level_up(state, leveled);
 }
 
 pub(crate) fn emit_level_up(state: &mut GameState) {
-    let plain = format!("LEVEL UP! You are now level {}! Title: {}", state.character.level, state.character.title);
-    display::print_level_up(&color_level_up(&state.character));
-    state.add_journal(JournalEntry::new(EventType::LevelUp, plain));
+    let (plain, colored) = crate::messages::level_up(
+        &state.character.class,
+        state.character.level,
+        &state.character.title,
+    );
+    display::print_level_up(&colored);
+    state.add_journal(crate::journal::JournalEntry::new(crate::journal::EventType::LevelUp, plain));
 }
 
 fn check_level_up(state: &mut GameState, leveled: bool) {
     if leveled { emit_level_up(state); }
 }
 
-fn handle_quest(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(15..=35);
+fn handle_quest(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(15..=35);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let gold = rng.gen_range(5..=20);
     let leveled = state.character.gain_xp(xp);
     state.character.gold += gold;
-    let plain = format!("Quest complete! You pushed your code to the realm! +{} XP, +{} gold", xp, gold);
-    let colored = format!("{} You {} your code to the {}! {} {}",
-        "Quest complete!".yellow().bold(),
-        "pushed".green().bold(), "realm".cyan().bold(),
-        display::color_xp(xp), display::color_gold(gold));
+    let (plain, colored) = crate::messages::quest(&state.character.class, xp, gold);
     display::print_quest(&colored);
     state.add_journal(JournalEntry::new(EventType::Quest, plain));
     check_level_up(state, leveled);
 }
 
-fn handle_discovery(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(5..=15);
+fn handle_discovery(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(8..=20);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
-    let discoveries_plain = [
-        "You found an ancient code comment from a forgotten developer!",
-        "You discovered a hidden TODO that grants wisdom!",
-        "You unearthed a deprecated scroll of knowledge!",
-        "A mysterious FIXME glows with arcane energy!",
-        "You found a secret .env file buried in the ruins!",
+    let discoveries = [
+        "an ancient code comment from a forgotten developer",
+        "a hidden TODO that grants wisdom",
+        "a deprecated scroll of knowledge",
+        "a mysterious FIXME glowing with arcane energy",
+        "a secret .env file buried in the ruins",
     ];
-    let discoveries_color = [
-        format!("You found an {} from a {} developer!", "ancient code comment".magenta().bold(), "forgotten".dimmed()),
-        format!("You discovered a {} that grants {}!", "hidden TODO".magenta().bold(), "wisdom".cyan()),
-        format!("You unearthed a {} of knowledge!", "deprecated scroll".magenta().bold()),
-        format!("A mysterious {} glows with {} energy!", "FIXME".red().bold(), "arcane".magenta()),
-        format!("You found a {} {} buried in the ruins!", "secret".red(), ".env file".yellow().bold()),
-    ];
-    let idx = rng.gen_range(0..discoveries_plain.len());
-    let plain = format!("{} +{} XP", discoveries_plain[idx], xp);
-    let colored = format!("{} {}", discoveries_color[idx], display::color_xp(xp));
+    let detail = discoveries[rng.gen_range(0..discoveries.len())];
+    let (plain, colored) = crate::messages::discovery(&state.character.class, detail, xp);
     display::print_discovery(&colored);
     state.add_journal(JournalEntry::new(EventType::Discovery, plain));
     check_level_up(state, leveled);
 }
 
-fn handle_forge(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
-    let zone = zone_from_path(cwd);
+fn handle_forge(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
     if rng.gen_ratio(1, 3) {
         let item = roll_loot(zone.danger_level);
-        let plain = format!("The forge burns hot! You crafted: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
-        let colored = format!("The {} burns hot! You crafted: {} ({} {}) [{}]",
-            "forge".red().bold(),
-            display::color_item_inline(&item.name, &item.rarity),
-            format!("+{}", item.power).white().bold(),
-            format!("{}", item.slot).dimmed(),
-            format!("{}", item.rarity).dimmed());
+        let xp = 0;
+        let (plain, colored) = crate::messages::forge_loot(&state.character.class, &item.name, item.power, xp);
         display::print_loot(&colored, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Craft, plain));
         add_to_inventory(state, item);
     } else {
-        let xp = rng.gen_range(8..=20);
-        state.character.gain_xp(xp);
-        let plain = format!("The build completes! The heat tempers your resolve. +{} XP", xp);
-        let colored = format!("The {} completes! The {} tempers your resolve. {}",
-            "build".cyan().bold(), "heat".red(), display::color_xp(xp));
+        let base_xp = rng.gen_range(8..=20);
+        let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
+        let leveled = state.character.gain_xp(xp);
+        let (plain, colored) = crate::messages::forge_xp(&state.character.class, xp);
         display::print_craft(&colored);
         state.add_journal(JournalEntry::new(EventType::Craft, plain));
+        check_level_up(state, leveled);
     }
 }
 
-fn handle_angry_spirit(state: &mut GameState, rng: &mut impl Rng) {
+fn handle_angry_spirit(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
     let monster = random_monster(rng);
-    combat(state, rng, &monster.0, monster.1, monster.2);
+    combat(state, rng, zone, cmd, &monster.0, monster.1, monster.2);
 }
 
 fn handle_familiar(state: &mut GameState, rng: &mut impl Rng) {
-    let familiars = ["a curious cat", "a friendly daemon", "a pixel sprite", "a tame penguin", "a binary beetle"];
+    let familiars = ["curious cat", "friendly daemon", "pixel sprite", "tame penguin", "binary beetle"];
     let heal = rng.gen_range(3..=8);
     state.character.heal(heal);
-    let idx = rng.gen_range(0..familiars.len());
-    let plain = format!("You befriend {}! It heals you for {} HP. HP: {}/{}", familiars[idx], heal, state.character.hp, state.character.max_hp);
-    let colored = format!("You befriend {}! It {} you for {} HP. {}",
-        familiars[idx].green().bold(),
-        "heals".green(), format!("{}", heal).green().bold(),
-        display::color_hp(state.character.hp, state.character.max_hp));
+    let creature = familiars[rng.gen_range(0..familiars.len())];
+    let (plain, colored) = crate::messages::familiar(
+        &state.character.class,
+        creature,
+        heal,
+        state.character.hp,
+        state.character.max_hp,
+    );
     display::print_familiar(&colored);
     state.add_journal(JournalEntry::new(EventType::Discovery, plain));
 }
@@ -361,23 +332,21 @@ fn handle_search_loot(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
     state.add_journal(JournalEntry::new(EventType::Loot, plain));
 }
 
-fn handle_portal(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(10..=20);
+fn handle_portal(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(10..=20);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
-    let plain = format!("You opened a portal to a remote realm! The journey grants you +{} XP", xp);
-    let colored = format!("You opened a {} to a {}! The journey grants you {}",
-        "portal".cyan().bold(), "remote realm".blue().bold(), display::color_xp(xp));
+    let (plain, colored) = crate::messages::portal(&state.character.class, xp);
     display::print_portal(&colored);
     state.add_journal(JournalEntry::new(EventType::Travel, plain));
     check_level_up(state, leveled);
 }
 
-fn handle_power_surge(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(15..=30);
+fn handle_power_surge(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(15..=30);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
-    let plain = format!("You invoke the power of SUDO! Raw energy courses through you! +{} XP", xp);
-    let colored = format!("You invoke the power of {}! {} courses through you! {}",
-        "SUDO".red().bold().on_black(), "Raw energy".red().bold(), display::color_xp(xp));
+    let (plain, colored) = crate::messages::power_surge(&state.character.class, xp);
     display::print_power(&colored);
     state.add_journal(JournalEntry::new(EventType::Discovery, plain));
     check_level_up(state, leveled);
@@ -392,18 +361,14 @@ fn handle_summon(state: &mut GameState, rng: &mut impl Rng, creature: &str) {
     check_level_up(state, leveled);
 }
 
-fn handle_incantation(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(8..=18);
+fn handle_incantation(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(8..=18);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
-    let spells = [
-        "You chant an interpreted incantation! The code spirits answer!",
-        "You invoke a scripting ritual! Power surges through the REPL!",
-        "You cast eval()! Reality bends to your will!",
-        "You weave a dynamic spell! Variables dance in the air!",
-    ];
-    let msg = format!("{} +{} XP", spells[rng.gen_range(0..spells.len())], xp);
-    display::print_discovery(&msg);
-    state.add_journal(JournalEntry::new(EventType::Discovery, msg));
+    let lang = cmd.split_whitespace().next().unwrap_or("script");
+    let (plain, colored) = crate::messages::incantation(&state.character.class, lang, xp);
+    display::print_discovery(&colored);
+    state.add_journal(JournalEntry::new(EventType::Discovery, plain));
     check_level_up(state, leveled);
 }
 
@@ -424,19 +389,23 @@ fn handle_alchemy(state: &mut GameState, rng: &mut impl Rng) {
     }
 }
 
-fn handle_meditation(state: &mut GameState, rng: &mut impl Rng) {
+fn handle_meditation(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
     let heal = rng.gen_range(5..=12);
-    let xp = rng.gen_range(5..=10);
+    let base_xp = rng.gen_range(5..=10);
     state.character.heal(heal);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
-    let msgs = [
-        "You enter the editor trance... inner peace flows through your keystrokes.",
-        "You meditate within the buffer... your mind and code become one.",
-        "The sacred editor calms your spirit. Modal enlightenment achieved.",
-    ];
-    let msg = format!("{} +{} HP, +{} XP", msgs[rng.gen_range(0..msgs.len())], heal, xp);
-    display::print_familiar(&msg);
-    state.add_journal(JournalEntry::new(EventType::Discovery, msg));
+    let editor = cmd.split_whitespace().next().unwrap_or("editor");
+    let (plain, colored) = crate::messages::meditation(
+        &state.character.class,
+        editor,
+        heal,
+        xp,
+        state.character.hp,
+        state.character.max_hp,
+    );
+    display::print_familiar(&colored);
+    state.add_journal(JournalEntry::new(EventType::Discovery, plain));
     check_level_up(state, leveled);
 }
 
@@ -504,20 +473,22 @@ fn handle_omniscience(state: &mut GameState, rng: &mut impl Rng) {
     check_level_up(state, leveled);
 }
 
-fn handle_banish(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(15..=25);
+fn handle_banish(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(15..=25);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let gold = rng.gen_range(3..=10);
     let leveled = state.character.gain_xp(xp);
     state.character.gold += gold;
     state.character.kills += 1;
-    let msgs = [
-        "You banish a rogue process to the void!",
-        "SIGKILL! The daemon is vanquished instantly!",
-        "You send the process to /dev/null! It shall not return!",
+    let targets = [
+        "rogue process",
+        "runaway daemon",
+        "zombie worker",
     ];
-    let msg = format!("{} +{} XP, +{} gold", msgs[rng.gen_range(0..msgs.len())], xp, gold);
-    display::print_combat_win(&msg);
-    state.add_journal(JournalEntry::new(EventType::Combat, msg));
+    let target = targets[rng.gen_range(0..targets.len())];
+    let (plain, colored) = crate::messages::banish(&state.character.class, target, xp, gold);
+    display::print_combat_win(&colored);
+    state.add_journal(JournalEntry::new(EventType::Combat, plain));
     check_level_up(state, leveled);
 }
 
@@ -538,17 +509,14 @@ fn handle_echo_spell(state: &mut GameState, rng: &mut impl Rng) {
     state.add_journal(JournalEntry::new(EventType::Discovery, msg));
 }
 
-fn handle_ancient_tome(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(10..=22);
+fn handle_ancient_tome(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(10..=22);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
-    let msgs = [
-        "You consult the ancient man pages! Forbidden knowledge flows into you!",
-        "The tome of documentation reveals its secrets! Understanding dawns!",
-        "You study the sacred scrolls! The wisdom of the ancients empowers you!",
-    ];
-    let msg = format!("{} +{} XP", msgs[rng.gen_range(0..msgs.len())], xp);
-    display::print_discovery(&msg);
-    state.add_journal(JournalEntry::new(EventType::Discovery, msg));
+    let subject = cmd.split_whitespace().next().unwrap_or("manual");
+    let (plain, colored) = crate::messages::ancient_tome(&state.character.class, subject, xp);
+    display::print_discovery(&colored);
+    state.add_journal(JournalEntry::new(EventType::Discovery, plain));
     check_level_up(state, leveled);
 }
 
@@ -601,31 +569,26 @@ fn handle_docker_banish(state: &mut GameState, rng: &mut impl Rng) {
     check_level_up(state, leveled);
 }
 
-fn handle_docker_orchestra(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(15..=30);
+fn handle_docker_orchestra(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(15..=30);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let gold = rng.gen_range(5..=15);
     let leveled = state.character.gain_xp(xp);
     state.character.gold += gold;
-    let msgs = [
-        "You conduct the container orchestra! Services rise in harmony!",
-        "Compose magic weaves through the stack! All services hum in unison!",
-        "The orchestration ritual completes! A symphony of microservices plays!",
-    ];
-    let msg = format!("{} +{} XP, +{} gold", msgs[rng.gen_range(0..msgs.len())], xp, gold);
-    display::print_quest(&msg);
-    state.add_journal(JournalEntry::new(EventType::Quest, msg));
+    let (plain, colored) = crate::messages::docker_orchestra(&state.character.class, xp, gold);
+    display::print_quest(&colored);
+    state.add_journal(JournalEntry::new(EventType::Quest, plain));
     check_level_up(state, leveled);
 }
 
-fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
-    let zone = zone_from_path(cwd);
+fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
     let roll: u32 = rng.gen_range(1..=100);
 
     match roll {
         1..=40 => {
             // Combat encounter
             let monster = random_monster_for_zone(rng, &zone);
-            combat(state, rng, &monster.0, monster.1, monster.2);
+            combat(state, rng, zone, cmd, &monster.0, monster.1, monster.2);
         }
         41..=60 => {
             // Find loot
@@ -688,71 +651,64 @@ fn random_monster_for_zone(rng: &mut impl Rng, zone: &crate::zones::Zone) -> (St
     (name, atk, xp)
 }
 
-fn combat(state: &mut GameState, rng: &mut impl Rng, monster_name: &str, monster_atk: i32, xp_reward: u32) {
+fn combat(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+    monster_name: &str,
+    monster_atk: i32,
+    xp_reward: u32,
+) {
     let player_power = state.character.attack_power();
     let player_defense = state.character.defense();
     let hit_roll: i32 = rng.gen_range(1..=20);
     let dodge_roll: i32 = rng.gen_range(1..=20);
+    let final_reward = final_xp(xp_reward, zone.danger_level, &state.character.class, cmd);
 
     let player_hits = hit_roll + player_power > 10;
     let monster_hits = dodge_roll > (10 + player_defense);
-    let mname = display::color_monster(monster_name);
 
     if player_hits && !monster_hits {
         state.character.kills += 1;
-        let leveled = state.character.gain_xp(xp_reward);
-        let plain = format!("A {} appears! You strike true! Victory! +{} XP", monster_name, xp_reward);
-        let colored = format!("A {} appears! You {}! {}! {}",
-            mname, "strike true".green().bold(), "Victory".green().bold(), display::color_xp(xp_reward));
+        let leveled = state.character.gain_xp(final_reward);
+        let (plain, colored) = crate::messages::combat_win(&state.character.class, monster_name, final_reward);
         display::print_combat_win(&colored);
         state.add_journal(JournalEntry::new(EventType::Combat, plain));
         check_level_up(state, leveled);
     } else if player_hits && monster_hits {
         let damage = (monster_atk - player_defense).max(1);
+        let gold_before = state.character.gold;
         let died = state.character.take_damage(damage);
         if !died {
             state.character.kills += 1;
-            state.character.gain_xp(xp_reward);
+            let leveled = state.character.gain_xp(final_reward);
+            let (plain, colored) = crate::messages::combat_tough(&state.character.class, monster_name, damage, final_reward);
+            display::print_combat_tough(&colored, false);
+            state.add_journal(JournalEntry::new(EventType::Combat, plain));
+            check_level_up(state, leveled);
+        } else {
+            let gold_lost = gold_before.saturating_sub(state.character.gold);
+            let (plain, colored) = crate::messages::death_normal(&state.character.class, monster_name, gold_lost);
+            display::print_combat_tough(&colored, true);
+            state.add_journal(JournalEntry::new(EventType::Death, plain));
         }
-        let plain = if died {
-            format!("A {} appears! You trade blows... you fall! Lost some gold. Respawning...", monster_name)
-        } else {
-            format!("A {} appears! Tough fight! You win but took {} damage. +{} XP. HP: {}/{}", monster_name, damage, xp_reward, state.character.hp, state.character.max_hp)
-        };
-        let colored = if died {
-            format!("A {} appears! You {}... {} Lost some {}. {}...",
-                mname, "trade blows".yellow(), "you fall!".red().bold(), "gold".yellow(), "Respawning".dimmed())
-        } else {
-            format!("A {} appears! {} You win but took {} damage. {} {}",
-                mname, "Tough fight!".yellow().bold(), display::color_damage(damage),
-                display::color_xp(xp_reward), display::color_hp(state.character.hp, state.character.max_hp))
-        };
-        display::print_combat_tough(&colored, died);
-        let event_type = if died { EventType::Death } else { EventType::Combat };
-        state.add_journal(JournalEntry::new(event_type, plain));
     } else if !player_hits && monster_hits {
         let damage = (monster_atk - player_defense / 2).max(1);
+        let gold_before = state.character.gold;
         let died = state.character.take_damage(damage);
-        let plain = if died {
-            format!("A {} appears! It overwhelms you! You fall... Lost some gold. Respawning...", monster_name)
+        if died {
+            let gold_lost = gold_before.saturating_sub(state.character.gold);
+            let (plain, colored) = crate::messages::death_normal(&state.character.class, monster_name, gold_lost);
+            display::print_combat_lose(&colored, true);
+            state.add_journal(JournalEntry::new(EventType::Death, plain));
         } else {
-            format!("A {} appears! It hits you for {} damage! You flee. HP: {}/{}", monster_name, damage, state.character.hp, state.character.max_hp)
-        };
-        let colored = if died {
-            format!("A {} appears! It {}! {} Lost some {}. {}...",
-                mname, "overwhelms you".red().bold(), "You fall...".red().bold(), "gold".yellow(), "Respawning".dimmed())
-        } else {
-            format!("A {} appears! It {} you for {} damage! You {}. {}",
-                mname, "hits".red().bold(), display::color_damage(damage),
-                "flee".yellow(), display::color_hp(state.character.hp, state.character.max_hp))
-        };
-        display::print_combat_lose(&colored, died);
-        let event_type = if died { EventType::Death } else { EventType::Combat };
-        state.add_journal(JournalEntry::new(event_type, plain));
+            let (plain, colored) = crate::messages::combat_lose(&state.character.class, monster_name, damage);
+            display::print_combat_lose(&colored, false);
+            state.add_journal(JournalEntry::new(EventType::Combat, plain));
+        }
     } else {
-        let plain = format!("A {} appears! You circle each other... it retreats into the shadows.", monster_name);
-        let colored = format!("A {} appears! You {}... it {} into the shadows.",
-            mname, "circle each other".dimmed(), "retreats".dimmed().italic());
+        let (plain, colored) = crate::messages::combat_draw(&state.character.class, monster_name);
         display::print_combat_draw(&colored);
         state.add_journal(JournalEntry::new(EventType::Combat, plain));
     }
