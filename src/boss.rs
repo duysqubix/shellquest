@@ -130,19 +130,32 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     let dodge_roll: i32 = rng.gen_range(1..=20);
     let boss_dmg = if dodge_roll > 10 + player_defense {
         let dmg = (boss_atk - player_defense).max(1);
+        let gold_before = state.character.gold;
         let died = state.character.take_damage(dmg);
         if died {
-            crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, Some(dmg));
-            crate::display::print_boss_flee(
-                &boss_name,
-                "laughs as you fall... and vanishes into the void",
-            );
-            state.add_journal(JournalEntry::new(
-                EventType::Death,
-                format!("{} fled after you fell in battle.", boss_name),
-            ));
-            state.active_boss = None;
-            return;
+            if state.permadeath {
+                crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, Some(dmg));
+                crate::display::print_permadeath_eulogy(&state.character, &boss_name);
+                let path = crate::state::save_path();
+                let _ = std::fs::remove_file(&path);
+                std::process::exit(0);
+            } else {
+                state.character.xp = 0;
+                let gold_loss = gold_before * 15 / 100;
+                state.character.gold = gold_before.saturating_sub(gold_loss);
+                state.character.hp = state.character.max_hp / 2;
+                crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, Some(dmg));
+                crate::display::print_boss_flee(
+                    &boss_name,
+                    "laughs as you fall... and vanishes into the void",
+                );
+                state.add_journal(crate::journal::JournalEntry::new(
+                    crate::journal::EventType::Death,
+                    format!("{} fled after you fell. XP reset, -{} gold.", boss_name, gold_loss),
+                ));
+                state.active_boss = None;
+                return;
+            }
         }
         Some(dmg)
     } else {
