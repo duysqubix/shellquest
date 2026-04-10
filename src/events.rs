@@ -40,9 +40,10 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
     state.character.commands_run += 1;
     let mut rng = rand::thread_rng();
 
-    // Failed commands = traps
     if exit_code != 0 {
-        handle_trap(state, &mut rng);
+        if rng.gen_ratio(1, 4) {
+            handle_trap(state, &mut rng);
+        }
         return;
     }
 
