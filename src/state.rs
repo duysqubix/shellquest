@@ -29,6 +29,8 @@ pub struct GameState {
     pub shop_refreshed: Option<DateTime<Utc>>,
     #[serde(default)]
     pub active_boss: Option<crate::boss::Boss>,
+    #[serde(default)]
+    pub permadeath: bool,
 }
 
 impl GameState {
@@ -45,6 +47,7 @@ impl GameState {
             shop_items: Vec::new(),
             shop_refreshed: None,
             active_boss: None,
+            permadeath: false,
         }
     }
 
@@ -182,7 +185,7 @@ mod tests {
 
     #[test]
     fn game_state_serializes_and_deserializes_boss() {
-        use crate::boss::{Boss, spawn_boss};
+        use crate::boss::spawn_boss;
         let mut state = GameState::new(make_character());
         state.active_boss = Some(spawn_boss());
         let json = serde_json::to_string(&state).unwrap();
