@@ -40,6 +40,8 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
   - `sq tick --cmd "bad" --cwd "." --exit-code 1` → trigger trap
   - `cd ~ && sq shop` → shop only works from home directory; shows numbered item list
   - `cd ~ && sq buy 1` → buy item by **number** (1-indexed), not by name
+  - Force boss spawn for testing: temporarily set `gen_ratio(1, 1)` in `maybe_spawn()` in `src/boss.rs`, run `sq tick --cmd "ls" --cwd "." --exit-code 0`, then revert
+  - Boss state lives at `active_boss` in the save file — can be cleared manually via JSON edit of `~/.shellquest/save.json`
 
 ### Common Patterns
 - Serde for all data structures (JSON serialization)
