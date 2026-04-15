@@ -75,6 +75,12 @@ enum Commands {
         /// Item name (or partial match)
         name: Vec<String>,
     },
+    /// Remove equipped weapon, armor, or ring (puts it back in inventory)
+    #[clap(alias = "unequip")]
+    Remove {
+        /// Item name, partial match, or slot keyword (weapon/armor/ring)
+        name: Vec<String>,
+    },
     /// Drop an item from inventory permanently
     Drop {
         /// Item name (or partial match)
@@ -125,6 +131,7 @@ fn main() {
         Commands::Sell { number } => cmd_sell(number),
         Commands::Equip { name } => cmd_equip(&name.join(" ")),
         Commands::Wield { name } => cmd_wield(&name.join(" ")),
+        Commands::Remove { name } => cmd_remove(&name.join(" ")),
         Commands::Drop { name } => cmd_drop_item(&name.join(" ")),
         Commands::Drink { name } => cmd_drink(&name.join(" ")),
         Commands::Prestige => cmd_prestige(),
@@ -1305,6 +1312,101 @@ fn cmd_wield(name: &str) {
             "{} Now wielding {}!",
             "⚔️".bold(),
             item_name.green().bold()
+        );
+    }
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+    }
+}
+
+fn cmd_remove(name: &str) {
+    if name.is_empty() {
+        eprintln!(
+            "{} Usage: {} (or use slot keyword: weapon, armor, ring)",
+            "❌".bold(),
+            "sq remove <item name>".cyan()
+        );
+        return;
+    }
+
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    let query = name.to_lowercase();
+
+    let slot = if fuzzy_match_name(
+        game.character.weapon.as_ref().map_or("", |i| &i.name),
+        name,
+    ) || query == "weapon"
+    {
+        "weapon"
+    } else if fuzzy_match_name(
+        game.character.armor.as_ref().map_or("", |i| &i.name),
+        name,
+    ) || query == "armor"
+        || query == "armour"
+    {
+        "armor"
+    } else if fuzzy_match_name(
+        game.character.ring.as_ref().map_or("", |i| &i.name),
+        name,
+    ) || query == "ring"
+    {
+        "ring"
+    } else {
+        let equipped: Vec<&str> = [
+            game.character.weapon.as_ref().map(|i| i.name.as_str()),
+            game.character.armor.as_ref().map(|i| i.name.as_str()),
+            game.character.ring.as_ref().map(|i| i.name.as_str()),
+        ]
+        .iter()
+        .filter_map(|x| *x)
+        .collect();
+
+        if equipped.is_empty() {
+            println!("{} Nothing equipped. Use {} to see your gear.", "⚠️".yellow(), "sq status".cyan());
+        } else {
+            println!(
+                "{} No equipped item matching {}. Equipped: {}",
+                "⚠️".yellow(),
+                format!("\"{}\"", name).white().bold(),
+                equipped.join(", ").dimmed()
+            );
+        }
+        return;
+    };
+
+    if game.character.inventory.len() >= 20 {
+        println!(
+            "{} Inventory full (20/20). Drop an item first with {}.",
+            "⚠️".yellow(),
+            "sq drop <name>".cyan()
+        );
+        return;
+    }
+
+    let item = match slot {
+        "weapon" => game.character.weapon.take(),
+        "armor" => game.character.armor.take(),
+        "ring" => game.character.ring.take(),
+        _ => None,
+    };
+
+    if let Some(item) = item {
+        let item_name = item.name.clone();
+        let slot_name = format!("{}", item.slot);
+        game.character.inventory.push(item);
+        println!(
+            "{} Removed {} from {} slot → moved to inventory.",
+            "📦".bold(),
+            item_name.white().bold(),
+            slot_name.dimmed()
         );
     }
 

@@ -173,6 +173,7 @@ Level 150. You can stop. You won't.
 | `sq sell <n>` | Sell inventory item at the shop (home directory only) |
 | `sq equip <name>` / `sq wear <name>` | Equip armor or ring from inventory |
 | `sq wield <name>` | Wield a weapon from inventory |
+| `sq remove <name>` / `sq unequip <name>` | Unequip weapon, armor, or ring → back to inventory |
 | `sq drink <name>` | Drink a potion |
 | `sq drop <name>` | Drop an item from inventory |
 | `sq prestige` | Ascend at level 150 |
