@@ -26,7 +26,12 @@ enum Commands {
     /// Create a new character
     Init,
     /// View your character sheet
-    Status,
+    #[clap(alias = "stat")]
+    Status {
+        /// Show full inventory list below the character sheet
+        #[clap(long)]
+        full: bool,
+    },
     /// Check your inventory
     #[clap(alias = "inv")]
     Inventory,
@@ -60,6 +65,7 @@ enum Commands {
         file: Option<String>,
     },
     /// Equip armor or ring from inventory
+    #[clap(alias = "wear")]
     Equip {
         /// Item name (or partial match)
         name: Vec<String>,
@@ -99,7 +105,7 @@ fn main() {
 
     match cli.command {
         Commands::Init => cmd_init(),
-        Commands::Status => cmd_status(),
+        Commands::Status { full } => cmd_status(full),
         Commands::Inventory => cmd_inventory(),
         Commands::Journal => cmd_journal(),
         Commands::Tick {
@@ -305,9 +311,14 @@ fn cmd_init() {
     }
 }
 
-fn cmd_status() {
+fn cmd_status(full: bool) {
     match state::load() {
-        Ok(game) => display::print_status(&game.character, game.permadeath),
+        Ok(game) => {
+            display::print_status(&game.character, game.permadeath);
+            if full {
+                display::print_inventory(&game.character);
+            }
+        }
         Err(e) => eprintln!("{} {}", "❌".bold(), e.red()),
     }
 }
