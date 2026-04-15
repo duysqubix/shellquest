@@ -87,6 +87,11 @@ enum Commands {
         /// Item number from the shop list
         number: usize,
     },
+    /// Sell an inventory item at the shop by number (see `sq inventory` for numbered list)
+    Sell {
+        /// Inventory slot number (1-indexed, from `sq inventory`)
+        number: usize,
+    },
     /// Drink a potion from inventory to restore HP
     Drink {
         /// Item name (or partial match)
@@ -117,6 +122,7 @@ fn main() {
         Commands::Hook { shell, install, file } => cmd_hook(&shell, install || file.is_some(), file),
         Commands::Shop => cmd_shop(),
         Commands::Buy { number } => cmd_buy(number),
+        Commands::Sell { number } => cmd_sell(number),
         Commands::Equip { name } => cmd_equip(&name.join(" ")),
         Commands::Wield { name } => cmd_wield(&name.join(" ")),
         Commands::Drop { name } => cmd_drop_item(&name.join(" ")),
@@ -773,6 +779,93 @@ fn cmd_buy(number: usize) {
         item_name.green().bold(),
         format!("{}", price).yellow().bold(),
         format!("{}", game.character.gold).yellow()
+    );
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+    }
+}
+
+fn cmd_sell(number: usize) {
+    if number == 0 {
+        eprintln!(
+            "{} Usage: {} (see {} for numbered list)",
+            "❌".bold(),
+            "sq sell <number>".cyan(),
+            "sq inventory".cyan()
+        );
+        return;
+    }
+
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    if cwd != home {
+        println!(
+            "{} The shop is only accessible from your {}.",
+            "🏠".bold(),
+            "home directory".cyan().bold()
+        );
+        return;
+    }
+
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    if game.character.inventory.is_empty() {
+        println!(
+            "{} Nothing to sell. Check {}.",
+            "⚠️".yellow(),
+            "sq inventory".cyan()
+        );
+        return;
+    }
+
+    let idx = number - 1;
+    if idx >= game.character.inventory.len() {
+        println!(
+            "{} No item at slot {}. You have {} item{}. Check {}.",
+            "⚠️".yellow(),
+            format!("{}", number).white().bold(),
+            format!("{}", game.character.inventory.len()).white().bold(),
+            if game.character.inventory.len() == 1 {
+                ""
+            } else {
+                "s"
+            },
+            "sq inventory".cyan()
+        );
+        return;
+    }
+
+    let sell_price = loot::item_price(&game.character.inventory[idx]) / 2;
+    let item = game.character.inventory.remove(idx);
+    let old_gold = game.character.gold;
+    game.character.gold += sell_price;
+
+    println!(
+        "{} Sold {} (+{} {}) [{}] for {} gold.",
+        "💰".bold(),
+        item.name.white().bold(),
+        item.power,
+        format!("{}", item.slot).dimmed(),
+        format!("{}", item.rarity).dimmed(),
+        format!("{}", sell_price).yellow().bold(),
+    );
+    println!(
+        "   Gold: {} → {}",
+        format!("{}", old_gold).dimmed(),
+        format!("{}", game.character.gold).yellow().bold(),
     );
 
     if let Err(e) = state::save(&game) {
