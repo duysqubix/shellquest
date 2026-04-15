@@ -165,12 +165,13 @@ Level 150. You can stop. You won't.
 | Command | Description |
 |---------|-------------|
 | `sq init` | Create your character |
-| `sq status` | View your character sheet |
+| `sq status` / `sq stat` | View your character sheet (`--full` to include inventory) |
 | `sq inventory` | Check gear and potions |
 | `sq journal` | Last 20 adventure log entries |
 | `sq shop` | Browse the shop (home directory only) |
 | `sq buy <n>` | Buy item by number from `sq shop` list |
-| `sq equip <name>` | Equip armor or ring from inventory |
+| `sq sell <n>` | Sell inventory item at the shop (home directory only) |
+| `sq equip <name>` / `sq wear <name>` | Equip armor or ring from inventory |
 | `sq wield <name>` | Wield a weapon from inventory |
 | `sq drink <name>` | Drink a potion |
 | `sq drop <name>` | Drop an item from inventory |
