@@ -93,10 +93,10 @@ enum Commands {
         /// Item number from the shop list
         number: usize,
     },
-    /// Sell an inventory item at the shop by number (see `sq inventory` for numbered list)
+    /// Sell an inventory item at the shop by number or name (see `sq inventory`)
     Sell {
-        /// Inventory slot number (1-indexed, from `sq inventory`)
-        number: usize,
+        /// Item number (1-indexed) or partial name match
+        item: Vec<String>,
     },
     /// Drink a potion from inventory to restore HP
     Drink {
@@ -128,7 +128,7 @@ fn main() {
         Commands::Hook { shell, install, file } => cmd_hook(&shell, install || file.is_some(), file),
         Commands::Shop => cmd_shop(),
         Commands::Buy { number } => cmd_buy(number),
-        Commands::Sell { number } => cmd_sell(number),
+        Commands::Sell { item } => cmd_sell(&item.join(" ")),
         Commands::Equip { name } => cmd_equip(&name.join(" ")),
         Commands::Wield { name } => cmd_wield(&name.join(" ")),
         Commands::Remove { name } => cmd_remove(&name.join(" ")),
@@ -793,13 +793,13 @@ fn cmd_buy(number: usize) {
     }
 }
 
-fn cmd_sell(number: usize) {
-    if number == 0 {
+fn cmd_sell(query: &str) {
+    if query.is_empty() {
         eprintln!(
-            "{} Usage: {} (see {} for numbered list)",
+            "{} Usage: {} or {}",
             "❌".bold(),
             "sq sell <number>".cyan(),
-            "sq inventory".cyan()
+            "sq sell <item name>".cyan()
         );
         return;
     }
@@ -838,22 +838,36 @@ fn cmd_sell(number: usize) {
         return;
     }
 
-    let idx = number - 1;
-    if idx >= game.character.inventory.len() {
-        println!(
-            "{} No item at slot {}. You have {} item{}. Check {}.",
-            "⚠️".yellow(),
-            format!("{}", number).white().bold(),
-            format!("{}", game.character.inventory.len()).white().bold(),
-            if game.character.inventory.len() == 1 {
-                ""
-            } else {
-                "s"
-            },
-            "sq inventory".cyan()
-        );
-        return;
-    }
+    let idx = if let Ok(n) = query.parse::<usize>() {
+        if n == 0 || n > game.character.inventory.len() {
+            println!(
+                "{} No item at slot {}. You have {} item{}. Check {}.",
+                "⚠️".yellow(),
+                format!("{}", n).white().bold(),
+                format!("{}", game.character.inventory.len()).white().bold(),
+                if game.character.inventory.len() == 1 { "" } else { "s" },
+                "sq inventory".cyan()
+            );
+            return;
+        }
+        n - 1
+    } else {
+        match find_inventory_item(&game, query) {
+            Ok(Some(i)) => i,
+            Ok(None) => {
+                println!(
+                    "{} No item matching {} in your inventory.",
+                    "⚠️".yellow(),
+                    format!("\"{}\"", query).white().bold()
+                );
+                return;
+            }
+            Err(msg) => {
+                println!("{} {}", "⚠️".yellow(), msg);
+                return;
+            }
+        }
+    };
 
     let sell_price = loot::item_price(&game.character.inventory[idx]) / 2;
     let item = game.character.inventory.remove(idx);
