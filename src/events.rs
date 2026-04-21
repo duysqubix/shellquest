@@ -627,6 +627,38 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
     }
 }
 
+fn passive_heal_denominator() -> u32 {
+    10
+}
+
+fn encounter_scale_for_danger(danger: u32) -> f32 {
+    match danger {
+        1 => 0.9,
+        2 => 1.1,
+        3 => 1.4,
+        4 => 1.8,
+        _ => 2.2,
+    }
+}
+
+struct EncounterProfile {
+    name: String,
+    attack: i32,
+    xp: u32,
+    elite: bool,
+}
+
+fn apply_elite_pressure(name: &str, base_attack: i32, base_xp: u32, danger: u32) -> EncounterProfile {
+    let attack_multiplier = 1.6 * (1.0 + (danger.saturating_sub(1) as f32) * 0.15);
+
+    EncounterProfile {
+        name: format!("Enraged {}", name),
+        attack: ((base_attack as f32) * attack_multiplier).round() as i32,
+        xp: ((base_xp as f32) * 2.0).round() as u32,
+        elite: true,
+    }
+}
+
 fn random_monster(rng: &mut impl Rng) -> (String, i32, u32) {
     let monsters = [
         ("Segfault Specter", 8, 15),
@@ -863,6 +895,33 @@ mod tests {
         use crate::character::Class;
         // Wizard in danger-3 zone with python: base 20 * 1.5 (zone) * 1.5 (affinity) = 45
         assert_eq!(final_xp(20, 3, &Class::Wizard, "python"), 45);
+    }
+
+    #[test]
+    fn passive_heal_denominator_is_greater_than_four() {
+        assert!(passive_heal_denominator() > 4);
+    }
+
+    #[test]
+    fn encounter_scale_increases_with_danger() {
+        assert!(encounter_scale_for_danger(3) > encounter_scale_for_danger(1));
+        assert!(encounter_scale_for_danger(5) > encounter_scale_for_danger(3));
+    }
+
+    #[test]
+    fn elite_modifier_raises_attack_and_reward() {
+        let elite = apply_elite_pressure("Deadlock Demon", 12, 25, 4);
+        assert!(elite.attack > 12);
+        assert!(elite.xp > 25);
+        assert!(elite.elite);
+    }
+
+    #[test]
+    fn elite_modifier_prefixes_name() {
+        let elite = apply_elite_pressure("Segfault Specter", 8, 15, 3);
+        assert!(elite.name.contains("Enraged") || elite.name.contains("Elite"),
+            "Expected elite name prefix, got: {}", elite.name);
+        assert!(elite.xp > 15);
     }
 }
 
