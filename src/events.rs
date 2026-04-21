@@ -80,7 +80,7 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
             }
         }
         "cat" | "bat" | "less" | "more" => {
-            if rng.gen_ratio(1, 6) {
+            if rng.gen_ratio(1, 10) {
                 handle_familiar(state, &mut rng);
             }
         }
@@ -135,7 +135,7 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
             }
         }
         "vim" | "nvim" | "emacs" | "nano" | "code" | "hx" => {
-            if rng.gen_ratio(1, 5) {
+            if rng.gen_ratio(1, 8) {
                 handle_meditation(state, &mut rng, &zone, &cmd_lower);
             }
         }
@@ -175,7 +175,7 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
             }
         }
         "echo" | "printf" => {
-            if rng.gen_ratio(1, 6) {
+            if rng.gen_ratio(1, 10) {
                 handle_echo_spell(state, &mut rng);
             }
         }
@@ -193,7 +193,7 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
     }
 
     // Passive healing over time
-    if state.character.hp < state.character.max_hp && rng.gen_ratio(1, 4) {
+    if state.character.hp < state.character.max_hp && rng.gen_ratio(1, passive_heal_denominator()) {
         state.character.heal(1);
     }
 
@@ -308,7 +308,7 @@ fn handle_angry_spirit(state: &mut GameState, rng: &mut impl Rng, zone: &crate::
 
 fn handle_familiar(state: &mut GameState, rng: &mut impl Rng) {
     let familiars = ["curious cat", "friendly daemon", "pixel sprite", "tame penguin", "binary beetle"];
-    let heal = rng.gen_range(3..=8);
+    let heal = rng.gen_range(2..=4);
     state.character.heal(heal);
     let creature = familiars[rng.gen_range(0..familiars.len())];
     let (plain, colored) = crate::messages::familiar(
@@ -391,7 +391,7 @@ fn handle_alchemy(state: &mut GameState, rng: &mut impl Rng) {
 }
 
 fn handle_meditation(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
-    let heal = rng.gen_range(5..=12);
+    let heal = rng.gen_range(3..=7);
     let base_xp = rng.gen_range(5..=10);
     state.character.heal(heal);
     let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
@@ -503,7 +503,7 @@ fn handle_treasure_chest(state: &mut GameState, _rng: &mut impl Rng, cwd: &str) 
 }
 
 fn handle_echo_spell(state: &mut GameState, rng: &mut impl Rng) {
-    let heal = rng.gen_range(2..=5);
+    let heal = rng.gen_range(1..=3);
     state.character.heal(heal);
     let msg = format!("Your words echo through the terminal void... the resonance heals you! +{} HP", heal);
     display::print_familiar(&msg);
@@ -591,7 +591,7 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
             let monster = random_monster_for_zone(rng, &zone);
             combat(state, rng, zone, cmd, &monster.0, monster.1, monster.2);
         }
-        41..=60 => {
+        41..=65 => {
             // Find loot
             let item = roll_loot(zone.danger_level);
             let msg = format!("You found: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
@@ -599,7 +599,7 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
             state.add_journal(JournalEntry::new(EventType::Loot, msg));
             add_to_inventory(state, item);
         }
-        61..=75 => {
+        66..=80 => {
             // Find gold
             let gold = rng.gen_range(1..=8) * zone.danger_level;
             state.character.gold += gold;
@@ -607,7 +607,16 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
             display::print_gold(&msg);
             state.add_journal(JournalEntry::new(EventType::Loot, msg));
         }
-        76..=90 => {
+        81..=85 => {
+            // XP discovery
+            let xp = rng.gen_range(5..=15);
+            let leveled = state.character.gain_xp(xp);
+            let msg = format!("You gain insight from your surroundings. +{} XP", xp);
+            display::print_discovery(&msg);
+            state.add_journal(JournalEntry::new(EventType::Discovery, msg));
+            check_level_up(state, leveled);
+        }
+        86..=90 => {
             // Heal
             let heal = rng.gen_range(2..=6);
             state.character.heal(heal);
@@ -628,7 +637,6 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
 }
 
 // Used by Task 2 to replace the hardcoded passive-heal gen_ratio gate.
-#[allow(dead_code)]
 fn passive_heal_denominator() -> u32 {
     10
 }
