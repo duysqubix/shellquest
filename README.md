@@ -118,6 +118,8 @@ That's it. Just use your terminal.
 - **15 subclasses** -- unlocked at prestige
 - **130+ items** across 5 rarity tiers: Common (70%) down to Legendary (0.01%)
 - **11 zones** determined by your current directory, each with unique flavor and danger scaling
+- **Attrition combat** — fights chip HP over time; dangerous zones can kill the unwary
+- **Elite encounters** — rare Enraged variants break through with sharper attacks and richer rewards
 - **5 named bosses**, spawning at 1 in 1,000 commands
 - **Prestige system** -- reset at 150, keep your gear, go again stronger
 - **Permadeath mode** -- optional; standard death costs 15% of your gold and resets current-level XP
