@@ -114,6 +114,88 @@ pub fn combat_draw(class: &Class, monster: &str) -> Msg {
     }
 }
 
+pub fn combat_elite_win(class: &Class, monster: &str, xp: u32) -> Msg {
+    let m = color_monster(monster);
+    let x = color_xp(xp);
+    match class {
+        Class::Wizard => (
+            format!("The {} unleashes chaos — and meets your wrath. +{} XP", monster, xp),
+            format!("The {} unleashes {} — and meets your {}. {}", m, "chaos".blue().bold(), "wrath".blue().bold(), x),
+        ),
+        Class::Warrior => (
+            format!("The {} charges like a warband. You break it. +{} XP", monster, xp),
+            format!("The {} charges like a {}. You break it. {}", m, "warband".red().bold(), x),
+        ),
+        Class::Rogue => (
+            format!("Even the {} can't track your killing stroke. +{} XP", monster, xp),
+            format!("Even the {} can't track your {}. {}", m, "killing stroke".yellow().bold(), x),
+        ),
+        Class::Ranger => (
+            format!("The {} rushes the line. Your aim holds. +{} XP", monster, xp),
+            format!("The {} rushes the line. Your aim {}. {}", m, "holds".green().bold(), x),
+        ),
+        Class::Necromancer => (
+            format!("The {} roars at the void. The void answers first. +{} XP", monster, xp),
+            format!("The {} roars at the {}. The {} answers first. {}", m, "void".magenta().bold(), "void".magenta().bold(), x),
+        ),
+    }
+}
+
+pub fn combat_elite_tough(class: &Class, monster: &str, dmg: i32, xp: u32) -> Msg {
+    let m = color_monster(monster);
+    let d = color_damage(dmg);
+    let x = color_xp(xp);
+    match class {
+        Class::Wizard => (
+            format!("The {} nearly tears through your wards. You erase it anyway. -{} HP, +{} XP", monster, dmg, xp),
+            format!("The {} nearly tears through your {}. You erase it anyway. {} HP lost. {}", m, "wards".blue().bold(), d, x),
+        ),
+        Class::Warrior => (
+            format!("You trade savage blows with the {}. You stand. It doesn't. -{} HP, +{} XP", monster, dmg, xp),
+            format!("You trade savage blows with the {}. You stand. It doesn't. {} HP lost. {}", m, d, x),
+        ),
+        Class::Rogue => (
+            format!("The {} nearly pins you. Your answer is faster. -{} HP, +{} XP", monster, dmg, xp),
+            format!("The {} nearly pins you. Your answer is {}. {} HP lost. {}", m, "faster".yellow().bold(), d, x),
+        ),
+        Class::Ranger => (
+            format!("The {} gets inside your guard. You drop it at arm's length. -{} HP, +{} XP", monster, dmg, xp),
+            format!("The {} gets inside your guard. You drop it at {}. {} HP lost. {}", m, "arm's length".green().bold(), d, x),
+        ),
+        Class::Necromancer => (
+            format!("The {} bites deep before your hex closes the grave. -{} HP, +{} XP", monster, dmg, xp),
+            format!("The {} bites deep before your {} closes the grave. {} HP lost. {}", m, "hex".magenta().bold(), d, x),
+        ),
+    }
+}
+
+pub fn combat_elite_lose(class: &Class, monster: &str, dmg: i32) -> Msg {
+    let m = color_monster(monster);
+    let d = color_damage(dmg);
+    match class {
+        Class::Wizard => (
+            format!("The {} shatters every ward you raise. -{} HP", monster, dmg),
+            format!("The {} shatters every {} you raise. -{} HP", m, "ward".blue().bold(), d),
+        ),
+        Class::Warrior => (
+            format!("The {} caves in your guard with a brutal hit. -{} HP", monster, dmg),
+            format!("The {} caves in your guard with a brutal hit. -{} HP", m, d),
+        ),
+        Class::Rogue => (
+            format!("The {} finds a gap you didn't know existed. -{} HP", monster, dmg),
+            format!("The {} finds a gap you didn't know existed. -{} HP", m, d),
+        ),
+        Class::Ranger => (
+            format!("The {} overruns your footing and tears through you. -{} HP", monster, dmg),
+            format!("The {} overruns your footing and tears through you. -{} HP", m, d),
+        ),
+        Class::Necromancer => (
+            format!("The {} rips life from your lungs. -{} HP", monster, dmg),
+            format!("The {} rips life from your {}. -{} HP", m, "lungs".magenta().bold(), d),
+        ),
+    }
+}
+
 pub fn trap(class: &Class, dmg: i32, hp: i32, max_hp: i32) -> Msg {
     let d = color_damage(dmg);
     let hp_str = crate::display::color_hp(hp, max_hp);
@@ -531,5 +613,35 @@ pub fn docker_orchestra(class: &Class, xp: u32, gold: u32) -> Msg {
             format!("You animate the container horde. The undead swarm is live. +{} XP, +{} gold", xp, gold),
             format!("You animate the container {}. The {} is live. {} {}", "horde".magenta(), "undead swarm".magenta().bold(), x, g),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combat_elite_win_mentions_monster_and_xp() {
+        let (plain, colored) = combat_elite_win(&Class::Wizard, "Enraged Segfault Specter", 42);
+        assert!(plain.contains("Enraged Segfault Specter"));
+        assert!(plain.contains("42"));
+        assert!(colored.contains("Enraged Segfault Specter"));
+    }
+
+    #[test]
+    fn combat_elite_tough_mentions_damage_and_xp() {
+        let (plain, colored) = combat_elite_tough(&Class::Warrior, "Enraged Deadlock Demon", 7, 30);
+        assert!(plain.contains("Enraged Deadlock Demon"));
+        assert!(plain.contains("7"));
+        assert!(plain.contains("30"));
+        assert!(colored.contains("Enraged Deadlock Demon"));
+    }
+
+    #[test]
+    fn combat_elite_lose_mentions_monster_and_damage() {
+        let (plain, colored) = combat_elite_lose(&Class::Rogue, "Enraged Buffer Overflow Beast", 9);
+        assert!(plain.contains("Enraged Buffer Overflow Beast"));
+        assert!(plain.contains("9"));
+        assert!(colored.contains("Enraged Buffer Overflow Beast"));
     }
 }
