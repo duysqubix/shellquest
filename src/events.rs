@@ -627,10 +627,14 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
     }
 }
 
+// Used by Task 2 to replace the hardcoded passive-heal gen_ratio gate.
+#[allow(dead_code)]
 fn passive_heal_denominator() -> u32 {
     10
 }
 
+// Used by Task 3 to scale monster attack by zone danger.
+#[allow(dead_code)]
 fn encounter_scale_for_danger(danger: u32) -> f32 {
     match danger {
         1 => 0.9,
@@ -641,6 +645,8 @@ fn encounter_scale_for_danger(danger: u32) -> f32 {
     }
 }
 
+// Used by Tasks 3 and 4 to represent normal and elite encounter profiles.
+#[allow(dead_code)]
 struct EncounterProfile {
     name: String,
     attack: i32,
@@ -648,6 +654,8 @@ struct EncounterProfile {
     elite: bool,
 }
 
+// Used by Task 4 to create elite encounters.
+#[allow(dead_code)]
 fn apply_elite_pressure(name: &str, base_attack: i32, base_xp: u32, danger: u32) -> EncounterProfile {
     let attack_multiplier = 1.6 * (1.0 + (danger.saturating_sub(1) as f32) * 0.15);
 
@@ -899,20 +907,22 @@ mod tests {
 
     #[test]
     fn passive_heal_denominator_is_greater_than_four() {
-        assert!(passive_heal_denominator() > 4);
+        assert_eq!(passive_heal_denominator(), 10);
     }
 
     #[test]
     fn encounter_scale_increases_with_danger() {
-        assert!(encounter_scale_for_danger(3) > encounter_scale_for_danger(1));
-        assert!(encounter_scale_for_danger(5) > encounter_scale_for_danger(3));
+        assert_eq!(encounter_scale_for_danger(1), 0.9_f32);
+        assert_eq!(encounter_scale_for_danger(3), 1.4_f32);
+        assert_eq!(encounter_scale_for_danger(5), 2.2_f32);
+        assert!(encounter_scale_for_danger(5) > encounter_scale_for_danger(1));
     }
 
     #[test]
     fn elite_modifier_raises_attack_and_reward() {
         let elite = apply_elite_pressure("Deadlock Demon", 12, 25, 4);
-        assert!(elite.attack > 12);
-        assert!(elite.xp > 25);
+        assert_eq!(elite.attack, 28);
+        assert_eq!(elite.xp, 50);
         assert!(elite.elite);
     }
 
@@ -921,7 +931,7 @@ mod tests {
         let elite = apply_elite_pressure("Segfault Specter", 8, 15, 3);
         assert!(elite.name.starts_with("Enraged "),
             "Expected name to start with 'Enraged ', got: {}", elite.name);
-        assert!(elite.xp > 15);
+        assert_eq!(elite.xp, 30);
     }
 }
 
