@@ -642,7 +642,6 @@ fn passive_heal_denominator() -> u32 {
 }
 
 // Used by Task 3 to scale monster attack by zone danger.
-#[allow(dead_code)]
 fn encounter_scale_for_danger(danger: u32) -> f32 {
     match danger {
         1 => 0.9,
@@ -694,8 +693,8 @@ fn random_monster(rng: &mut impl Rng) -> (String, i32, u32) {
 
 fn random_monster_for_zone(rng: &mut impl Rng, zone: &crate::zones::Zone) -> (String, i32, u32) {
     let (name, base_atk, base_xp) = random_monster(rng);
-    let scale = zone.danger_level as f32 / 2.0;
-    let atk = (base_atk as f32 * scale).max(1.0) as i32;
+    let scale = encounter_scale_for_danger(zone.danger_level);
+    let atk = (base_atk as f32 * scale).round().max(1.0) as i32;
     let xp = (base_xp as f32 * scale).max(5.0) as u32;
     (name, atk, xp)
 }
@@ -716,7 +715,7 @@ fn combat(
     let final_reward = final_xp(xp_reward, zone.danger_level, &state.character.class, cmd);
 
     let player_hits = hit_roll + player_power > 10;
-    let monster_hits = dodge_roll > (10 + player_defense);
+    let monster_hits = dodge_roll > (8 + player_defense / 2);
 
     if player_hits && !monster_hits {
         state.character.kills += 1;
@@ -726,7 +725,7 @@ fn combat(
         state.add_journal(JournalEntry::new(EventType::Combat, plain));
         check_level_up(state, leveled);
     } else if player_hits && monster_hits {
-        let damage = (monster_atk - player_defense).max(1);
+        let damage = (monster_atk - player_defense / 3).max(1);
         let gold_before = state.character.gold;
         let died = state.character.take_damage(damage);
         if !died {
@@ -757,7 +756,7 @@ fn combat(
             }
         }
     } else if !player_hits && monster_hits {
-        let damage = (monster_atk - player_defense / 2).max(1);
+        let damage = (monster_atk - player_defense / 4).max(1);
         let gold_before = state.character.gold;
         let died = state.character.take_damage(damage);
         if died {
@@ -924,6 +923,23 @@ mod tests {
         assert_eq!(encounter_scale_for_danger(3), 1.4_f32);
         assert_eq!(encounter_scale_for_danger(5), 2.2_f32);
         assert!(encounter_scale_for_danger(5) > encounter_scale_for_danger(1));
+    }
+
+    #[test]
+    fn encounter_scale_danger_1_below_base() {
+        assert_eq!(encounter_scale_for_danger(1), 0.9_f32);
+    }
+
+    #[test]
+    fn high_danger_encounter_hits_harder_than_home_zone() {
+        let low = encounter_scale_for_danger(1);
+        let high = encounter_scale_for_danger(5);
+        assert!(
+            high > low * 2.0,
+            "danger 5 ({}) should be more than 2× danger 1 ({})",
+            high,
+            low
+        );
     }
 
     #[test]
