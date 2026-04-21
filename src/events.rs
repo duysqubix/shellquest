@@ -919,8 +919,8 @@ mod tests {
     #[test]
     fn elite_modifier_prefixes_name() {
         let elite = apply_elite_pressure("Segfault Specter", 8, 15, 3);
-        assert!(elite.name.contains("Enraged") || elite.name.contains("Elite"),
-            "Expected elite name prefix, got: {}", elite.name);
+        assert!(elite.name.starts_with("Enraged "),
+            "Expected name to start with 'Enraged ', got: {}", elite.name);
         assert!(elite.xp > 15);
     }
 }
