@@ -280,7 +280,7 @@ impl Character {
     }
 
     pub fn defense(&self) -> i32 {
-        let base = self.dexterity / 2;
+        let base = self.dexterity / 3;
         let armor_bonus = self.armor.as_ref().map_or(0, |a| a.power);
         let ring_bonus = self.ring.as_ref().map_or(0, |r| r.power);
         base + armor_bonus + ring_bonus
@@ -571,8 +571,8 @@ mod tests {
     #[test]
     fn defense_no_equipment() {
         let c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
-        // DEX 9; base = 9/2 = 4
-        assert_eq!(c.defense(), 9 / 2);
+        // DEX 9; base = 9/3 = 3
+        assert_eq!(c.defense(), 9 / 3);
     }
 
     #[test]
@@ -580,7 +580,13 @@ mod tests {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
         c.equip(make_item(ItemSlot::Armor, 5, Rarity::Common));
         c.equip(make_item(ItemSlot::Ring, 3, Rarity::Common));
-        assert_eq!(c.defense(), 9 / 2 + 5 + 3);
+        assert_eq!(c.defense(), 9 / 3 + 5 + 3);
+    }
+
+    #[test]
+    fn defense_uses_dex_divided_by_three() {
+        let c = Character::new("Test".to_string(), Class::Rogue, Race::Human);
+        assert_eq!(c.defense(), 5);
     }
 
     // --- take_damage() / die() ---
