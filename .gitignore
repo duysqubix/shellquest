@@ -2,4 +2,5 @@ target/
 .omc/
 .sisyphus/
 .worktrees/
+docs/plans/
 
