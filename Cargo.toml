@@ -1,6 +1,6 @@
 [package]
 name = "shellquest"
-version = "1.8.5"
+version = "1.9.0"
 edition = "2021"
 description = "A passive RPG that lives in your terminal — your shell is the dungeon"
 license = "MIT"
