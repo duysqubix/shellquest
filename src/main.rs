@@ -1,3 +1,4 @@
+mod arena;
 mod boss;
 mod messages;
 mod character;
@@ -7,13 +8,12 @@ mod journal;
 mod loot;
 mod sage;
 mod state;
-mod tournament;
 mod zones;
 
 use character::{Class, Race};
 use clap::{Parser, Subcommand};
 use colored::*;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 #[derive(Parser)]
 #[command(name = "sq", version, about = "A passive RPG that lives in your terminal")]
@@ -110,7 +110,9 @@ enum Commands {
     Reset,
     /// Update sq to the latest version
     Update,
-    /// Enter the Terminal Gauntlet tournament
+    /// Enter the Arena (interactive combat gauntlet)
+    Arena,
+    /// Enter the Terminal Gauntlet tournament (deprecated; use `arena`)
     Tournament,
 }
 
@@ -140,7 +142,8 @@ fn main() {
         Commands::Prestige => cmd_prestige(),
         Commands::Reset => cmd_reset(),
         Commands::Update => cmd_update(),
-        Commands::Tournament => cmd_tournament(),
+        Commands::Arena => cmd_arena(false),
+        Commands::Tournament => cmd_arena(true),
     }
 }
 
@@ -1638,7 +1641,20 @@ fn cmd_update() {
     }
 }
 
-fn cmd_tournament() {
+fn cmd_arena(from_deprecated: bool) {
+    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+        println!("Arena requires an interactive terminal.");
+        return;
+    }
+
+    if from_deprecated {
+        println!(
+            "{}",
+            "⚠️  The `tournament` command is deprecated. Use `sq arena` instead."
+                .yellow()
+        );
+    }
+
     let mut game = match state::load() {
         Ok(g) => g,
         Err(e) => {
@@ -1647,9 +1663,131 @@ fn cmd_tournament() {
         }
     };
 
-    tournament::run_tournament(&mut game);
+    let tier = match select_arena_tier(&game.character) {
+        Some(t) => t,
+        None => return,
+    };
 
-    if let Err(e) = state::save(&game) {
-        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+    if !tier.is_unlocked(&game.character) {
+        let req = if tier.or_unlock {
+            format!(
+                "Requires level {} or prestige {}.",
+                tier.min_level, tier.min_prestige
+            )
+        } else {
+            format!(
+                "Requires level {} and prestige {}.",
+                tier.min_level, tier.min_prestige
+            )
+        };
+        println!(
+            "{} {} is locked. {}",
+            "🔒".bold(),
+            tier.name.yellow().bold(),
+            req
+        );
+        return;
+    }
+
+    let entry = arena::ArenaEntrySnapshot::from_character(&game.character);
+    let fee = tier.compute_fee(&entry);
+
+    if game.character.gold < fee {
+        println!(
+            "{} Not enough gold! {} entry fee is {} gold, you have {}.",
+            "⚠️".yellow(),
+            tier.name,
+            format!("{}", fee).yellow().bold(),
+            format!("{}", game.character.gold).yellow()
+        );
+        return;
+    }
+
+    let confirm = prompt(&format!(
+        "{} Enter {} for {} gold? [y/N] ",
+        "🏟️".bold(),
+        tier.name.yellow().bold(),
+        format!("{}", fee).yellow().bold()
+    ));
+    if confirm.to_lowercase() != "y" {
+        println!("{}", "Cancelled.".dimmed());
+        return;
+    }
+
+    match arena::run_arena_session(&game.character, tier, fee) {
+        Some(commit) => {
+            arena::apply_arena_commit(&mut game, &commit);
+            if let Err(e) = state::save(&game) {
+                eprintln!("{} Failed to save arena results: {}", "❌".bold(), e.red());
+                return;
+            }
+
+            let (label, rounds) = match commit.outcome {
+                arena::ArenaOutcome::Defeat { rounds_cleared } => ("Knocked out", rounds_cleared),
+                arena::ArenaOutcome::CashOut { rounds_cleared } => ("Cashed out", rounds_cleared),
+                arena::ArenaOutcome::Victory { rounds_cleared } => ("Victory", rounds_cleared),
+            };
+            println!(
+                "{} {} after {} rounds.",
+                "🏁".bold(),
+                label,
+                rounds
+            );
+        }
+        None => {
+            println!("{}", "Arena run cancelled before round 1.".dimmed());
+        }
     }
 }
+
+fn select_arena_tier(character: &character::Character) -> Option<arena::ArenaTier> {
+    println!();
+    println!("{}", "🏟️  Arena Tiers".bold().yellow());
+    println!("{}", "─".repeat(50).dimmed());
+
+    for (i, tier) in arena::ARENA_TIERS.iter().enumerate() {
+        let unlocked = tier.is_unlocked(character);
+        let status = if unlocked {
+            "✓".green().bold()
+        } else {
+            "🔒".dimmed()
+        };
+        let name = if unlocked {
+            tier.name.white().bold()
+        } else {
+            tier.name.dimmed()
+        };
+        let req = if tier.or_unlock {
+            format!("lvl {} or prestige {}", tier.min_level, tier.min_prestige)
+        } else {
+            format!("lvl {} & prestige {}", tier.min_level, tier.min_prestige)
+        };
+        println!(
+            "  {}. {} {} — {} rounds — {}",
+            format!("{}", i + 1).dimmed(),
+            status,
+            name,
+            tier.max_rounds,
+            req.dimmed()
+        );
+    }
+
+    println!("{}", "─".repeat(50).dimmed());
+
+    loop {
+        let choice = prompt("   Select tier [1-5] (or press Enter to cancel): ");
+        if choice.is_empty() {
+            return None;
+        }
+        match choice.as_str() {
+            "1" => return Some(arena::TIER_PIT),
+            "2" => return Some(arena::TIER_GAUNTLET),
+            "3" => return Some(arena::TIER_COLOSSEUM),
+            "4" => return Some(arena::TIER_ABYSSAL),
+            "5" => return Some(arena::TIER_GODSLAYER),
+            _ => println!("   Invalid choice. Pick 1-5 or press Enter to cancel."),
+        }
+    }
+}
+
+

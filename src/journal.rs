@@ -18,6 +18,8 @@ pub enum EventType {
     Death,
     Quest,
     Craft,
+    /// Kept as `Tournament` for save compatibility.
+    /// This variant represents Arena events in the UI.
     Tournament,
 }
 

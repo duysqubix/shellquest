@@ -815,8 +815,8 @@ pub fn tournament_round_reward_max_level_no_loot(round: u32, gold: u32) -> Msg {
 }
 
 pub fn tournament_baseline_win(round: u32) -> Msg {
-    let plain = format!("🏆 TOURNAMENT BASELINE CLEARED! You survived {} rounds! Keep fighting!", round);
-    let colored = format!("{} {} You survived {} rounds! Keep fighting!", "🏆".yellow().bold(), "TOURNAMENT BASELINE CLEARED!".yellow().bold().on_black(), format!("{}", round).cyan().bold());
+    let plain = format!("🏆 ARENA BASELINE CLEARED! You survived {} rounds! Keep fighting!", round);
+    let colored = format!("{} {} You survived {} rounds! Keep fighting!", "🏆".yellow().bold(), "ARENA BASELINE CLEARED!".yellow().bold().on_black(), format!("{}", round).cyan().bold());
     (plain, colored)
 }
 
@@ -827,7 +827,7 @@ pub fn tournament_ko(rounds_cleared: u32, total_gold: u32, total_xp: u32) -> Msg
 }
 
 pub fn tournament_victory(rounds_cleared: u32, total_gold: u32, total_xp: u32) -> Msg {
-    let plain = format!("🏆 TOURNAMENT CHAMPION! You survived all {} rounds! Earned: {} gold, {} XP.", rounds_cleared, total_gold, total_xp);
-    let colored = format!("{} {} Survived all {} rounds! Earned: {} gold, {} XP!", "🏆".yellow().bold(), "TOURNAMENT CHAMPION!".yellow().bold().on_black(), format!("{}", rounds_cleared).cyan().bold(), format!("{}", total_gold).yellow().bold(), format!("{}", total_xp).cyan().bold());
+    let plain = format!("🏆 ARENA CHAMPION! You survived all {} rounds! Earned: {} gold, {} XP.", rounds_cleared, total_gold, total_xp);
+    let colored = format!("{} {} Survived all {} rounds! Earned: {} gold, {} XP!", "🏆".yellow().bold(), "ARENA CHAMPION!".yellow().bold().on_black(), format!("{}", rounds_cleared).cyan().bold(), format!("{}", total_gold).yellow().bold(), format!("{}", total_xp).cyan().bold());
     (plain, colored)
 }

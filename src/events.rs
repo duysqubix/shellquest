@@ -304,7 +304,7 @@ fn handle_forge(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::
         let (plain, colored) = crate::messages::forge_loot(&state.character.class, &item.name, item.power, xp);
         display::print_loot(&colored, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Craft, plain));
-        add_to_inventory(state, item);
+        add_to_inventory(state, item, false);
     } else {
         let base_xp = rng.gen_range(8..=20);
         let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
@@ -407,7 +407,7 @@ fn handle_alchemy(state: &mut GameState, rng: &mut impl Rng) {
         let msg = format!("Your package install transmutes into: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
         display::print_loot(&msg, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Loot, msg));
-        add_to_inventory(state, item);
+        add_to_inventory(state, item, false);
     } else {
         let xp = rng.gen_range(5..=15);
         let leveled = state.character.gain_xp(xp);
@@ -445,7 +445,7 @@ fn handle_scrying(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
         let msg = format!("Your search reveals a hidden treasure: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
         display::print_loot(&msg, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Loot, msg));
-        add_to_inventory(state, item);
+        add_to_inventory(state, item, false);
     } else {
         let xp = rng.gen_range(8..=16);
         let leveled = state.character.gain_xp(xp);
@@ -527,7 +527,7 @@ fn handle_treasure_chest(state: &mut GameState, _rng: &mut impl Rng, cwd: &str) 
     let msg = format!("You crack open an archive! Inside you find: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
     display::print_loot(&msg, &item.rarity);
     state.add_journal(JournalEntry::new(EventType::Loot, msg));
-    add_to_inventory(state, item);
+    add_to_inventory(state, item, false);
 }
 
 fn handle_echo_spell(state: &mut GameState, rng: &mut impl Rng) {
@@ -556,7 +556,7 @@ fn handle_container_forge(state: &mut GameState, rng: &mut impl Rng, cwd: &str) 
         let msg = format!("The container forge blazes! Layers fuse into: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
         display::print_loot(&msg, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Craft, msg));
-        add_to_inventory(state, item);
+        add_to_inventory(state, item, false);
     } else {
         let xp = rng.gen_range(12..=25);
         let leveled = state.character.gain_xp(xp);
@@ -635,7 +635,7 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
             let msg = format!("You found: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
             display::print_loot(&msg, &item.rarity);
             state.add_journal(JournalEntry::new(EventType::Loot, msg));
-            add_to_inventory(state, item);
+            add_to_inventory(state, item, false);
         }
         66..=80 => {
             // Find gold
@@ -924,7 +924,7 @@ mod tests {
     #[test]
     fn add_to_inventory_adds_item_when_space_available() {
         let mut state = make_state();
-        add_to_inventory(&mut state, make_item("Sword", ItemSlot::Weapon, 5, Rarity::Common));
+        add_to_inventory(&mut state, make_item("Sword", ItemSlot::Weapon, 5, Rarity::Common), false);
         assert_eq!(state.character.inventory.len(), 1);
         assert_eq!(state.character.inventory[0].name, "Sword");
     }
@@ -935,7 +935,7 @@ mod tests {
         for i in 0..20 {
             state.character.inventory.push(make_item(&format!("Common {}", i), ItemSlot::Weapon, i as i32 + 1, Rarity::Common));
         }
-        add_to_inventory(&mut state, make_item("New Sword", ItemSlot::Weapon, 99, Rarity::Rare));
+        add_to_inventory(&mut state, make_item("New Sword", ItemSlot::Weapon, 99, Rarity::Rare), false);
         assert_eq!(state.character.inventory.len(), 20);
         assert!(state.character.inventory.iter().any(|i| i.name == "New Sword"));
         assert!(!state.character.inventory.iter().any(|i| i.name == "Common 0"));
@@ -947,7 +947,7 @@ mod tests {
         for i in 0..20 {
             state.character.inventory.push(make_item(&format!("Epic {}", i), ItemSlot::Weapon, i as i32 + 1, Rarity::Epic));
         }
-        add_to_inventory(&mut state, make_item("New Sword", ItemSlot::Weapon, 5, Rarity::Common));
+        add_to_inventory(&mut state, make_item("New Sword", ItemSlot::Weapon, 5, Rarity::Common), false);
         assert_eq!(state.character.inventory.len(), 20);
         assert!(!state.character.inventory.iter().any(|i| i.name == "New Sword"));
         assert_eq!(state.character.inventory.iter().filter(|i| matches!(i.rarity, Rarity::Epic)).count(), 20);
@@ -959,7 +959,7 @@ mod tests {
         for i in 0..20 {
             state.character.inventory.push(make_item(&format!("Legendary {}", i), ItemSlot::Weapon, i as i32 + 1, Rarity::Legendary));
         }
-        add_to_inventory(&mut state, make_item("Common Sword", ItemSlot::Weapon, 5, Rarity::Common));
+        add_to_inventory(&mut state, make_item("Common Sword", ItemSlot::Weapon, 5, Rarity::Common), false);
         assert_eq!(state.character.inventory.len(), 20);
         assert!(!state.character.inventory.iter().any(|i| i.name == "Common Sword"));
         assert_eq!(state.character.inventory.iter().filter(|i| matches!(i.rarity, Rarity::Legendary)).count(), 20);
@@ -973,7 +973,7 @@ mod tests {
         }
         state.character.inventory.push(make_item("Weak Common", ItemSlot::Weapon, 1, Rarity::Common));
         state.character.inventory.push(make_item("Medium Rare", ItemSlot::Weapon, 10, Rarity::Rare));
-        add_to_inventory(&mut state, make_item("New Epic", ItemSlot::Weapon, 99, Rarity::Epic));
+        add_to_inventory(&mut state, make_item("New Epic", ItemSlot::Weapon, 99, Rarity::Epic), false);
         assert_eq!(state.character.inventory.len(), 20);
         assert!(state.character.inventory.iter().any(|i| i.name == "New Epic"));
         assert!(!state.character.inventory.iter().any(|i| i.name == "Weak Common"));
@@ -988,7 +988,7 @@ mod tests {
         }
         state.character.inventory.push(make_item("Strong Uncommon", ItemSlot::Weapon, 20, Rarity::Uncommon));
         state.character.inventory.push(make_item("Weak Rare", ItemSlot::Weapon, 5, Rarity::Rare));
-        add_to_inventory(&mut state, make_item("New Weapon", ItemSlot::Weapon, 99, Rarity::Legendary));
+        add_to_inventory(&mut state, make_item("New Weapon", ItemSlot::Weapon, 99, Rarity::Legendary), false);
         assert_eq!(state.character.inventory.len(), 20);
         assert!(state.character.inventory.iter().any(|i| i.name == "New Weapon"));
         assert!(!state.character.inventory.iter().any(|i| i.name == "Weak Rare"));
@@ -1118,7 +1118,7 @@ pub(crate) fn full_inventory_message(item: &crate::character::Item) -> String {
     msgs[idx].replace("{}", n)
 }
 
-fn add_to_inventory(state: &mut GameState, item: crate::character::Item) -> bool {
+fn add_to_inventory(state: &mut GameState, item: crate::character::Item, quiet_rejection: bool) -> bool {
     const MAX_INVENTORY: usize = 20;
     if state.character.inventory.len() < MAX_INVENTORY {
         state.character.inventory.push(item);
@@ -1158,12 +1158,18 @@ fn add_to_inventory(state: &mut GameState, item: crate::character::Item) -> bool
         state.character.inventory.push(item);
         true
     } else {
-        let msg = full_inventory_message(&item);
-        eprintln!("{} {}", "📦".bold(), msg.yellow().italic());
+        if !quiet_rejection {
+            let msg = full_inventory_message(&item);
+            eprintln!("{} {}", "📦".bold(), msg.yellow().italic());
+        }
         false
     }
 }
 
 pub(crate) fn add_to_inventory_pub(state: &mut GameState, item: crate::character::Item) -> bool {
-    add_to_inventory(state, item)
+    add_to_inventory(state, item, false)
+}
+
+pub(crate) fn add_to_inventory_pub_quiet(state: &mut GameState, item: crate::character::Item) -> bool {
+    add_to_inventory(state, item, true)
 }

@@ -308,7 +308,24 @@ impl Character {
         leveled
     }
 
-    fn level_up(&mut self) {
+    /// Arena-safe XP gain that does NOT restore HP on level-up.
+    pub fn gain_xp_arena_safe(&mut self, amount: u32) -> bool {
+        if self.level >= MAX_LEVEL {
+            return false;
+        }
+        self.xp += amount;
+        let mut leveled = false;
+        while self.xp >= self.xp_to_next && self.level < MAX_LEVEL {
+            self.level_up_core();
+            leveled = true;
+        }
+        if self.level >= MAX_LEVEL {
+            self.xp = 0;
+        }
+        leveled
+    }
+
+    fn level_up_core(&mut self) {
         self.xp -= self.xp_to_next;
         self.level += 1;
         // XP curve: starts easy, gets harder
@@ -324,8 +341,12 @@ impl Character {
         self.dexterity += 1;
         self.intelligence += 1;
         self.max_hp += 5;
-        self.hp = self.max_hp;
         self.update_title();
+    }
+
+    fn level_up(&mut self) {
+        self.level_up_core();
+        self.hp = self.max_hp;
     }
 
     pub fn can_prestige(&self) -> bool {
@@ -654,6 +675,52 @@ mod tests {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
         c.heal(9999);
         assert_eq!(c.hp, c.max_hp);
+    }
+
+    #[test]
+    fn gain_xp_arena_safe_does_not_heal_on_level_up() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        c.xp = 20;
+        c.xp_to_next = 25;
+        c.hp = 10;
+        let max_hp_before = c.max_hp;
+        let leveled = c.gain_xp_arena_safe(10);
+        assert!(leveled);
+        assert_eq!(c.level, 2);
+        assert_eq!(c.max_hp, max_hp_before + 5);
+        assert_eq!(c.hp, 10);
+    }
+
+    #[test]
+    fn gain_xp_arena_safe_increments_stats_on_level_up() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        c.xp = 20;
+        c.xp_to_next = 25;
+        let str_before = c.strength;
+        let dex_before = c.dexterity;
+        let int_before = c.intelligence;
+        c.gain_xp_arena_safe(10);
+        assert_eq!(c.strength, str_before + 1);
+        assert_eq!(c.dexterity, dex_before + 1);
+        assert_eq!(c.intelligence, int_before + 1);
+    }
+
+    #[test]
+    fn gain_xp_arena_safe_no_level_up_returns_false() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        c.xp = 5;
+        c.xp_to_next = 25;
+        let leveled = c.gain_xp_arena_safe(10);
+        assert!(!leveled);
+        assert_eq!(c.level, 1);
+    }
+
+    #[test]
+    fn gain_xp_arena_safe_at_max_level_returns_false() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        c.level = MAX_LEVEL;
+        let leveled = c.gain_xp_arena_safe(99999);
+        assert!(!leveled);
     }
 
     // --- equip() ---
