@@ -284,9 +284,9 @@ pub fn print_status(char: &Character, permadeath: bool) {
         println!(
             "{}  {} {}  {} {}",
             "│".dimmed(),
-            "Tournament Wins:".bold(),
+            "Arena Crowns:".bold(),
             format!("{}", char.tournament_wins).yellow().bold(),
-            "Best Round:".bold(),
+            "Arena Best:".bold(),
             format!("{}", char.best_tournament_round).cyan().bold()
         );
     }

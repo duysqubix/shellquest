@@ -162,6 +162,17 @@ Level 150. You can stop. You won't.
 
 ---
 
+## Arena
+
+The Arena is an interactive combat gauntlet where you face waves of increasingly difficult enemies for massive rewards.
+
+- **Risk vs Reward** — Cash out early to keep your winnings, or push further for better loot.
+- **Interactive** — After each auto-resolved fight, choose to Continue deeper or Cash Out with your current winnings.
+- **Tiers** — Multiple difficulty tiers with level and prestige requirements.
+- **Limitations** — Arena runs are not resumable. If you close your terminal or interrupt the process before finishing, the run rolls back to the pre-arena state (including your entry fee).
+
+---
+
 ## Commands
 
 | Command | Description |
@@ -179,6 +190,8 @@ Level 150. You can stop. You won't.
 | `sq drink <name>` | Drink a potion |
 | `sq drop <name>` | Drop an item from inventory |
 | `sq prestige` | Ascend at level 150 |
+| `sq arena` | Enter the interactive combat gauntlet (risk/reward) |
+| `sq tournament` | Deprecated; use `sq arena` instead |
 | `sq hook --shell zsh` | Print shell hook code |
 | `sq update` | Update to latest via cargo |
 | `sq reset` | Delete your character (permanent) |

@@ -33,7 +33,7 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 
 ### Testing Requirements
 - `cargo build` to verify compilation (`cargo clippy` is not installed in the current toolchain — skip it)
-- No test suite exists — manual testing only:
+- `cargo test` to run the unit test suite. Manual testing is also required for CLI flow:
   - `sq init` → create character
   - `sq status` → view sheet
   - `sq tick --cmd "git commit" --cwd "." --exit-code 0` → trigger craft event
@@ -46,6 +46,13 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
   - Test class messages: run `sq tick --cmd "git commit" --cwd "." --exit-code 0` then `sq journal` — message should reflect your class flavor (Wizard: grimoire/arcane, Warrior: battle-scroll, etc.)
   - Test zone XP scaling: run ticks from `$HOME` (danger 1) vs `/tmp` (danger 3) — XP in journal should be ~1.5× higher in /tmp
   - Test sage update notification: set `"last_announced_version": null` in save.json and `"latest_version": "99.0.0"` — sage should appear on next tick guaranteed (without the 1/50 random gate)
+  - **Arena QA**:
+    - `sq arena` (interactive) — verify tier selection, combat loop, and cash-out.
+    - `echo "y" | sq arena` — verify rejection of non-interactive input (should fail if not a TTY).
+    - `sq arena` -> select tier -> cash out at Round 1 — verify gold/XP gain and journal entry.
+    - `sq arena` -> get KO'd — verify loss of entry fee, HP set to 25%, and "Knocked out" journal label.
+    - Chest overflow: fill inventory (20 items), win arena with loot — verify rejected items convert to half-sell-value gold.
+    - Interruption: `Ctrl+C` during a run — verify no state is saved (rollback behavior).
 
 ### Common Patterns
 - Serde for all data structures (JSON serialization)
@@ -53,6 +60,7 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - `rand::Rng` with `gen_ratio()` for probability-based event triggers
 - Two-pass message formatting: plain text for journal storage, colored for terminal display
 - Auto-equip logic: new item replaces equipped if higher power, otherwise goes to inventory (capped at 20)
+- **Arena Transactions**: Arena results are committed atomically at the end of a session. Runs are not resumable. Hard interruptions result in a rollback to the pre-arena state (including the entry fee).
 
 ## Dependencies
 

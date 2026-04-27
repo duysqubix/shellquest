@@ -196,4 +196,15 @@ mod tests {
         let restored: GameState = serde_json::from_str(&json).unwrap();
         assert!(restored.active_boss.is_some());
     }
+
+    #[test]
+    fn game_state_serializes_and_deserializes_tournament_fields() {
+        let mut state = GameState::new(make_character());
+        state.character.tournament_wins = 7;
+        state.character.best_tournament_round = 42;
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: GameState = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.character.tournament_wins, 7);
+        assert_eq!(restored.character.best_tournament_round, 42);
+    }
 }
