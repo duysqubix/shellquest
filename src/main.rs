@@ -1647,10 +1647,9 @@ fn cmd_tournament() {
         }
     };
 
-    let completed = tournament::run_tournament(&mut game);
-    if completed {
-        if let Err(e) = state::save(&game) {
-            eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
-        }
+    tournament::run_tournament(&mut game);
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
