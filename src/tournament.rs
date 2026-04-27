@@ -100,7 +100,7 @@ fn should_keep_tournament_loot(character: &crate::character::Character, item: &c
     }
 }
 
-pub fn run_tournament(game: &mut GameState) {
+pub fn run_tournament(game: &mut GameState) -> bool {
     let mut rng = rand::thread_rng();
     let fee = entry_fee(game.character.level, game.character.total_prestiges);
 
@@ -111,7 +111,7 @@ pub fn run_tournament(game: &mut GameState) {
             format!("{}", fee).yellow().bold(),
             format!("{}", game.character.gold).yellow()
         );
-        return;
+        return false;
     }
 
     game.character.gold -= fee;
@@ -119,7 +119,7 @@ pub fn run_tournament(game: &mut GameState) {
 
     if let Err(e) = crate::state::save(game) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
-        return;
+        return false;
     }
 
     let mut round: u32 = 1;
@@ -233,7 +233,7 @@ pub fn run_tournament(game: &mut GameState) {
                     rounds_cleared, total_gold, total_xp, game.character.best_tournament_round
                 );
                 game.add_journal(JournalEntry::new(EventType::Tournament, journal_msg));
-                return;
+                return false;
             }
 
             if enemy.hp <= 0 {
@@ -303,7 +303,7 @@ pub fn run_tournament(game: &mut GameState) {
                         MAX_ROUNDS, total_gold, total_xp, game.character.best_tournament_round
                     );
                     game.add_journal(JournalEntry::new(EventType::Tournament, journal_msg));
-                    return;
+                    return true;
                 }
 
                 break;
