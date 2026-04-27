@@ -140,10 +140,8 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
                 let _ = std::fs::remove_file(&path);
                 std::process::exit(0);
             } else {
-                state.character.xp = 0;
+                state.character.die();
                 let gold_loss = gold_before * 15 / 100;
-                state.character.gold = gold_before.saturating_sub(gold_loss);
-                state.character.hp = state.character.max_hp / 2;
                 crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, Some(dmg));
                 crate::display::print_boss_flee(
                     &boss_name,

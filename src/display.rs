@@ -280,6 +280,16 @@ pub fn print_status(char: &Character, permadeath: bool) {
         "Title:".bold(),
         char.title.yellow().italic()
     );
+    if char.tournament_wins > 0 || char.best_tournament_round > 0 {
+        println!(
+            "{}  {} {}  {} {}",
+            "│".dimmed(),
+            "Tournament Wins:".bold(),
+            format!("{}", char.tournament_wins).yellow().bold(),
+            "Best Round:".bold(),
+            format!("{}", char.best_tournament_round).cyan().bold()
+        );
+    }
     if permadeath {
         println!("{}  {} {}", "│".dimmed(), "Mode:".bold(), "☠ PERMADEATH".red().bold());
     }
@@ -330,6 +340,7 @@ pub fn print_journal(entries: &[JournalEntry]) {
                 EventType::Death => "💀",
                 EventType::Quest => "🏆",
                 EventType::Craft => "🔨",
+                EventType::Tournament => "🏅",
             };
             let msg_colored = match entry.event_type {
                 EventType::Combat => entry.message.white().to_string(),
@@ -340,6 +351,7 @@ pub fn print_journal(entries: &[JournalEntry]) {
                 EventType::Death => entry.message.red().bold().to_string(),
                 EventType::Quest => entry.message.yellow().to_string(),
                 EventType::Craft => entry.message.cyan().to_string(),
+                EventType::Tournament => entry.message.yellow().bold().to_string(),
             };
             println!("  {} {} {}", time, icon, msg_colored);
         }

@@ -645,3 +645,189 @@ mod tests {
         assert!(colored.contains("Enraged Buffer Overflow Beast"));
     }
 }
+
+pub fn tournament_round_intro(class: &Class, round: u32, enemy_name: &str) -> Msg {
+    let m = color_monster(enemy_name);
+    let r = format!("{}", round).cyan().bold();
+    match class {
+        Class::Wizard => (
+            format!("Round {} — A {} blocks your path!", round, enemy_name),
+            format!("Round {} — A {} blocks your path!", r, m),
+        ),
+        Class::Warrior => (
+            format!("Round {} — A {} stands before you!", round, enemy_name),
+            format!("Round {} — A {} stands before you!", r, m),
+        ),
+        Class::Rogue => (
+            format!("Round {} — A {} lurks in the shadows!", round, enemy_name),
+            format!("Round {} — A {} lurks in the shadows!", r, m),
+        ),
+        Class::Ranger => (
+            format!("Round {} — A {} emerges from the wilds!", round, enemy_name),
+            format!("Round {} — A {} emerges from the wilds!", r, m),
+        ),
+        Class::Necromancer => (
+            format!("Round {} — A {} rises from the void!", round, enemy_name),
+            format!("Round {} — A {} rises from the void!", r, m),
+        ),
+    }
+}
+
+pub fn tournament_player_hit(class: &Class, enemy_name: &str, damage: i32, enemy_hp: i32, enemy_max_hp: i32) -> Msg {
+    let m = color_monster(enemy_name);
+    let d = color_damage(damage);
+    let hp_plain = format!("{}/{}", enemy_hp.max(0), enemy_max_hp);
+    let hp_colored = hp_plain.red();
+    match class {
+        Class::Wizard => (
+            format!("Your arcane bolt sears the {} for {} damage! (HP: {})", enemy_name, damage, hp_plain),
+            format!("Your {} sears the {} for {} damage! (HP: {})", "arcane bolt".blue().bold(), m, d, hp_colored),
+        ),
+        Class::Warrior => (
+            format!("Your blade bites deep into the {} for {} damage! (HP: {})", enemy_name, damage, hp_plain),
+            format!("Your {} bites deep into the {} for {} damage! (HP: {})", "blade".red().bold(), m, d, hp_colored),
+        ),
+        Class::Rogue => (
+            format!("Your strike finds a vital point on the {} for {} damage! (HP: {})", enemy_name, damage, hp_plain),
+            format!("Your {} finds a vital point on the {} for {} damage! (HP: {})", "strike".yellow().bold(), m, d, hp_colored),
+        ),
+        Class::Ranger => (
+            format!("Your arrow strikes true, piercing the {} for {} damage! (HP: {})", enemy_name, damage, hp_plain),
+            format!("Your {} strikes true, piercing the {} for {} damage! (HP: {})", "arrow".green().bold(), m, d, hp_colored),
+        ),
+        Class::Necromancer => (
+            format!("Your dark tendrils drain the {} for {} damage! (HP: {})", enemy_name, damage, hp_plain),
+            format!("Your {} drain the {} for {} damage! (HP: {})", "dark tendrils".magenta().bold(), m, d, hp_colored),
+        ),
+    }
+}
+
+pub fn tournament_player_miss(class: &Class, enemy_name: &str) -> Msg {
+    let m = color_monster(enemy_name);
+    match class {
+        Class::Wizard => (
+            format!("Your spell fizzles in the air, missing the {}!", enemy_name),
+            format!("Your spell {} in the air, missing the {}!", "fizzles".blue().dimmed(), m),
+        ),
+        Class::Warrior => (
+            format!("Your swing goes wide, the {} evades!", enemy_name),
+            format!("Your swing goes {}, the {} evades!", "wide".red().dimmed(), m),
+        ),
+        Class::Rogue => (
+            format!("Your dagger catches only shadow — the {} dodges!", enemy_name),
+            format!("Your dagger catches only {} — the {} dodges!", "shadow".yellow().dimmed(), m),
+        ),
+        Class::Ranger => (
+            format!("Your shot veers off course, missing the {}!", enemy_name),
+            format!("Your shot veers {}, missing the {}!", "off course".green().dimmed(), m),
+        ),
+        Class::Necromancer => (
+            format!("Your hex dissipates harmlessly around the {}!", enemy_name),
+            format!("Your hex {} harmlessly around the {}!", "dissipates".magenta().dimmed(), m),
+        ),
+    }
+}
+
+pub fn tournament_enemy_hit(enemy_name: &str, damage: i32, player_hp: i32, player_max_hp: i32, variant: u32) -> Msg {
+    let m = color_monster(enemy_name);
+    let d = color_damage(damage);
+    let hp_str = crate::display::color_hp(player_hp, player_max_hp);
+    match variant % 4 {
+        0 => {
+            let plain = format!("The {} lashes out, dealing {} damage! {}", enemy_name, damage, format!("HP: {}/{}", player_hp, player_max_hp));
+            let colored = format!("The {} lashes out, dealing {} damage! {}", m, d, hp_str);
+            (plain, colored)
+        }
+        1 => {
+            let plain = format!("The {} strikes with fury! You take {} damage! {}", enemy_name, damage, format!("HP: {}/{}", player_hp, player_max_hp));
+            let colored = format!("The {} strikes with {}! You take {} damage! {}", m, "fury".red().bold(), d, hp_str);
+            (plain, colored)
+        }
+        2 => {
+            let plain = format!("The {} lands a solid blow! {} damage! {}", enemy_name, damage, format!("HP: {}/{}", player_hp, player_max_hp));
+            let colored = format!("The {} lands a {}! {} damage! {}", m, "solid blow".red().bold(), d, hp_str);
+            (plain, colored)
+        }
+        _ => {
+            let plain = format!("The {} catches you off-guard! Took {} damage! {}", enemy_name, damage, format!("HP: {}/{}", player_hp, player_max_hp));
+            let colored = format!("The {} catches you {}! Took {} damage! {}", m, "off-guard".red().dimmed(), d, hp_str);
+            (plain, colored)
+        }
+    }
+}
+
+pub fn tournament_enemy_miss(enemy_name: &str, variant: u32) -> Msg {
+    let m = color_monster(enemy_name);
+    match variant % 4 {
+        0 => {
+            let plain = format!("The {} lunges but you dodge!", enemy_name);
+            let colored = format!("The {} lunges but you {}!", m, "dodge".green().bold());
+            (plain, colored)
+        }
+        1 => {
+            let plain = format!("The {} swipes at you but misses!", enemy_name);
+            let colored = format!("The {} swipes at you but {}!", m, "misses".green().bold());
+            (plain, colored)
+        }
+        2 => {
+            let plain = format!("The {} charges but you sidestep!", enemy_name);
+            let colored = format!("The {} charges but you {}!", m, "sidestep".green().bold());
+            (plain, colored)
+        }
+        _ => {
+            let plain = format!("The {} attacks but you parry!", enemy_name);
+            let colored = format!("The {} attacks but you {}!", m, "parry".green().bold());
+            (plain, colored)
+        }
+    }
+}
+
+pub fn tournament_round_reward(round: u32, gold: u32, xp: u32, loot_name: &str, rarity: &crate::character::Rarity, power: i32) -> Msg {
+    let g = color_gold(gold);
+    let x = color_xp(xp);
+    let l = crate::display::color_item_inline(loot_name, rarity);
+    let plain = format!("Round {} cleared! +{} gold, +{} XP, Loot: {} (+{} {})", round, gold, xp, loot_name, power, rarity);
+    let colored = format!("Round {} cleared! {} {} Loot: {} {}", format!("{}", round).cyan().bold(), g, x, l, format!("(+{} {})", power, format!("{}", rarity)).dimmed());
+    (plain, colored)
+}
+
+pub fn tournament_round_reward_no_loot(round: u32, gold: u32, xp: u32) -> Msg {
+    let g = color_gold(gold);
+    let x = color_xp(xp);
+    let plain = format!("Round {} cleared! +{} gold, +{} XP", round, gold, xp);
+    let colored = format!("Round {} cleared! {} {}", format!("{}", round).cyan().bold(), g, x);
+    (plain, colored)
+}
+
+pub fn tournament_round_reward_max_level(round: u32, gold: u32, loot_name: &str, rarity: &crate::character::Rarity, power: i32) -> Msg {
+    let g = color_gold(gold);
+    let l = crate::display::color_item_inline(loot_name, rarity);
+    let plain = format!("Round {} cleared! +{} gold, Loot: {} (+{} {})", round, gold, loot_name, power, rarity);
+    let colored = format!("Round {} cleared! {} Loot: {} {}", format!("{}", round).cyan().bold(), g, l, format!("(+{} {})", power, format!("{}", rarity)).dimmed());
+    (plain, colored)
+}
+
+pub fn tournament_round_reward_max_level_no_loot(round: u32, gold: u32) -> Msg {
+    let g = color_gold(gold);
+    let plain = format!("Round {} cleared! +{} gold", round, gold);
+    let colored = format!("Round {} cleared! {}", format!("{}", round).cyan().bold(), g);
+    (plain, colored)
+}
+
+pub fn tournament_baseline_win(round: u32) -> Msg {
+    let plain = format!("🏆 TOURNAMENT BASELINE CLEARED! You survived {} rounds! Keep fighting!", round);
+    let colored = format!("{} {} You survived {} rounds! Keep fighting!", "🏆".yellow().bold(), "TOURNAMENT BASELINE CLEARED!".yellow().bold().on_black(), format!("{}", round).cyan().bold());
+    (plain, colored)
+}
+
+pub fn tournament_ko(rounds_cleared: u32, total_gold: u32, total_xp: u32) -> Msg {
+    let plain = format!("You were knocked out after {} rounds. Earned: {} gold, {} XP.", rounds_cleared, total_gold, total_xp);
+    let colored = format!("You were {} after {} rounds. Earned: {} gold, {} XP.", "knocked out".red().bold(), format!("{}", rounds_cleared).cyan().bold(), format!("{}", total_gold).yellow().bold(), format!("{}", total_xp).cyan().bold());
+    (plain, colored)
+}
+
+pub fn tournament_victory(rounds_cleared: u32, total_gold: u32, total_xp: u32) -> Msg {
+    let plain = format!("🏆 TOURNAMENT CHAMPION! You survived all {} rounds! Earned: {} gold, {} XP.", rounds_cleared, total_gold, total_xp);
+    let colored = format!("{} {} Survived all {} rounds! Earned: {} gold, {} XP!", "🏆".yellow().bold(), "TOURNAMENT CHAMPION!".yellow().bold().on_black(), format!("{}", rounds_cleared).cyan().bold(), format!("{}", total_gold).yellow().bold(), format!("{}", total_xp).cyan().bold());
+    (plain, colored)
+}

@@ -274,6 +274,95 @@ pub fn roll_shop_loot() -> Item {
     }
 }
 
+/// Roll loot with danger-based rarity scaling.
+/// Higher danger = better odds for rare/epic/legendary drops.
+/// danger_level 1: normal odds (matching roll_loot)
+/// danger_level 2+3: pushes common→uncommon, small epic chance
+/// danger_level 4+5: significantly better odds, legendary possible
+pub fn roll_loot_scaled(danger_level: u32) -> Item {
+    let mut rng = rand::thread_rng();
+    let roll = rng.gen_range(0u32..10000);
+    let rarity = match danger_level {
+        1 => match roll {
+            0..=6999 => Rarity::Common,
+            7000..=9499 => Rarity::Uncommon,
+            9500..=9899 => Rarity::Rare,
+            9900..=9998 => Rarity::Epic,
+            _ => Rarity::Legendary,
+        },
+        2 => match roll {
+            0..=6499 => Rarity::Common,
+            6500..=8999 => Rarity::Uncommon,
+            9000..=9799 => Rarity::Rare,
+            9800..=9969 => Rarity::Epic,
+            _ => Rarity::Legendary,
+        },
+        3 => match roll {
+            0..=5499 => Rarity::Common,
+            5500..=8299 => Rarity::Uncommon,
+            8300..=9499 => Rarity::Rare,
+            9500..=9919 => Rarity::Epic,
+            _ => Rarity::Legendary,
+        },
+        4 => match roll {
+            0..=4500 => Rarity::Common,
+            4501..=7500 => Rarity::Uncommon,
+            7501..=9100 => Rarity::Rare,
+            9101..=9900 => Rarity::Epic,
+            _ => Rarity::Legendary,
+        },
+        5 => match roll {
+            0..=3000 => Rarity::Common,
+            3001..=6000 => Rarity::Uncommon,
+            6001..=8200 => Rarity::Rare,
+            8201..=9700 => Rarity::Epic,
+            _ => Rarity::Legendary,
+        },
+        6 => match roll {
+            0..=2000 => Rarity::Common,
+            2001..=5000 => Rarity::Uncommon,
+            5001..=7800 => Rarity::Rare,
+            7801..=9600 => Rarity::Epic,
+            _ => Rarity::Legendary,
+        },
+        7 => match roll {
+            0..=1500 => Rarity::Common,
+            1501..=4000 => Rarity::Uncommon,
+            4001..=7200 => Rarity::Rare,
+            7201..=9400 => Rarity::Epic,
+            _ => Rarity::Legendary,
+        },
+        8 => match roll {
+            0..=1000 => Rarity::Common,
+            1001..=3000 => Rarity::Uncommon,
+            3001..=6500 => Rarity::Rare,
+            6501..=9200 => Rarity::Epic,
+            _ => Rarity::Legendary,
+        },
+        9 => match roll {
+            0..=499 => Rarity::Common,
+            500..=1999 => Rarity::Uncommon,
+            2000..=5499 => Rarity::Rare,
+            5500..=9499 => Rarity::Epic,
+            _ => Rarity::Legendary,
+        },
+        _ => match roll {
+            0..=499 => Rarity::Common,
+            500..=1999 => Rarity::Uncommon,
+            2000..=5499 => Rarity::Rare,
+            5500..=9499 => Rarity::Epic,
+            _ => Rarity::Legendary,
+        },
+    };
+    match rarity {
+        Rarity::Common => pick_from(&mut rng, COMMON, Rarity::Common),
+        Rarity::Uncommon => pick_from(&mut rng, UNCOMMON, Rarity::Uncommon),
+        Rarity::Rare => pick_from(&mut rng, RARE, Rarity::Rare),
+        Rarity::Epic => pick_from(&mut rng, EPIC, Rarity::Epic),
+        Rarity::Legendary => pick_from(&mut rng, LEGENDARY, Rarity::Legendary),
+    }
+}
+
 /// Calculate a gold price for an item based on rarity and power.
 pub fn item_price(item: &Item) -> u32 {
     let multiplier = match item.rarity {

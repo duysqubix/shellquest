@@ -7,6 +7,7 @@ mod journal;
 mod loot;
 mod sage;
 mod state;
+mod tournament;
 mod zones;
 
 use character::{Class, Race};
@@ -109,6 +110,8 @@ enum Commands {
     Reset,
     /// Update sq to the latest version
     Update,
+    /// Enter the Terminal Gauntlet tournament
+    Tournament,
 }
 
 fn main() {
@@ -137,6 +140,7 @@ fn main() {
         Commands::Prestige => cmd_prestige(),
         Commands::Reset => cmd_reset(),
         Commands::Update => cmd_update(),
+        Commands::Tournament => cmd_tournament(),
     }
 }
 
@@ -376,6 +380,8 @@ fn hook_code(shell: &str) -> Option<String> {
 __sq_hook() {
     local exit_code=$?
     local cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]* *//')
+    local first=$(printf '%s' "$cmd" | awk '{print $1}')
+    [ "$first" = "sq" ] && return
     sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
 }
 PROMPT_COMMAND="__sq_hook;$PROMPT_COMMAND"
@@ -385,6 +391,8 @@ PROMPT_COMMAND="__sq_hook;$PROMPT_COMMAND"
 __sq_hook() {
     local exit_code=$?
     local cmd=$(fc -ln -1)
+    local first=${cmd[(w)1]}
+    [[ "$first" == "sq" ]] && return
     sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
 }
 precmd_functions+=(__sq_hook)
@@ -394,6 +402,8 @@ precmd_functions+=(__sq_hook)
 function __sq_hook --on-event fish_postexec
     set -l cmd $argv[1]
     set -l exit_code $status
+    set -l first (string split -m1 ' ' $cmd)[1]
+    [ "$first" = "sq" ]; and return
     sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
 end
 "#.to_string()),
@@ -1625,5 +1635,21 @@ fn cmd_update() {
                 "https://rustup.rs".dimmed()
             );
         }
+    }
+}
+
+fn cmd_tournament() {
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    tournament::run_tournament(&mut game);
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
