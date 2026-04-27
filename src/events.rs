@@ -206,7 +206,23 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
 
 fn handle_trap(state: &mut GameState, rng: &mut impl Rng) {
     let damage = rng.gen_range(1..=3);
+    let gold_before = state.character.gold;
     let died = state.character.take_damage(damage);
+    if died {
+        if state.permadeath {
+            crate::display::print_permadeath_eulogy(&state.character, "a trap");
+            let path = crate::state::save_path();
+            let _ = std::fs::remove_file(&path);
+            std::process::exit(0);
+        }
+        state.character.die();
+        let gold_loss = gold_before * 15 / 100;
+        let (plain, colored) =
+            crate::messages::death_normal(&state.character.class, "a trap", gold_loss);
+        display::print_combat_lose(&colored, true);
+        state.add_journal(JournalEntry::new(EventType::Death, plain));
+        return;
+    }
     let (plain, colored) = crate::messages::trap(
         &state.character.class,
         damage,
@@ -214,8 +230,7 @@ fn handle_trap(state: &mut GameState, rng: &mut impl Rng) {
         state.character.max_hp,
     );
     display::print_trap(&colored);
-    let event_type = if died { EventType::Death } else { EventType::Combat };
-    state.add_journal(JournalEntry::new(event_type, plain));
+    state.add_journal(JournalEntry::new(EventType::Combat, plain));
 }
 
 fn handle_travel(state: &mut GameState, cwd: &str) {
@@ -763,10 +778,8 @@ fn combat(
                 let _ = std::fs::remove_file(&path);
                 std::process::exit(0);
             } else {
-                state.character.xp = 0;
+                state.character.die();
                 let gold_loss = gold_before * 15 / 100;
-                state.character.gold = gold_before.saturating_sub(gold_loss);
-                state.character.hp = state.character.max_hp / 2;
                 let (plain, colored) = crate::messages::death_normal(
                     &state.character.class,
                     monster_name,
@@ -787,10 +800,8 @@ fn combat(
                 let _ = std::fs::remove_file(&path);
                 std::process::exit(0);
             } else {
-                state.character.xp = 0;
+                state.character.die();
                 let gold_loss = gold_before * 15 / 100;
-                state.character.gold = gold_before.saturating_sub(gold_loss);
-                state.character.hp = state.character.max_hp / 2;
                 let (plain, colored) = crate::messages::death_normal(
                     &state.character.class,
                     monster_name,
@@ -844,7 +855,7 @@ fn combat_elite(
             state.character.kills += 1;
             let leveled = state.character.gain_xp(final_reward);
             let (plain, colored) = crate::messages::combat_elite_tough(&state.character.class, monster_name, damage, final_reward);
-            display::print_combat_tough(&colored, true);
+            display::print_combat_tough(&colored, false);
             state.add_journal(JournalEntry::new(EventType::Combat, plain));
             check_level_up(state, leveled);
         } else if state.permadeath {
@@ -853,10 +864,8 @@ fn combat_elite(
             let _ = std::fs::remove_file(&path);
             std::process::exit(0);
         } else {
-            state.character.xp = 0;
+            state.character.die();
             let gold_loss = gold_before * 15 / 100;
-            state.character.gold = gold_before.saturating_sub(gold_loss);
-            state.character.hp = state.character.max_hp / 2;
             let (plain, colored) = crate::messages::death_normal(
                 &state.character.class,
                 monster_name,
@@ -876,10 +885,8 @@ fn combat_elite(
                 let _ = std::fs::remove_file(&path);
                 std::process::exit(0);
             } else {
-                state.character.xp = 0;
+                state.character.die();
                 let gold_loss = gold_before * 15 / 100;
-                state.character.gold = gold_before.saturating_sub(gold_loss);
-                state.character.hp = state.character.max_hp / 2;
                 let (plain, colored) = crate::messages::death_normal(
                     &state.character.class,
                     monster_name,
@@ -1081,7 +1088,7 @@ mod tests {
     }
 }
 
-fn full_inventory_message(item: &crate::character::Item) -> String {
+pub(crate) fn full_inventory_message(item: &crate::character::Item) -> String {
     use crate::character::ItemSlot;
     let n = &item.name;
     let mut rng = rand::thread_rng();
@@ -1111,23 +1118,35 @@ fn full_inventory_message(item: &crate::character::Item) -> String {
     msgs[idx].replace("{}", n)
 }
 
-fn add_to_inventory(state: &mut GameState, item: crate::character::Item) {
+fn add_to_inventory(state: &mut GameState, item: crate::character::Item) -> bool {
     const MAX_INVENTORY: usize = 20;
     if state.character.inventory.len() < MAX_INVENTORY {
         state.character.inventory.push(item);
-        return;
+        return true;
     }
 
-    let droppable_idx = state
+    let weakest = state
         .character
         .inventory
         .iter()
-        .enumerate()
-        .filter(|(_, i)| i.rarity.is_droppable())
-        .min_by_key(|(_, i)| i.power)
-        .map(|(idx, _)| idx);
+        .filter(|i| i.rarity.is_droppable())
+        .min_by_key(|i| i.power);
 
-    if let Some(idx) = droppable_idx {
+    let should_replace = match weakest {
+        Some(w) => item.power > w.power,
+        None => false,
+    };
+
+    if should_replace {
+        let idx = state
+            .character
+            .inventory
+            .iter()
+            .enumerate()
+            .filter(|(_, i)| i.rarity.is_droppable())
+            .min_by_key(|(_, i)| i.power)
+            .map(|(idx, _)| idx)
+            .unwrap();
         let dropped = state.character.inventory.remove(idx);
         eprintln!(
             "{} {} [{}] was discarded to make room for {}!",
@@ -1137,12 +1156,14 @@ fn add_to_inventory(state: &mut GameState, item: crate::character::Item) {
             display::color_item_inline(&item.name, &item.rarity)
         );
         state.character.inventory.push(item);
+        true
     } else {
         let msg = full_inventory_message(&item);
         eprintln!("{} {}", "📦".bold(), msg.yellow().italic());
+        false
     }
 }
 
-pub(crate) fn add_to_inventory_pub(state: &mut GameState, item: crate::character::Item) {
-    add_to_inventory(state, item);
+pub(crate) fn add_to_inventory_pub(state: &mut GameState, item: crate::character::Item) -> bool {
+    add_to_inventory(state, item)
 }

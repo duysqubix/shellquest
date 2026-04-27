@@ -235,6 +235,10 @@ pub struct Character {
     pub subclass: Option<Subclass>,
     #[serde(default)]
     pub total_prestiges: u32,
+    #[serde(default)]
+    pub tournament_wins: u32,
+    #[serde(default)]
+    pub best_tournament_round: u32,
 }
 
 impl Character {
@@ -270,6 +274,8 @@ impl Character {
             prestige: 0,
             subclass: None,
             total_prestiges: 0,
+            tournament_wins: 0,
+            best_tournament_round: 0,
         }
     }
 
@@ -295,6 +301,9 @@ impl Character {
         while self.xp >= self.xp_to_next && self.level < MAX_LEVEL {
             self.level_up();
             leveled = true;
+        }
+        if self.level >= MAX_LEVEL {
+            self.xp = 0;
         }
         leveled
     }
@@ -385,16 +394,13 @@ impl Character {
 
     pub fn take_damage(&mut self, amount: i32) -> bool {
         self.hp -= amount;
-        if self.hp <= 0 {
-            self.die();
-            return true;
-        }
-        false
+        self.hp <= 0
     }
 
-    fn die(&mut self) {
+    pub fn die(&mut self) {
         self.deaths += 1;
-        self.gold = self.gold.saturating_sub(self.gold / 4);
+        self.xp = 0;
+        self.gold = self.gold.saturating_sub(self.gold * 15 / 100);
         self.hp = self.max_hp / 2;
     }
 
@@ -600,34 +606,36 @@ mod tests {
     }
 
     #[test]
-    fn take_damage_lethal_returns_true_and_calls_die() {
+    fn take_damage_lethal_returns_true() {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
-        let gold_before = c.gold;
         let max_hp = c.max_hp;
         let died = c.take_damage(max_hp + 100);
         assert!(died);
-        assert_eq!(c.deaths, 1);
-        // hp reset to max_hp / 2
-        assert_eq!(c.hp, max_hp / 2);
-        // gold reduced by 25%
-        assert_eq!(c.gold, gold_before - gold_before / 4);
+        assert_eq!(c.hp, -100);
     }
 
     #[test]
-    fn die_costs_25_percent_gold() {
+    fn die_costs_15_percent_gold() {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
         c.gold = 100;
-        let max_hp = c.max_hp;
-        c.take_damage(max_hp + 1);
-        assert_eq!(c.gold, 75);
+        c.die();
+        assert_eq!(c.gold, 85);
     }
 
     #[test]
     fn die_sets_hp_to_half_max() {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
         let max_hp = c.max_hp;
-        c.take_damage(max_hp + 1);
+        c.die();
         assert_eq!(c.hp, max_hp / 2);
+    }
+
+    #[test]
+    fn die_resets_xp() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        c.xp = 50;
+        c.die();
+        assert_eq!(c.xp, 0);
     }
 
     // --- heal() ---

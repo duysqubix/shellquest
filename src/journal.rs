@@ -18,6 +18,7 @@ pub enum EventType {
     Death,
     Quest,
     Craft,
+    Tournament,
 }
 
 impl JournalEntry {
