@@ -50,7 +50,7 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
     - `sq arena` (interactive) — verify tier selection, combat loop, and cash-out.
     - `echo "y" | sq arena` — verify rejection of non-interactive input (should fail if not a TTY).
     - `sq arena` -> select tier -> cash out at Round 1 — verify gold/XP gain and journal entry.
-    - `sq arena` -> get KO'd — verify loss of entry fee, HP set to 25%, and "Knocked out" journal label.
+    - `sq arena` -> get KO'd — verify loss of entry fee, HP set to 25% of max HP at entry, "Knocked out" CLI summary, and journal entry "Arena KO in {tier} after N rounds. Fee: N gold."
     - Chest overflow: fill inventory (20 items), win arena with loot — verify rejected items convert to half-sell-value gold.
     - Interruption: `Ctrl+C` during a run — verify no state is saved (rollback behavior).
 
