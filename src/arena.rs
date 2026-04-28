@@ -382,6 +382,7 @@ pub struct ArenaCombatTuning {
     pub recovery_base: i32,
     pub recovery_max_hp_divisor: i32,
     pub max_combat_lines: usize,
+    pub max_turns: u32,
 }
 
 pub const ARENA_TUNING: ArenaCombatTuning = ArenaCombatTuning {
@@ -403,6 +404,7 @@ pub const ARENA_TUNING: ArenaCombatTuning = ArenaCombatTuning {
     recovery_base: 4,
     recovery_max_hp_divisor: 10,
     max_combat_lines: 8,
+    max_turns: 1000,
 };
 
 const ENEMY_NAMES: &[&str] = &[
@@ -488,6 +490,21 @@ fn run_compact_combat(
     loop {
         total_turns += 1;
         let mut turn_lines: Vec<CombatExchange> = Vec::new();
+
+        if total_turns > ARENA_TUNING.max_turns {
+            eprintln!(
+                "   {} Combat timed out after {} turns — forcing defeat.",
+                "⏱️".dimmed(),
+                total_turns - 1
+            );
+            all_exchanges.extend(turn_lines);
+            return CombatResult {
+                player_won: false,
+                final_player_hp: player_hp,
+                exchanges: compact_exchanges(all_exchanges, total_turns),
+                total_turns,
+            };
+        }
 
         let t = &ARENA_TUNING;
         let player_power = entry.attack_power;
@@ -1825,5 +1842,33 @@ mod tests {
         );
         let has_summary = result.exchanges.iter().any(|ex| ex.plain.contains("more exchanges"));
         assert!(has_summary, "Expected summary line in compacted combat log");
+    }
+
+    #[test]
+    fn turn_cap_forces_defeat_on_pathological_input() {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+        use crate::character::Class;
+
+        let mut rng = StdRng::seed_from_u64(0);
+        let entry = ArenaEntrySnapshot {
+            level: 1, xp_to_next: 25,
+            hp: 1_000_000, max_hp: 1_000_000,
+            attack_power: 1, defense: 200,
+            prestige: 0, gold: 0,
+        };
+        let mut enemy = ArenaEnemy {
+            name: "Stress Test".to_string(),
+            hp: 1_000_000, max_hp: 1_000_000, attack: 1,
+        };
+
+        let result = run_compact_combat(&entry, 1_000_000, &mut enemy, &Class::Warrior, &mut rng);
+
+        assert!(!result.player_won, "Expected forced defeat on turn-cap, got victory");
+        assert!(
+            result.total_turns > ARENA_TUNING.max_turns,
+            "Expected total_turns > {} (max_turns), got {}",
+            ARENA_TUNING.max_turns, result.total_turns
+        );
     }
 }
