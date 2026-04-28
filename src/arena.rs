@@ -28,6 +28,8 @@ pub struct ArenaTier {
     pub reward_bands: &'static [(u32, u32, u32)],
     /// Chest milestones: `(round, loot_danger)` to pass to `roll_loot_scaled`.
     pub chest_milestones: &'static [(u32, u32)],
+    /// When `true`, victory in this tier awards a crown (increments `tournament_wins`).
+    pub awards_crown: bool,
 }
 
 pub const TIER_PIT: ArenaTier = ArenaTier {
@@ -45,6 +47,7 @@ pub const TIER_PIT: ArenaTier = ArenaTier {
         (5, 110, 60),
     ],
     chest_milestones: &[(5, 2)],
+    awards_crown: false,
 };
 
 pub const TIER_GAUNTLET: ArenaTier = ArenaTier {
@@ -59,6 +62,7 @@ pub const TIER_GAUNTLET: ArenaTier = ArenaTier {
         (10, 145, 90),
     ],
     chest_milestones: &[(5, 2), (10, 4)],
+    awards_crown: false,
 };
 
 pub const TIER_COLOSSEUM: ArenaTier = ArenaTier {
@@ -74,6 +78,7 @@ pub const TIER_COLOSSEUM: ArenaTier = ArenaTier {
         (15, 185, 120),
     ],
     chest_milestones: &[(5, 4), (10, 4), (15, 6)],
+    awards_crown: false,
 };
 
 pub const TIER_ABYSSAL: ArenaTier = ArenaTier {
@@ -91,6 +96,7 @@ pub const TIER_ABYSSAL: ArenaTier = ArenaTier {
         (25, 240, 160),
     ],
     chest_milestones: &[(10, 4), (20, 6), (25, 6)],
+    awards_crown: false,
 };
 
 pub const TIER_GODSLAYER: ArenaTier = ArenaTier {
@@ -108,6 +114,7 @@ pub const TIER_GODSLAYER: ArenaTier = ArenaTier {
         (50, 320, 220),
     ],
     chest_milestones: &[(10, 4), (20, 6), (40, 8), (50, 9)],
+    awards_crown: true,
 };
 
 pub const ARENA_TIERS: &[ArenaTier] = &[
@@ -656,7 +663,7 @@ fn build_commit(
     };
 
     let tournament_wins_increment = match outcome {
-        ArenaOutcome::Victory { .. } if run.tier.index == 4 => 1,
+        ArenaOutcome::Victory { .. } if run.tier.awards_crown => 1,
         _ => 0,
     };
 
@@ -1553,6 +1560,7 @@ mod tests {
             or_unlock: false,
             reward_bands: &[],
             chest_milestones: &[],
+            awards_crown: false,
         };
         let entry = make_snapshot(1, 0, 10, 25);
         assert_eq!(fake.compute_fee(&entry), 0);
