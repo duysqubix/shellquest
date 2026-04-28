@@ -1170,7 +1170,3 @@ pub(crate) fn add_to_inventory_pub(state: &mut GameState, item: crate::character
     add_to_inventory(state, item, false)
 }
 
-#[allow(dead_code)] // arena now uses an inline silent helper (see arena::apply_chest_item_to_inventory); broader cleanup belongs to T8.
-pub(crate) fn add_to_inventory_pub_quiet(state: &mut GameState, item: crate::character::Item) -> bool {
-    add_to_inventory(state, item, true)
-}

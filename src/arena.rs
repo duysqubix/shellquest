@@ -1,6 +1,3 @@
-// Types are defined now and wired into the arena loop in later tasks.
-#![allow(dead_code)]
-
 use crate::character::{Character, Item};
 use colored::*;
 use rand::Rng;
@@ -298,20 +295,6 @@ pub struct PendingChest {
 
 /// Banked rewards accumulated during an arena run.
 ///
-/// Nothing in this struct is written to disk until the run resolves.
-#[derive(Debug, Clone, Default)]
-pub struct PendingRewards {
-    pub gold: u32,
-    pub xp: u32,
-    pub chests: Vec<PendingChest>,
-}
-
-impl PendingRewards {
-    pub fn is_empty(&self) -> bool {
-        self.gold == 0 && self.xp == 0 && self.chests.is_empty()
-    }
-}
-
 /// In-memory arena run state.
 ///
 /// `ArenaRun` is constructed at entry, mutated round-by-round, and dropped
@@ -323,7 +306,6 @@ pub struct ArenaRun {
     pub entry_fee: u32,
     pub rounds_cleared: u32,
     pub current_hp: i32,
-    pub pending: PendingRewards,
 }
 
 /// Final resolution of an arena run.
@@ -354,8 +336,6 @@ pub struct ArenaCommit {
     pub xp_reward: u32,
     /// Items resolved from pending chests.
     pub items: Vec<Item>,
-    /// Gold granted for chest items that could not fit in inventory.
-    pub gold_from_overflow: u32,
     /// Number of kills (rounds cleared) to add to the character.
     pub kills: u32,
     /// New value for `best_tournament_round` if it improved.
@@ -364,9 +344,6 @@ pub struct ArenaCommit {
     pub tournament_wins_increment: u32,
     /// HP to set after the run resolves. Always `Some`.
     pub hp_set: Option<i32>,
-    /// Draft only. The authoritative journal text is synthesized by
-    /// `apply_arena_commit` after chest overflow is resolved.
-    pub journal_msg: String,
     /// Tier display name used by `apply_arena_commit` to synthesize the
     /// post-resolution journal entry.
     pub tier_name: String,
@@ -584,7 +561,6 @@ fn generate_enemy(round: u32, entry: &ArenaEntrySnapshot, rng: &mut impl Rng) ->
 
 #[derive(Debug)]
 struct CombatExchange {
-    plain: String,
     colored: String,
 }
 
@@ -593,6 +569,7 @@ struct CombatResult {
     player_won: bool,
     final_player_hp: i32,
     exchanges: Vec<CombatExchange>,
+    #[allow(dead_code)]
     total_turns: u32,
 }
 
@@ -635,18 +612,18 @@ fn run_compact_combat(
                     ..=player_power.max(1),
             );
             enemy.hp -= dmg;
-            let (plain, colored) = crate::messages::tournament_player_hit(
+            let (_plain, colored) = crate::messages::tournament_player_hit(
                 class,
                 &enemy.name,
                 dmg,
                 enemy.hp.max(0),
                 enemy.max_hp,
             );
-            turn_lines.push(CombatExchange { plain, colored });
+            turn_lines.push(CombatExchange { colored });
         } else {
-            let (plain, colored) =
+            let (_plain, colored) =
                 crate::messages::tournament_player_miss(class, &enemy.name);
-            turn_lines.push(CombatExchange { plain, colored });
+            turn_lines.push(CombatExchange { colored });
         }
 
         if enemy.hp <= 0 {
@@ -666,18 +643,18 @@ fn run_compact_combat(
         {
             let dmg = (enemy.attack - player_defense / t.enemy_dmg_defense_divisor).max(1);
             player_hp -= dmg;
-            let (plain, colored) = crate::messages::tournament_enemy_hit(
+            let (_plain, colored) = crate::messages::tournament_enemy_hit(
                 &enemy.name,
                 dmg,
                 player_hp.max(0),
                 entry.max_hp,
                 total_turns,
             );
-            turn_lines.push(CombatExchange { plain, colored });
+            turn_lines.push(CombatExchange { colored });
         } else {
-            let (plain, colored) =
+            let (_plain, colored) =
                 crate::messages::tournament_enemy_miss(&enemy.name, total_turns);
-            turn_lines.push(CombatExchange { plain, colored });
+            turn_lines.push(CombatExchange { colored });
         }
 
         if player_hp <= 0 {
@@ -704,13 +681,11 @@ fn compact_exchanges(exchanges: Vec<CombatExchange>, total_turns: u32) -> Vec<Co
     let prefix_len = 4.min(exchanges.len());
     for i in 0..prefix_len {
         result.push(CombatExchange {
-            plain: exchanges[i].plain.clone(),
             colored: exchanges[i].colored.clone(),
         });
     }
 
     let skipped = total_turns.saturating_sub(3);
-    let summary_plain = format!("... {} more exchanges ...", skipped);
     let summary_colored = format!(
         "{} {} {}",
         "...".dimmed(),
@@ -718,14 +693,12 @@ fn compact_exchanges(exchanges: Vec<CombatExchange>, total_turns: u32) -> Vec<Co
         "...".dimmed()
     );
     result.push(CombatExchange {
-        plain: summary_plain,
         colored: summary_colored,
     });
 
     let suffix_start = exchanges.len().saturating_sub(2);
     for i in suffix_start..exchanges.len() {
         result.push(CombatExchange {
-            plain: exchanges[i].plain.clone(),
             colored: exchanges[i].colored.clone(),
         });
     }
@@ -790,26 +763,16 @@ fn build_commit(
         _ => 0,
     };
 
-    let journal_msg = format_arena_journal_msg(
-        &outcome,
-        run.tier.name,
-        run.entry_fee,
-        gold_reward,
-        xp_reward,
-    );
-
     ArenaCommit {
         outcome,
         fee: run.entry_fee,
         gold_reward,
         xp_reward,
         items,
-        gold_from_overflow: 0,
         kills,
         best_round,
         tournament_wins_increment,
         hp_set: Some(final_hp),
-        journal_msg,
         tier_name: run.tier.name.to_string(),
     }
 }
@@ -922,7 +885,6 @@ pub fn run_arena_session(
         entry_fee,
         rounds_cleared: 0,
         current_hp: entry.hp,
-        pending: PendingRewards::default(),
     };
 
     eprintln!();
@@ -1422,12 +1384,10 @@ mod tests {
             gold_reward: 0,
             xp_reward: 0,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 0,
             best_round: Some(2),
             tournament_wins_increment: 0,
             hp_set: Some(25),
-            journal_msg: "KO".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -1456,12 +1416,10 @@ mod tests {
             gold_reward: 100,
             xp_reward: 30,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 3,
             best_round: Some(3),
             tournament_wins_increment: 0,
             hp_set: Some(45),
-            journal_msg: "Cash out".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -1486,12 +1444,10 @@ mod tests {
             gold_reward: 200,
             xp_reward: 50,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 50,
             best_round: Some(50),
             tournament_wins_increment: 1,
             hp_set: Some(80),
-            journal_msg: "Victory".to_string(),
             tier_name: "Godslayer's Court".to_string(),
         };
 
@@ -1512,12 +1468,10 @@ mod tests {
             gold_reward: 100,
             xp_reward: 30,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 5,
             best_round: Some(5),
             tournament_wins_increment: 0,
             hp_set: Some(80),
-            journal_msg: "Victory".to_string(),
             tier_name: "The Pit".to_string(),
         };
 
@@ -1540,12 +1494,10 @@ mod tests {
             gold_reward: 20,
             xp_reward: 10,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 1,
             best_round: Some(1),
             tournament_wins_increment: 0,
             hp_set: Some(10),
-            journal_msg: "Cash out".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -1577,12 +1529,10 @@ mod tests {
             gold_reward: 20,
             xp_reward: 10,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 1,
             best_round: Some(1),
             tournament_wins_increment: 0,
             hp_set: Some(10),
-            journal_msg: "Arena cash-out".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -1606,7 +1556,6 @@ mod tests {
             entry_fee: 100,
             rounds_cleared: 3,
             current_hp: 30,
-            pending: PendingRewards::default(),
         };
 
         let commit = build_commit(&c, &run, ArenaOutcome::Defeat { rounds_cleared: 3 }, 25);
@@ -1627,7 +1576,6 @@ mod tests {
             entry_fee: 2500,
             rounds_cleared: 50,
             current_hp: 80,
-            pending: PendingRewards::default(),
         };
 
         let commit = build_commit(&c, &run, ArenaOutcome::Victory { rounds_cleared: 50 }, 80);
@@ -1644,7 +1592,6 @@ mod tests {
             entry_fee: 100,
             rounds_cleared: 5,
             current_hp: 80,
-            pending: PendingRewards::default(),
         };
 
         let commit = build_commit(&c, &run, ArenaOutcome::Victory { rounds_cleared: 5 }, 80);
@@ -1683,12 +1630,10 @@ mod tests {
             gold_reward: 100,
             xp_reward: 0,
             items: vec![chest_item],
-            gold_from_overflow: 0,
             kills: 3,
             best_round: Some(3),
             tournament_wins_increment: 0,
             hp_set: Some(80),
-            journal_msg: "Cash out with overflow".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -1799,21 +1744,6 @@ mod tests {
         assert!(snap.defense > 10);
     }
 
-    // --- PendingRewards ---
-
-    #[test]
-    fn pending_rewards_is_empty_when_default() {
-        let p = PendingRewards::default();
-        assert!(p.is_empty());
-    }
-
-    #[test]
-    fn pending_rewards_is_not_empty_with_gold() {
-        let mut p = PendingRewards::default();
-        p.gold = 1;
-        assert!(!p.is_empty());
-    }
-
     // --- Chest collection edge cases ---
 
     #[test]
@@ -1836,12 +1766,10 @@ mod tests {
             gold_reward: 0,
             xp_reward: 0,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 0,
             best_round: None,
             tournament_wins_increment: 0,
             hp_set: Some(25),
-            journal_msg: "KO".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -1869,12 +1797,10 @@ mod tests {
                 power: 5,
                 rarity: Rarity::Common,
             }],
-            gold_from_overflow: 0,
             kills: 5,
             best_round: None,
             tournament_wins_increment: 0,
             hp_set: Some(25),
-            journal_msg: "KO".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -1900,12 +1826,10 @@ mod tests {
             gold_reward: 100,
             xp_reward: 0,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 5,
             best_round: Some(5),
             tournament_wins_increment: 0,
             hp_set: Some(80),
-            journal_msg: "Cash out".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -1936,12 +1860,10 @@ mod tests {
             gold_reward: 100,
             xp_reward: 0,
             items: vec![item.clone()],
-            gold_from_overflow: 0,
             kills: 3,
             best_round: Some(3),
             tournament_wins_increment: 0,
             hp_set: Some(80),
-            journal_msg: "Cash out".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -1970,12 +1892,10 @@ mod tests {
             gold_reward: 100,
             xp_reward: 0,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 3,
             best_round: Some(3),
             tournament_wins_increment: 0,
             hp_set: Some(80),
-            journal_msg: "ignored draft".to_string(),
             tier_name: "The Pit".to_string(),
         };
 
@@ -2028,7 +1948,7 @@ mod tests {
             "Expected compacted log (7 lines), got {}",
             result.exchanges.len()
         );
-        let has_summary = result.exchanges.iter().any(|ex| ex.plain.contains("more exchanges"));
+        let has_summary = result.exchanges.iter().any(|ex| ex.colored.contains("more exchanges"));
         assert!(has_summary, "Expected summary line in compacted combat log");
     }
 
@@ -2072,7 +1992,6 @@ mod tests {
             entry_fee: 2500,
             rounds_cleared: 50,
             current_hp: 80,
-            pending: PendingRewards::default(),
         };
 
         let commit = build_commit(&c, &run, ArenaOutcome::Victory { rounds_cleared: 50 }, 80);
@@ -2099,7 +2018,6 @@ mod tests {
             entry_fee: 2500,
             rounds_cleared: 10,
             current_hp: 80,
-            pending: PendingRewards::default(),
         };
 
         let commit = build_commit(&c, &run, ArenaOutcome::CashOut { rounds_cleared: 10 }, 80);
@@ -2124,12 +2042,10 @@ mod tests {
             gold_reward: 200,
             xp_reward: 30,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 5,
             best_round: Some(5),
             tournament_wins_increment: 0,
             hp_set: Some(80),
-            journal_msg: "STALE DRAFT MUST BE IGNORED".to_string(),
             tier_name: "The Pit".to_string(),
         };
 
@@ -2173,12 +2089,10 @@ mod tests {
             gold_reward: 100,
             xp_reward: 0,
             items: vec![chest_item],
-            gold_from_overflow: 0,
             kills: 3,
             best_round: Some(3),
             tournament_wins_increment: 0,
             hp_set: Some(80),
-            journal_msg: "ignored".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -2230,12 +2144,10 @@ mod tests {
             gold_reward: 0,
             xp_reward: 0,
             items: vec![chest_item],
-            gold_from_overflow: 0,
             kills: 0,
             best_round: None,
             tournament_wins_increment: 0,
             hp_set: Some(80),
-            journal_msg: "ignored".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
@@ -2272,12 +2184,10 @@ mod tests {
             gold_reward: 0,
             xp_reward: 0,
             items: vec![],
-            gold_from_overflow: 0,
             kills: 0,
             best_round: None,
             tournament_wins_increment: 0,
             hp_set: Some(25),
-            journal_msg: "ignored".to_string(),
             tier_name: "Test Tier".to_string(),
         };
 
