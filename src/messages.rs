@@ -646,7 +646,7 @@ mod tests {
     }
 }
 
-pub fn tournament_round_intro(class: &Class, round: u32, enemy_name: &str) -> Msg {
+fn tournament_round_intro_impl(class: &Class, round: u32, enemy_name: &str) -> Msg {
     let m = color_monster(enemy_name);
     let r = format!("{}", round).cyan().bold();
     match class {
@@ -672,6 +672,9 @@ pub fn tournament_round_intro(class: &Class, round: u32, enemy_name: &str) -> Ms
         ),
     }
 }
+
+#[allow(non_upper_case_globals)]
+pub const tournament_round_intro: fn(&Class, u32, &str) -> Msg = tournament_round_intro_impl;
 
 pub fn tournament_player_hit(class: &Class, enemy_name: &str, damage: i32, enemy_hp: i32, enemy_max_hp: i32) -> Msg {
     let m = color_monster(enemy_name);
@@ -782,52 +785,8 @@ pub fn tournament_enemy_miss(enemy_name: &str, variant: u32) -> Msg {
     }
 }
 
-pub fn tournament_round_reward(round: u32, gold: u32, xp: u32, loot_name: &str, rarity: &crate::character::Rarity, power: i32) -> Msg {
-    let g = color_gold(gold);
-    let x = color_xp(xp);
-    let l = crate::display::color_item_inline(loot_name, rarity);
-    let plain = format!("Round {} cleared! +{} gold, +{} XP, Loot: {} (+{} {})", round, gold, xp, loot_name, power, rarity);
-    let colored = format!("Round {} cleared! {} {} Loot: {} {}", format!("{}", round).cyan().bold(), g, x, l, format!("(+{} {})", power, format!("{}", rarity)).dimmed());
-    (plain, colored)
-}
-
-pub fn tournament_round_reward_no_loot(round: u32, gold: u32, xp: u32) -> Msg {
-    let g = color_gold(gold);
-    let x = color_xp(xp);
-    let plain = format!("Round {} cleared! +{} gold, +{} XP", round, gold, xp);
-    let colored = format!("Round {} cleared! {} {}", format!("{}", round).cyan().bold(), g, x);
-    (plain, colored)
-}
-
-pub fn tournament_round_reward_max_level(round: u32, gold: u32, loot_name: &str, rarity: &crate::character::Rarity, power: i32) -> Msg {
-    let g = color_gold(gold);
-    let l = crate::display::color_item_inline(loot_name, rarity);
-    let plain = format!("Round {} cleared! +{} gold, Loot: {} (+{} {})", round, gold, loot_name, power, rarity);
-    let colored = format!("Round {} cleared! {} Loot: {} {}", format!("{}", round).cyan().bold(), g, l, format!("(+{} {})", power, format!("{}", rarity)).dimmed());
-    (plain, colored)
-}
-
-pub fn tournament_round_reward_max_level_no_loot(round: u32, gold: u32) -> Msg {
-    let g = color_gold(gold);
-    let plain = format!("Round {} cleared! +{} gold", round, gold);
-    let colored = format!("Round {} cleared! {}", format!("{}", round).cyan().bold(), g);
-    (plain, colored)
-}
-
-pub fn tournament_baseline_win(round: u32) -> Msg {
-    let plain = format!("🏆 ARENA BASELINE CLEARED! You survived {} rounds! Keep fighting!", round);
-    let colored = format!("{} {} You survived {} rounds! Keep fighting!", "🏆".yellow().bold(), "ARENA BASELINE CLEARED!".yellow().bold().on_black(), format!("{}", round).cyan().bold());
-    (plain, colored)
-}
-
 pub fn tournament_ko(rounds_cleared: u32, total_gold: u32, total_xp: u32) -> Msg {
     let plain = format!("You were knocked out after {} rounds. Earned: {} gold, {} XP.", rounds_cleared, total_gold, total_xp);
     let colored = format!("You were {} after {} rounds. Earned: {} gold, {} XP.", "knocked out".red().bold(), format!("{}", rounds_cleared).cyan().bold(), format!("{}", total_gold).yellow().bold(), format!("{}", total_xp).cyan().bold());
-    (plain, colored)
-}
-
-pub fn tournament_victory(rounds_cleared: u32, total_gold: u32, total_xp: u32) -> Msg {
-    let plain = format!("🏆 ARENA CHAMPION! You survived all {} rounds! Earned: {} gold, {} XP.", rounds_cleared, total_gold, total_xp);
-    let colored = format!("{} {} Survived all {} rounds! Earned: {} gold, {} XP!", "🏆".yellow().bold(), "ARENA CHAMPION!".yellow().bold().on_black(), format!("{}", rounds_cleared).cyan().bold(), format!("{}", total_gold).yellow().bold(), format!("{}", total_xp).cyan().bold());
     (plain, colored)
 }
