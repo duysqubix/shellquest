@@ -364,8 +364,121 @@ pub struct ArenaCommit {
     pub tournament_wins_increment: u32,
     /// HP to set after the run resolves. Always `Some`.
     pub hp_set: Option<i32>,
-    /// Journal summary message to append.
+    /// Draft only. The authoritative journal text is synthesized by
+    /// `apply_arena_commit` after chest overflow is resolved.
     pub journal_msg: String,
+    /// Tier display name used by `apply_arena_commit` to synthesize the
+    /// post-resolution journal entry.
+    pub tier_name: String,
+}
+
+/// Reward-related output that must be rendered only after `state::save()`
+/// has succeeded, never inline during `apply_arena_commit`.
+#[derive(Debug, Clone)]
+pub(crate) enum ArenaDeferredOutput {
+    LevelUp(String),
+    InventoryReplaced {
+        dropped_name: String,
+        dropped_rarity: crate::character::Rarity,
+        new_name: String,
+        new_rarity: crate::character::Rarity,
+    },
+    OverflowConverted {
+        item_name: String,
+        sell_value: u32,
+    },
+}
+
+/// Caller MUST ensure `state::save()` succeeded before invoking this.
+pub(crate) fn render_arena_deferred_output(items: &[ArenaDeferredOutput]) {
+    for item in items {
+        match item {
+            ArenaDeferredOutput::LevelUp(s) => crate::display::print_level_up(s),
+            ArenaDeferredOutput::InventoryReplaced {
+                dropped_name,
+                dropped_rarity,
+                new_name,
+                new_rarity,
+            } => {
+                eprintln!(
+                    "{} {} [{}] was discarded to make room for {}!",
+                    "🗑️ ".bold(),
+                    dropped_name.dimmed(),
+                    format!("{}", dropped_rarity).dimmed(),
+                    crate::display::color_item_inline(new_name, new_rarity),
+                );
+            }
+            ArenaDeferredOutput::OverflowConverted { item_name, sell_value } => {
+                eprintln!(
+                    "   {} Arena chest item {} converted to {} gold (inventory full).",
+                    "💰".yellow(),
+                    item_name.dimmed(),
+                    sell_value,
+                );
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ChestApplyResult {
+    Added,
+    Replaced { dropped: Item },
+    Rejected,
+}
+
+const ARENA_INVENTORY_CAP: usize = 20;
+
+fn apply_chest_item_to_inventory(
+    game: &mut crate::state::GameState,
+    item: Item,
+) -> ChestApplyResult {
+    if game.character.inventory.len() < ARENA_INVENTORY_CAP {
+        game.character.inventory.push(item);
+        return ChestApplyResult::Added;
+    }
+
+    let weakest = game
+        .character
+        .inventory
+        .iter()
+        .enumerate()
+        .filter(|(_, i)| i.rarity.is_droppable())
+        .min_by_key(|(_, i)| i.power)
+        .map(|(idx, i)| (idx, i.power));
+
+    if let Some((idx, weakest_power)) = weakest {
+        if item.power > weakest_power {
+            let dropped = game.character.inventory.remove(idx);
+            game.character.inventory.push(item);
+            return ChestApplyResult::Replaced { dropped };
+        }
+    }
+
+    ChestApplyResult::Rejected
+}
+
+fn format_arena_journal_msg(
+    outcome: &ArenaOutcome,
+    tier_name: &str,
+    entry_fee: u32,
+    total_gold: u32,
+    xp_reward: u32,
+) -> String {
+    match outcome {
+        ArenaOutcome::Defeat { rounds_cleared } => format!(
+            "Arena KO in {} after {} rounds. Fee: {} gold.",
+            tier_name, rounds_cleared, entry_fee
+        ),
+        ArenaOutcome::CashOut { rounds_cleared } => format!(
+            "Arena cash-out in {} after {} rounds. +{} gold, +{} XP.",
+            tier_name, rounds_cleared, total_gold, xp_reward
+        ),
+        ArenaOutcome::Victory { rounds_cleared } => format!(
+            "Arena VICTORY in {}! Cleared all {} rounds! +{} gold, +{} XP.",
+            tier_name, rounds_cleared, total_gold, xp_reward
+        ),
+    }
 }
 
 /// Centralized tuning table for all arena combat parameters.
@@ -656,6 +769,16 @@ fn build_commit(
         }
     };
 
+    // Players entering at MAX_LEVEL cannot legitimately gain XP, so suppress
+    // any XP reward at the commit boundary. `compute_rewards()` itself stays
+    // unchanged. A level-149 entrant still earns valid 149 -> 150 XP because
+    // their entry level is 149, not MAX_LEVEL.
+    let xp_reward = if run.entry.level >= crate::character::MAX_LEVEL {
+        0
+    } else {
+        xp_reward
+    };
+
     let best_round = if run.rounds_cleared > character.best_tournament_round {
         Some(run.rounds_cleared)
     } else {
@@ -667,20 +790,13 @@ fn build_commit(
         _ => 0,
     };
 
-    let journal_msg = match outcome {
-        ArenaOutcome::Defeat { rounds_cleared } => format!(
-            "Arena KO in {} after {} rounds. Fee: {} gold.",
-            run.tier.name, rounds_cleared, run.entry_fee
-        ),
-        ArenaOutcome::CashOut { rounds_cleared } => format!(
-            "Arena cash-out in {} after {} rounds. +{} gold, +{} XP.",
-            run.tier.name, rounds_cleared, gold_reward, xp_reward
-        ),
-        ArenaOutcome::Victory { rounds_cleared } => format!(
-            "Arena VICTORY in {}! Cleared all {} rounds! +{} gold, +{} XP.",
-            run.tier.name, rounds_cleared, gold_reward, xp_reward
-        ),
-    };
+    let journal_msg = format_arena_journal_msg(
+        &outcome,
+        run.tier.name,
+        run.entry_fee,
+        gold_reward,
+        xp_reward,
+    );
 
     ArenaCommit {
         outcome,
@@ -694,13 +810,19 @@ fn build_commit(
         tournament_wins_increment,
         hp_set: Some(final_hp),
         journal_msg,
+        tier_name: run.tier.name.to_string(),
     }
 }
 
-pub fn apply_arena_commit(game: &mut crate::state::GameState, commit: &ArenaCommit) {
+pub(crate) fn apply_arena_commit(
+    game: &mut crate::state::GameState,
+    commit: &ArenaCommit,
+) -> Vec<ArenaDeferredOutput> {
+    let mut deferred: Vec<ArenaDeferredOutput> = Vec::new();
+
     game.character.gold = game.character.gold.saturating_sub(commit.fee);
 
-    match commit.outcome {
+    let final_total_gold: u32 = match commit.outcome {
         ArenaOutcome::Defeat { .. } => {
             game.character.hp = commit.hp_set.unwrap_or(1);
             if let Some(best) = commit.best_round {
@@ -708,6 +830,7 @@ pub fn apply_arena_commit(game: &mut crate::state::GameState, commit: &ArenaComm
                     game.character.best_tournament_round = best;
                 }
             }
+            0
         }
         ArenaOutcome::CashOut { .. } | ArenaOutcome::Victory { .. } => {
             let mut total_gold = commit.gold_reward;
@@ -719,22 +842,31 @@ pub fn apply_arena_commit(game: &mut crate::state::GameState, commit: &ArenaComm
                     game.character.level,
                     &game.character.title,
                 );
-                crate::display::print_level_up(&colored);
+                deferred.push(ArenaDeferredOutput::LevelUp(colored));
             }
 
             game.character.kills = game.character.kills.saturating_add(commit.kills);
 
             let mut overflow_gold: u32 = 0;
             for item in &commit.items {
-                if !crate::events::add_to_inventory_pub_quiet(game, item.clone()) {
-                    let sell_value = crate::loot::item_price(item) / 2;
-                    overflow_gold = overflow_gold.saturating_add(sell_value);
-                    eprintln!(
-                        "   {} Arena chest item {} converted to {} gold (inventory full).",
-                        "💰".yellow(),
-                        item.name.dimmed(),
-                        sell_value
-                    );
+                match apply_chest_item_to_inventory(game, item.clone()) {
+                    ChestApplyResult::Added => {}
+                    ChestApplyResult::Replaced { dropped } => {
+                        deferred.push(ArenaDeferredOutput::InventoryReplaced {
+                            dropped_name: dropped.name,
+                            dropped_rarity: dropped.rarity,
+                            new_name: item.name.clone(),
+                            new_rarity: item.rarity,
+                        });
+                    }
+                    ChestApplyResult::Rejected => {
+                        let sell_value = crate::loot::item_price(item) / 2;
+                        overflow_gold = overflow_gold.saturating_add(sell_value);
+                        deferred.push(ArenaDeferredOutput::OverflowConverted {
+                            item_name: item.name.clone(),
+                            sell_value,
+                        });
+                    }
                 }
             }
             if overflow_gold > 0 {
@@ -747,19 +879,32 @@ pub fn apply_arena_commit(game: &mut crate::state::GameState, commit: &ArenaComm
                 }
             }
 
-            game.character.tournament_wins = game.character
+            game.character.tournament_wins = game
+                .character
                 .tournament_wins
                 .saturating_add(commit.tournament_wins_increment);
 
             game.character.gold = game.character.gold.saturating_add(total_gold);
             game.character.hp = commit.hp_set.unwrap_or(game.character.hp);
+
+            total_gold
         }
-    }
+    };
+
+    let journal_msg = format_arena_journal_msg(
+        &commit.outcome,
+        &commit.tier_name,
+        commit.fee,
+        final_total_gold,
+        commit.xp_reward,
+    );
 
     game.add_journal(crate::journal::JournalEntry::new(
         crate::journal::EventType::Tournament,
-        commit.journal_msg.clone(),
+        journal_msg,
     ));
+
+    deferred
 }
 
 pub fn run_arena_session(
@@ -1283,9 +1428,11 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(25),
             journal_msg: "KO".to_string(),
+            tier_name: "Test Tier".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let deferred = apply_arena_commit(&mut game, &commit);
+        assert!(deferred.is_empty(), "Defeat must emit no deferred output");
 
         assert_eq!(game.character.gold, 450);
         assert_eq!(game.character.hp, 25);
@@ -1315,9 +1462,10 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(45),
             journal_msg: "Cash out".to_string(),
+            tier_name: "Test Tier".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let _deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.character.gold, 550);
         assert_eq!(game.character.hp, 45);
@@ -1344,9 +1492,10 @@ mod tests {
             tournament_wins_increment: 1,
             hp_set: Some(80),
             journal_msg: "Victory".to_string(),
+            tier_name: "Godslayer's Court".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let _deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.character.tournament_wins, 1);
         assert_eq!(game.character.best_tournament_round, 50);
@@ -1369,9 +1518,10 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             journal_msg: "Victory".to_string(),
+            tier_name: "The Pit".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let _deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.character.tournament_wins, 0);
     }
@@ -1396,13 +1546,21 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(10),
             journal_msg: "Cash out".to_string(),
+            tier_name: "Test Tier".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.character.level, 2);
         assert_eq!(game.character.hp, 10);
         assert!(game.character.max_hp > 34);
+        assert!(
+            deferred
+                .iter()
+                .any(|d| matches!(d, ArenaDeferredOutput::LevelUp(_))),
+            "expected level-up to be deferred, got {:?}",
+            deferred
+        );
     }
 
     #[test]
@@ -1425,9 +1583,10 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(10),
             journal_msg: "Arena cash-out".to_string(),
+            tier_name: "Test Tier".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let _deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.character.level, 2);
         assert_eq!(game.journal.len(), 1);
@@ -1530,13 +1689,21 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             journal_msg: "Cash out with overflow".to_string(),
+            tier_name: "Test Tier".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let deferred = apply_arena_commit(&mut game, &commit);
 
         let expected_gold = 500u32.saturating_sub(50).saturating_add(100).saturating_add(sell_value);
         assert_eq!(game.character.gold, expected_gold, "expected {} gold (base 500 - fee 50 + reward 100 + overflow {}), got {}", expected_gold, sell_value, game.character.gold);
         assert_eq!(game.character.inventory.len(), 20);
+        assert!(
+            deferred
+                .iter()
+                .any(|d| matches!(d, ArenaDeferredOutput::OverflowConverted { .. })),
+            "expected OverflowConverted in deferred output, got {:?}",
+            deferred
+        );
     }
 
     // --- Tier unlock gaps ---
@@ -1675,9 +1842,10 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(25),
             journal_msg: "KO".to_string(),
+            tier_name: "Test Tier".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let _deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.character.best_tournament_round, 5);
         assert_eq!(game.character.gold, 450);
@@ -1707,9 +1875,10 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(25),
             journal_msg: "KO".to_string(),
+            tier_name: "Test Tier".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let _deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.character.xp, 50);
         assert_eq!(game.character.kills, 10);
@@ -1737,9 +1906,10 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             journal_msg: "Cash out".to_string(),
+            tier_name: "Test Tier".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let _deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.character.best_tournament_round, 10);
     }
@@ -1772,13 +1942,19 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             journal_msg: "Cash out".to_string(),
+            tier_name: "Test Tier".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.character.inventory.len(), 1);
         assert_eq!(game.character.inventory[0].name, "Iron Sword");
         assert_eq!(game.character.gold, 550);
+        assert!(
+            deferred.is_empty(),
+            "items that fit must not produce deferred output, got {:?}",
+            deferred
+        );
     }
 
     // --- Compatibility: EventType::Tournament ---
@@ -1799,14 +1975,18 @@ mod tests {
             best_round: Some(3),
             tournament_wins_increment: 0,
             hp_set: Some(80),
-            journal_msg: "Arena cash-out in The Pit.".to_string(),
+            journal_msg: "ignored draft".to_string(),
+            tier_name: "The Pit".to_string(),
         };
 
-        apply_arena_commit(&mut game, &commit);
+        let _deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.journal.len(), 1);
         assert!(matches!(game.journal[0].event_type, crate::journal::EventType::Tournament));
-        assert_eq!(game.journal[0].message, "Arena cash-out in The Pit.");
+        assert_eq!(
+            game.journal[0].message,
+            "Arena cash-out in The Pit after 3 rounds. +100 gold, +0 XP."
+        );
     }
 
     // --- Seeded compact combat log ---
@@ -1877,6 +2057,236 @@ mod tests {
             result.total_turns > ARENA_TUNING.max_turns,
             "Expected total_turns > {} (max_turns), got {}",
             ARENA_TUNING.max_turns, result.total_turns
+        );
+    }
+
+    // --- T7: MAX_LEVEL XP gating + transaction journal truth ---
+
+    #[test]
+    fn build_commit_zeros_xp_reward_at_max_level_entry() {
+        let c = make_character(crate::character::MAX_LEVEL, 3, 5000);
+        let entry = ArenaEntrySnapshot::from_character(&c);
+        let run = ArenaRun {
+            tier: TIER_GODSLAYER,
+            entry: entry.clone(),
+            entry_fee: 2500,
+            rounds_cleared: 50,
+            current_hp: 80,
+            pending: PendingRewards::default(),
+        };
+
+        let commit = build_commit(&c, &run, ArenaOutcome::Victory { rounds_cleared: 50 }, 80);
+
+        assert_eq!(
+            commit.xp_reward, 0,
+            "MAX_LEVEL entrants must not receive an XP reward"
+        );
+        assert!(
+            commit.gold_reward > 0,
+            "Gold reward must remain unaffected at MAX_LEVEL entry, got {}",
+            commit.gold_reward
+        );
+    }
+
+    #[test]
+    fn build_commit_preserves_xp_reward_just_below_max_level() {
+        // A level-149 entrant must still earn XP for the valid 149 -> 150 path.
+        let c = make_character(crate::character::MAX_LEVEL - 1, 3, 5000);
+        let entry = ArenaEntrySnapshot::from_character(&c);
+        let run = ArenaRun {
+            tier: TIER_GODSLAYER,
+            entry: entry.clone(),
+            entry_fee: 2500,
+            rounds_cleared: 10,
+            current_hp: 80,
+            pending: PendingRewards::default(),
+        };
+
+        let commit = build_commit(&c, &run, ArenaOutcome::CashOut { rounds_cleared: 10 }, 80);
+
+        assert!(
+            commit.xp_reward > 0,
+            "level-149 entrant must keep a positive xp_reward, got {}",
+            commit.xp_reward
+        );
+    }
+
+    #[test]
+    fn apply_commit_journal_message_is_synthesized_from_tier_name() {
+        // Authoritative journal text must come from `tier_name` synthesis,
+        // not from the pre-resolution draft `journal_msg`.
+        let mut game = GameState::new(make_character(10, 0, 500));
+        game.character.max_hp = 100;
+
+        let commit = ArenaCommit {
+            outcome: ArenaOutcome::Victory { rounds_cleared: 5 },
+            fee: 50,
+            gold_reward: 200,
+            xp_reward: 30,
+            items: vec![],
+            gold_from_overflow: 0,
+            kills: 5,
+            best_round: Some(5),
+            tournament_wins_increment: 0,
+            hp_set: Some(80),
+            journal_msg: "STALE DRAFT MUST BE IGNORED".to_string(),
+            tier_name: "The Pit".to_string(),
+        };
+
+        let _deferred = apply_arena_commit(&mut game, &commit);
+
+        assert_eq!(
+            game.journal[0].message,
+            "Arena VICTORY in The Pit! Cleared all 5 rounds! +200 gold, +30 XP."
+        );
+    }
+
+    #[test]
+    fn apply_commit_journal_total_includes_overflow_gold() {
+        // The journal entry's `+N gold` figure must reflect the FINAL gold
+        // total (gold_reward + overflow), not the pre-resolution gold_reward.
+        let mut game = GameState::new(make_character(10, 0, 500));
+        game.character.max_hp = 100;
+        game.character.hp = 80;
+
+        for i in 0..20 {
+            game.character.inventory.push(Item {
+                name: format!("Legendary {}", i),
+                slot: ItemSlot::Weapon,
+                power: 50 + i as i32,
+                rarity: Rarity::Legendary,
+            });
+        }
+
+        let chest_item = Item {
+            name: "Rusty Dagger".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 2,
+            rarity: Rarity::Common,
+        };
+        let sell_value = crate::loot::item_price(&chest_item) / 2;
+        assert!(sell_value > 0, "test fixture sanity: overflow value must be > 0");
+
+        let commit = ArenaCommit {
+            outcome: ArenaOutcome::CashOut { rounds_cleared: 3 },
+            fee: 50,
+            gold_reward: 100,
+            xp_reward: 0,
+            items: vec![chest_item],
+            gold_from_overflow: 0,
+            kills: 3,
+            best_round: Some(3),
+            tournament_wins_increment: 0,
+            hp_set: Some(80),
+            journal_msg: "ignored".to_string(),
+            tier_name: "Test Tier".to_string(),
+        };
+
+        let deferred = apply_arena_commit(&mut game, &commit);
+
+        let expected_total = 100u32 + sell_value;
+        let expected_msg = format!(
+            "Arena cash-out in Test Tier after 3 rounds. +{} gold, +0 XP.",
+            expected_total
+        );
+        assert_eq!(game.journal[0].message, expected_msg);
+        assert!(
+            deferred
+                .iter()
+                .any(|d| matches!(d, ArenaDeferredOutput::OverflowConverted { sell_value: sv, .. } if *sv == sell_value)),
+            "expected OverflowConverted with sell_value={}, got {:?}",
+            sell_value,
+            deferred
+        );
+    }
+
+    #[test]
+    fn apply_commit_emits_inventory_replaced_when_chest_evicts_weakest() {
+        // A stronger arena chest item must produce InventoryReplaced (not
+        // print inline) when it evicts the weakest droppable inventory item.
+        let mut game = GameState::new(make_character(10, 0, 500));
+        game.character.max_hp = 100;
+        game.character.hp = 80;
+
+        for i in 0..20 {
+            game.character.inventory.push(Item {
+                name: format!("Weak {}", i),
+                slot: ItemSlot::Weapon,
+                power: 1,
+                rarity: Rarity::Common,
+            });
+        }
+
+        let chest_item = Item {
+            name: "Strong Sword".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 100,
+            rarity: Rarity::Rare,
+        };
+
+        let commit = ArenaCommit {
+            outcome: ArenaOutcome::CashOut { rounds_cleared: 3 },
+            fee: 0,
+            gold_reward: 0,
+            xp_reward: 0,
+            items: vec![chest_item],
+            gold_from_overflow: 0,
+            kills: 0,
+            best_round: None,
+            tournament_wins_increment: 0,
+            hp_set: Some(80),
+            journal_msg: "ignored".to_string(),
+            tier_name: "Test Tier".to_string(),
+        };
+
+        let deferred = apply_arena_commit(&mut game, &commit);
+
+        assert!(
+            deferred.iter().any(|d| matches!(
+                d,
+                ArenaDeferredOutput::InventoryReplaced { new_name, .. } if new_name == "Strong Sword"
+            )),
+            "expected InventoryReplaced with new_name='Strong Sword', got {:?}",
+            deferred
+        );
+        assert_eq!(game.character.inventory.len(), 20);
+        assert!(
+            game.character
+                .inventory
+                .iter()
+                .any(|i| i.name == "Strong Sword"),
+            "stronger chest item should now be in inventory"
+        );
+    }
+
+    #[test]
+    fn apply_commit_returns_no_deferred_output_for_defeat() {
+        // Defeat must never produce deferred reward output (no level-up,
+        // no overflow, no inventory replacement).
+        let mut game = GameState::new(make_character(10, 0, 500));
+        game.character.max_hp = 100;
+
+        let commit = ArenaCommit {
+            outcome: ArenaOutcome::Defeat { rounds_cleared: 2 },
+            fee: 50,
+            gold_reward: 0,
+            xp_reward: 0,
+            items: vec![],
+            gold_from_overflow: 0,
+            kills: 0,
+            best_round: None,
+            tournament_wins_increment: 0,
+            hp_set: Some(25),
+            journal_msg: "ignored".to_string(),
+            tier_name: "Test Tier".to_string(),
+        };
+
+        let deferred = apply_arena_commit(&mut game, &commit);
+
+        assert!(
+            deferred.is_empty(),
+            "Defeat must never emit deferred output, got {:?}",
+            deferred
         );
     }
 }

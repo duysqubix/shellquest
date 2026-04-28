@@ -1716,11 +1716,16 @@ fn cmd_arena(from_deprecated: bool) {
 
     match arena::run_arena_session(&game.character, tier, fee) {
         Some(commit) => {
-            arena::apply_arena_commit(&mut game, &commit);
+            // T7 transaction boundary: apply mutates state and returns deferred
+            // reward output (level-up, overflow, inventory replacement). Nothing
+            // user-visible is rendered until `state::save()` succeeds, so a save
+            // failure leaves no stale prints behind.
+            let deferred = arena::apply_arena_commit(&mut game, &commit);
             if let Err(e) = state::save(&game) {
                 eprintln!("{} Failed to save arena results: {}", "❌".bold(), e.red());
                 return;
             }
+            arena::render_arena_deferred_output(&deferred);
 
             let (label, rounds) = match commit.outcome {
                 arena::ArenaOutcome::Defeat { rounds_cleared } => ("Knocked out", rounds_cleared),
