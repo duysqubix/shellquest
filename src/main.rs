@@ -1643,8 +1643,8 @@ fn cmd_update() {
 
 fn cmd_arena(from_deprecated: bool) {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
-        println!("Arena requires an interactive terminal.");
-        return;
+        eprintln!("Arena requires an interactive terminal.");
+        std::process::exit(1);
     }
 
     if from_deprecated {
@@ -1789,5 +1789,4 @@ fn select_arena_tier(character: &character::Character) -> Option<arena::ArenaTie
         }
     }
 }
-
 
