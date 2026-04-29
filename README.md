@@ -101,12 +101,23 @@ sq hook --shell zsh >> ~/.zshrc
 ## Quick start
 
 ```bash
-sq init       # pick your class and race
-sq status     # view your character sheet
-sq journal    # read the adventure log
+sq init           # pick your class and race
+sq status         # view your character sheet
+sq journal        # read the adventure log
+sq help arena     # learn how to play the arena
 ```
 
 That's it. Just use your terminal.
+
+---
+
+## Help & Manual
+
+The `sq` CLI includes a built-in manual for every command.
+
+- `sq help` — View the topic index
+- `sq help <topic>` — View a specific command guide (e.g., `sq help arena`)
+- `sq --help` — View standard CLI usage and flags
 
 ---
 
@@ -177,6 +188,7 @@ The Arena is an interactive combat gauntlet where you face waves of increasingly
 
 | Command | Description |
 |---------|-------------|
+| `sq help [topic]` | View the in-game manual and command guides |
 | `sq init` | Create your character |
 | `sq status` / `sq stat` | View your character sheet (`--full` to include inventory) |
 | `sq inventory` | Check gear and potions |
@@ -188,13 +200,15 @@ The Arena is an interactive combat gauntlet where you face waves of increasingly
 | `sq wield <name>` | Wield a weapon from inventory |
 | `sq remove <name>` / `sq unequip <name>` | Unequip weapon, armor, or ring → back to inventory |
 | `sq drink <name>` | Drink a potion |
-| `sq drop <name>` | Drop an item from inventory |
+| `sq drop <name>` | Drop an item from inventory permanently |
 | `sq prestige` | Ascend at level 150 |
 | `sq arena` | Enter the interactive combat gauntlet (risk/reward) |
 | `sq tournament` | Deprecated; use `sq arena` instead |
 | `sq hook --shell zsh` | Print shell hook code |
 | `sq update` | Update to latest via cargo |
 | `sq reset` | Delete your character (permanent) |
+| `sq tick --cmd ...` | Internal: Process a command (used by shell hook) |
+
 
 ---
 

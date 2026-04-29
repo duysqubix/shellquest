@@ -4,6 +4,7 @@ mod messages;
 mod character;
 mod display;
 mod events;
+mod help;
 mod journal;
 mod loot;
 mod sage;
@@ -16,7 +17,12 @@ use colored::*;
 use std::io::{self, IsTerminal, Write};
 
 #[derive(Parser)]
-#[command(name = "sq", version, about = "A passive RPG that lives in your terminal")]
+#[command(
+    name = "sq",
+    version,
+    about = "A passive RPG that lives in your terminal",
+    disable_help_subcommand = true
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -24,6 +30,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// View the in-game manual; pass an optional topic for a specific command guide
+    Help {
+        /// Topic name (e.g. arena, status, journal); omit for the index
+        topic: Option<String>,
+    },
     /// Create a new character
     Init,
     /// View your character sheet
@@ -120,6 +131,7 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Help { topic } => cmd_help(topic.as_deref()),
         Commands::Init => cmd_init(),
         Commands::Status { full } => cmd_status(full),
         Commands::Inventory => cmd_inventory(),
@@ -355,6 +367,21 @@ fn cmd_journal() {
         Ok(game) => display::print_journal(&game.journal),
         Err(e) => eprintln!("{} {}", "❌".bold(), e.red()),
     }
+}
+
+fn format_help(topic: Option<&str>) -> String {
+    match topic {
+        None => help::render_index(),
+        Some(name) => match help::lookup_topic(name) {
+            help::LookupResult::Found(t) => help::render_topic(t),
+            help::LookupResult::Suggestions(s) => help::render_no_match(name, &s),
+            help::LookupResult::NoMatch => help::render_no_match(name, &[]),
+        },
+    }
+}
+
+fn cmd_help(topic: Option<&str>) {
+    print!("{}", format_help(topic));
 }
 
 fn cmd_tick(cmd: &str, cwd: &str, exit_code: i32, test_sage: bool) {
@@ -964,6 +991,133 @@ fn find_inventory_item(game: &state::GameState, name: &str) -> Result<Option<usi
 }
 
 #[cfg(test)]
+#[test]
+fn registry_covers_all_canonical_topics() {
+    let names: Vec<&str> = help::all_topics().iter().map(|t| t.name).collect();
+    let expected: Vec<&str> = help::CANONICAL_TOPIC_ORDER.to_vec();
+    assert_eq!(
+        names, expected,
+        "registry must contain exactly the canonical topics in canonical order"
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn registry_related_topics_are_known() {
+    use std::collections::HashSet;
+    let canonical: HashSet<&str> = help::CANONICAL_TOPIC_ORDER.iter().copied().collect();
+    for topic in help::all_topics() {
+        for related in topic.related {
+            assert!(
+                canonical.contains(*related),
+                "topic '{}' references unknown related topic '{}'",
+                topic.name,
+                related
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn lookup_prefers_primary_then_alias() {
+    use help::{lookup_topic, LookupResult};
+
+    match lookup_topic("status") {
+        LookupResult::Found(t) => assert_eq!(t.name, "status"),
+        other => panic!("expected Found(status) for canonical name, got {:?}", other),
+    }
+
+    match lookup_topic("stat") {
+        LookupResult::Found(t) => assert_eq!(
+            t.name, "status",
+            "alias 'stat' must resolve to canonical 'status'"
+        ),
+        other => panic!("expected Found(status) via alias, got {:?}", other),
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn lookup_typo_and_gibberish_paths() {
+    use help::{lookup_topic, LookupResult};
+
+    match lookup_topic("jounral") {
+        LookupResult::Suggestions(s) => {
+            assert!(!s.is_empty(), "expected at least one suggestion for 'jounral'");
+            assert_eq!(
+                s[0].name, "journal",
+                "first suggestion for 'jounral' must be 'journal'"
+            );
+        }
+        other => panic!("expected Suggestions for 'jounral', got {:?}", other),
+    }
+
+    match lookup_topic("xyzzy") {
+        LookupResult::NoMatch => {}
+        other => panic!("expected NoMatch for 'xyzzy', got {:?}", other),
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn render_index_lists_topics_in_order() {
+    colored::control::set_override(false);
+
+    let out = help::render_index();
+
+    let mut search_start = 0usize;
+    for name in help::CANONICAL_TOPIC_ORDER {
+        let needle = format!("  {}", name);
+        let rel_pos = out[search_start..].find(&needle).unwrap_or_else(|| {
+            panic!(
+                "topic row '{}' not found at or after offset {} in render_index() output:\n{}",
+                name, search_start, out
+            )
+        });
+        search_start += rel_pos + needle.len();
+    }
+
+    assert!(
+        out.contains(help::INDEX_FOOTER),
+        "render_index must include the exact footer '{}'; got:\n{}",
+        help::INDEX_FOOTER,
+        out
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn render_no_match_shows_suggestions() {
+    use help::{lookup_topic, LookupResult};
+
+    colored::control::set_override(false);
+
+    let suggestions = match lookup_topic("jounral") {
+        LookupResult::Suggestions(s) => s,
+        other => panic!("expected Suggestions for 'jounral', got {:?}", other),
+    };
+
+    let out = help::render_no_match("jounral", &suggestions);
+
+    assert!(
+        out.contains("jounral"),
+        "no-match output must echo the original query 'jounral':\n{}",
+        out
+    );
+    assert!(
+        out.contains("journal"),
+        "no-match output must surface 'journal' as a close match:\n{}",
+        out
+    );
+    assert!(
+        out.to_lowercase().contains("did you mean"),
+        "no-match output must clearly suggest close matches (looked for 'did you mean'):\n{}",
+        out
+    );
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::character::{Character, Class, Item, ItemSlot, Race, Rarity};
@@ -1190,6 +1344,128 @@ mod tests {
     fn selector_dot_n_on_exact_match_works() {
         let state = make_state_with_items(vec![item("Rusty Pipe"), item("Rusty Sword")]);
         assert_eq!(find_inventory_item(&state, "rusty.2"), Ok(Some(1)));
+    }
+
+    #[test]
+    fn parser_help_no_topic_yields_help_variant() {
+        let cli = Cli::try_parse_from(["sq", "help"]).expect("'sq help' must parse");
+        match cli.command {
+            Commands::Help { topic } => assert!(
+                topic.is_none(),
+                "'sq help' must parse with topic == None, got {:?}",
+                topic
+            ),
+            _ => panic!("expected Commands::Help, got a different variant"),
+        }
+    }
+
+    #[test]
+    fn parser_help_with_arena_topic_yields_help_variant() {
+        let cli = Cli::try_parse_from(["sq", "help", "arena"]).expect("'sq help arena' must parse");
+        match cli.command {
+            Commands::Help { topic } => assert_eq!(
+                topic.as_deref(),
+                Some("arena"),
+                "'sq help arena' must carry topic Some(\"arena\")"
+            ),
+            _ => panic!("expected Commands::Help"),
+        }
+    }
+
+    #[test]
+    fn parser_help_help_topic_yields_help_variant() {
+        let cli = Cli::try_parse_from(["sq", "help", "help"]).expect("'sq help help' must parse");
+        match cli.command {
+            Commands::Help { topic } => assert_eq!(
+                topic.as_deref(),
+                Some("help"),
+                "'sq help help' must carry topic Some(\"help\"), proving we own the help name"
+            ),
+            _ => panic!("expected Commands::Help"),
+        }
+    }
+
+    #[test]
+    fn parser_dash_dash_help_still_routes_to_clap() {
+        let err = match Cli::try_parse_from(["sq", "--help"]) {
+            Ok(_) => panic!("'sq --help' must short-circuit on clap's DisplayHelp path, not parse"),
+            Err(e) => e,
+        };
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::DisplayHelp,
+            "--help must trigger clap's auto-generated help, not our custom Help variant"
+        );
+    }
+
+    #[test]
+    fn format_help_no_topic_emits_index() {
+        colored::control::set_override(false);
+        let out = format_help(None);
+        assert!(
+            out.contains("sq Manual"),
+            "index header missing from no-topic output:\n{}",
+            out
+        );
+        assert!(
+            out.contains(help::INDEX_FOOTER),
+            "index footer '{}' missing:\n{}",
+            help::INDEX_FOOTER,
+            out
+        );
+    }
+
+    #[test]
+    fn format_help_arena_emits_authored_topic() {
+        colored::control::set_override(false);
+        let out = format_help(Some("arena"));
+        assert!(
+            out.contains("sq arena"),
+            "topic header missing from arena help:\n{}",
+            out
+        );
+        assert!(
+            out.contains("Usage:"),
+            "Usage section missing from arena help:\n{}",
+            out
+        );
+        assert!(
+            out.contains("Examples:"),
+            "Examples section missing from arena help:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn format_help_help_emits_authored_topic_not_clap_help() {
+        colored::control::set_override(false);
+        let out = format_help(Some("help"));
+        assert!(
+            out.contains("sq help"),
+            "header 'sq help' missing — our Help variant must own the topic:\n{}",
+            out
+        );
+        assert!(
+            out.contains("Browse the in-game manual"),
+            "authored summary missing — output looks like clap's auto-help instead of our topic:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn format_help_typo_emits_no_match_with_suggestion() {
+        colored::control::set_override(false);
+        let out = format_help(Some("jounral"));
+        assert!(
+            out.contains("jounral"),
+            "no-match output must echo the misspelled query:\n{}",
+            out
+        );
+        assert!(
+            out.contains("journal"),
+            "no-match output must surface 'journal' as a close suggestion:\n{}",
+            out
+        );
     }
 }
 
