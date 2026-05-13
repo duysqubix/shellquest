@@ -37,13 +37,9 @@ enum Commands {
     },
     /// Create a new character
     Init,
-    /// View your character sheet
+    /// View your character sheet (includes inventory)
     #[clap(alias = "stat")]
-    Status {
-        /// Show full inventory list below the character sheet
-        #[clap(long)]
-        full: bool,
-    },
+    Status,
     /// Check your inventory
     #[clap(alias = "inv")]
     Inventory,
@@ -133,7 +129,7 @@ fn main() {
     match cli.command {
         Commands::Help { topic } => cmd_help(topic.as_deref()),
         Commands::Init => cmd_init(),
-        Commands::Status { full } => cmd_status(full),
+        Commands::Status => cmd_status(),
         Commands::Inventory => cmd_inventory(),
         Commands::Journal => cmd_journal(),
         Commands::Tick {
@@ -343,13 +339,11 @@ fn cmd_init() {
     }
 }
 
-fn cmd_status(full: bool) {
+fn cmd_status() {
     match state::load() {
         Ok(game) => {
             display::print_status(&game.character, game.permadeath);
-            if full {
-                display::print_inventory(&game.character);
-            }
+            display::print_inventory(&game.character);
         }
         Err(e) => eprintln!("{} {}", "❌".bold(), e.red()),
     }

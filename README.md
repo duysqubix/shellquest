@@ -190,7 +190,7 @@ The Arena is an interactive combat gauntlet where you face waves of increasingly
 |---------|-------------|
 | `sq help [topic]` | View the in-game manual and command guides |
 | `sq init` | Create your character |
-| `sq status` / `sq stat` | View your character sheet (`--full` to include inventory) |
+| `sq status` / `sq stat` | View your character sheet and inventory |
 | `sq inventory` | Check gear and potions |
 | `sq journal` | Last 20 adventure log entries |
 | `sq shop` | Browse the shop (home directory only) |
