@@ -30,6 +30,9 @@ pub struct GameState {
     /// Date the shop was last refreshed (UTC midnight)
     #[serde(default)]
     pub shop_refreshed: Option<DateTime<Utc>>,
+    /// Last time the magical healer credited HP (UTC). Drives time-based passive heal.
+    #[serde(default)]
+    pub last_heal_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub active_boss: Option<crate::boss::Boss>,
     #[serde(default)]
@@ -50,6 +53,7 @@ impl GameState {
             last_announced_version: None,
             shop_items: Vec::new(),
             shop_refreshed: None,
+            last_heal_at: None,
             active_boss: None,
             permadeath: false,
         }
@@ -131,6 +135,7 @@ mod tests {
         assert!(state.last_sage_shown.is_none());
         assert!(state.shop_items.is_empty());
         assert!(state.shop_refreshed.is_none());
+        assert!(state.last_heal_at.is_none());
         assert_eq!(state.character.name, "Tester");
     }
 

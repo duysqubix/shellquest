@@ -36,9 +36,15 @@ fn final_xp(base: u32, danger: u32, class: &crate::character::Class, cmd: &str) 
     (zone_scaled as f32 * affinity_multiplier(class, cmd)).round() as u32
 }
 
+const HOME_HEAL_INTERVAL_SECS: i64 = 30;
+const HOME_HEAL_MAX_ACCUMULATED_SECS: i64 = 30 * 60;
+
 pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
     state.character.commands_run += 1;
     let mut rng = rand::thread_rng();
+
+    let now = chrono::Utc::now();
+    handle_passive_healer(state, cwd, now);
 
     if exit_code != 0 {
         if rng.gen_ratio(1, 4) {
@@ -343,6 +349,71 @@ fn handle_familiar(state: &mut GameState, rng: &mut impl Rng) {
         &state.character.class,
         creature,
         heal,
+        state.character.hp,
+        state.character.max_hp,
+    );
+    display::print_familiar(&colored);
+    state.add_journal(JournalEntry::new(EventType::Discovery, plain));
+}
+
+fn handle_passive_healer(
+    state: &mut GameState,
+    cwd: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) {
+    if state.active_boss.is_some() {
+        return;
+    }
+
+    let last = match state.last_heal_at {
+        Some(t) if t <= now => t,
+        _ => {
+            state.last_heal_at = Some(now);
+            return;
+        }
+    };
+
+    let raw_elapsed = (now - last).num_seconds().max(0);
+    let (effective_last, elapsed) = if raw_elapsed > HOME_HEAL_MAX_ACCUMULATED_SECS {
+        (
+            now - chrono::Duration::seconds(HOME_HEAL_MAX_ACCUMULATED_SECS),
+            HOME_HEAL_MAX_ACCUMULATED_SECS,
+        )
+    } else {
+        (last, raw_elapsed)
+    };
+
+    let heals_due = (elapsed / HOME_HEAL_INTERVAL_SECS) as i32;
+    let missing = (state.character.max_hp - state.character.hp).max(0);
+    let applied = heals_due.min(missing);
+
+    if applied == 0 {
+        if missing == 0 {
+            state.last_heal_at = Some(now);
+        }
+        return;
+    }
+
+    state.character.heal(applied);
+
+    let consumed_secs = (applied as i64) * HOME_HEAL_INTERVAL_SECS;
+    let new_last = effective_last + chrono::Duration::seconds(consumed_secs);
+    state.last_heal_at = Some(if state.character.hp >= state.character.max_hp {
+        now
+    } else {
+        new_last
+    });
+
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if home.is_empty() || cwd != home {
+        return;
+    }
+
+    let (plain, colored) = crate::messages::healer(
+        &state.character.class,
+        applied,
         state.character.hp,
         state.character.max_hp,
     );
@@ -1085,6 +1156,215 @@ mod tests {
         );
         assert!(elite.xp > 15);
         assert!(elite.elite);
+    }
+
+    fn healer_state(hp_offset: i32) -> GameState {
+        let mut state = make_state();
+        state.character.hp = state.character.max_hp - hp_offset;
+        state
+    }
+
+    fn minimal_boss() -> crate::boss::Boss {
+        crate::boss::Boss {
+            name: "Test Boss".to_string(),
+            hp: 50,
+            max_hp: 50,
+            attack: 10,
+            xp_reward: 100,
+            gold_reward: 50,
+            spawned_at: chrono::Utc::now(),
+        }
+    }
+
+    fn within(actual: chrono::DateTime<chrono::Utc>, target: chrono::DateTime<chrono::Utc>, tolerance_secs: i64) -> bool {
+        (actual - target).num_seconds().abs() <= tolerance_secs
+    }
+
+    #[test]
+    fn first_visit_initializes_last_heal_at_and_does_not_heal() {
+        let mut state = healer_state(5);
+        let starting_hp = state.character.hp;
+        let now = chrono::Utc::now();
+        assert!(state.last_heal_at.is_none());
+
+        handle_passive_healer(&mut state, "/tmp/anywhere", now);
+
+        assert!(state.last_heal_at.is_some());
+        assert_eq!(state.character.hp, starting_hp);
+    }
+
+    #[test]
+    fn heals_one_hp_per_thirty_seconds() {
+        let mut state = healer_state(5);
+        let now = chrono::Utc::now();
+        let last = now - chrono::Duration::seconds(30);
+        state.last_heal_at = Some(last);
+        let expected_hp = state.character.hp + 1;
+
+        handle_passive_healer(&mut state, "/tmp/anywhere", now);
+
+        assert_eq!(state.character.hp, expected_hp);
+        let new_last = state.last_heal_at.expect("timer must be set");
+        assert!(within(new_last, last + chrono::Duration::seconds(30), 1),
+            "expected last_heal_at within 1s of last+30s, got delta {}",
+            (new_last - (last + chrono::Duration::seconds(30))).num_seconds());
+    }
+
+    #[test]
+    fn heals_multiple_intervals_at_once() {
+        let mut state = healer_state(5);
+        let now = chrono::Utc::now();
+        let last = now - chrono::Duration::seconds(90);
+        state.last_heal_at = Some(last);
+        let expected_hp = state.character.hp + 3;
+
+        handle_passive_healer(&mut state, "/tmp/anywhere", now);
+
+        assert_eq!(state.character.hp, expected_hp);
+        let new_last = state.last_heal_at.expect("timer must be set");
+        assert!(within(new_last, last + chrono::Duration::seconds(90), 1),
+            "expected last_heal_at within 1s of last+90s, got delta {}",
+            (new_last - (last + chrono::Duration::seconds(90))).num_seconds());
+    }
+
+    #[test]
+    fn caps_at_max_accumulated_seconds() {
+        let mut state = make_state();
+        state.character.max_hp = 200;
+        state.character.hp = 100;
+        let now = chrono::Utc::now();
+        state.last_heal_at = Some(now - chrono::Duration::seconds(60 * 60));
+
+        handle_passive_healer(&mut state, "/tmp/anywhere", now);
+
+        assert_eq!(state.character.hp, 160);
+        let new_last = state.last_heal_at.expect("timer must be set");
+        assert!((now - new_last).num_seconds().abs() <= 30 * 60,
+            "expected last_heal_at within 30min of now");
+    }
+
+    #[test]
+    fn caps_at_max_hp() {
+        let mut state = healer_state(3);
+        let now = chrono::Utc::now();
+        state.last_heal_at = Some(now - chrono::Duration::seconds(10 * 60));
+        let max_hp = state.character.max_hp;
+
+        handle_passive_healer(&mut state, "/tmp/anywhere", now);
+
+        assert_eq!(state.character.hp, max_hp);
+        let new_last = state.last_heal_at.expect("timer must be set");
+        assert!(within(new_last, now, 1),
+            "expected last_heal_at snapped to ~now, got delta {}",
+            (new_last - now).num_seconds());
+    }
+
+    #[test]
+    fn no_heal_during_boss() {
+        let mut state = healer_state(5);
+        let starting_hp = state.character.hp;
+        let now = chrono::Utc::now();
+        let original = now - chrono::Duration::seconds(5 * 60);
+        state.last_heal_at = Some(original);
+        state.active_boss = Some(minimal_boss());
+
+        handle_passive_healer(&mut state, "/tmp/anywhere", now);
+
+        assert_eq!(state.character.hp, starting_hp);
+        assert_eq!(state.last_heal_at, Some(original));
+    }
+
+    #[test]
+    fn heal_below_interval_no_change() {
+        let mut state = healer_state(5);
+        let starting_hp = state.character.hp;
+        let now = chrono::Utc::now();
+        let original = now - chrono::Duration::seconds(10);
+        state.last_heal_at = Some(original);
+
+        handle_passive_healer(&mut state, "/tmp/anywhere", now);
+
+        assert_eq!(state.character.hp, starting_hp);
+        assert_eq!(state.last_heal_at, Some(original));
+    }
+
+    #[test]
+    fn emits_journal_entry_at_home() {
+        let home = match dirs::home_dir() {
+            Some(p) => p.to_string_lossy().to_string(),
+            None => return,
+        };
+        if home.is_empty() {
+            return;
+        }
+        let mut state = healer_state(5);
+        let now = chrono::Utc::now();
+        state.last_heal_at = Some(now - chrono::Duration::seconds(60));
+        let before = state.journal.len();
+
+        handle_passive_healer(&mut state, &home, now);
+
+        assert_eq!(state.journal.len(), before + 1);
+        let entry = state.journal.last().expect("journal entry expected");
+        assert!(matches!(entry.event_type, EventType::Discovery));
+        assert!(entry.message.contains("+2 HP"),
+            "expected '+2 HP' substring in journal message, got: {}",
+            entry.message);
+    }
+
+    #[test]
+    fn silent_outside_home() {
+        let mut state = healer_state(5);
+        let now = chrono::Utc::now();
+        state.last_heal_at = Some(now - chrono::Duration::seconds(60));
+        let expected_hp = state.character.hp + 2;
+        let before = state.journal.len();
+
+        handle_passive_healer(&mut state, "/tmp/somewhere_not_home", now);
+
+        assert_eq!(state.character.hp, expected_hp);
+        assert_eq!(state.journal.len(), before);
+    }
+
+    #[test]
+    fn at_max_hp_resyncs_timer() {
+        let home = match dirs::home_dir() {
+            Some(p) => p.to_string_lossy().to_string(),
+            None => return,
+        };
+        if home.is_empty() {
+            return;
+        }
+        let mut state = make_state();
+        let max_hp = state.character.max_hp;
+        state.character.hp = max_hp;
+        let now = chrono::Utc::now();
+        state.last_heal_at = Some(now - chrono::Duration::seconds(5 * 60));
+        let before = state.journal.len();
+
+        handle_passive_healer(&mut state, &home, now);
+
+        assert_eq!(state.character.hp, max_hp);
+        let new_last = state.last_heal_at.expect("timer must be set");
+        assert!(within(new_last, now, 1),
+            "expected last_heal_at snapped to ~now");
+        assert_eq!(state.journal.len(), before);
+    }
+
+    #[test]
+    fn future_timestamp_clock_skew_resets() {
+        let mut state = healer_state(5);
+        let starting_hp = state.character.hp;
+        let now = chrono::Utc::now();
+        state.last_heal_at = Some(now + chrono::Duration::seconds(60));
+
+        handle_passive_healer(&mut state, "/tmp/anywhere", now);
+
+        let new_last = state.last_heal_at.expect("timer must be set");
+        assert!(new_last <= now,
+            "expected future timestamp to be reset to ≤ now, got delta {}",
+            (new_last - now).num_seconds());
+        assert_eq!(state.character.hp, starting_hp);
     }
 }
 

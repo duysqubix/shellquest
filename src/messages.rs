@@ -380,6 +380,33 @@ pub fn familiar(class: &Class, creature: &str, heal: i32, hp: i32, max_hp: i32) 
     }
 }
 
+pub fn healer(class: &Class, heal: i32, hp: i32, max_hp: i32) -> Msg {
+    let hp_str = crate::display::color_hp(hp, max_hp);
+    let h = format!("{}", heal).green();
+    match class {
+        Class::Wizard => (
+            format!("The healer weaves restorative glyphs around you. +{} HP. HP: {}/{}", heal, hp, max_hp),
+            format!("The {} weaves {} around you. +{} HP. {}", "healer".blue().bold(), "restorative glyphs".blue().italic(), h, hp_str),
+        ),
+        Class::Warrior => (
+            format!("The healer binds your wounds with practiced hands. +{} HP. HP: {}/{}", heal, hp, max_hp),
+            format!("The {} binds your wounds with {}. +{} HP. {}", "healer".blue().bold(), "practiced hands".red(), h, hp_str),
+        ),
+        Class::Rogue => (
+            format!("The healer presses a salve into your palm, wordless. +{} HP. HP: {}/{}", heal, hp, max_hp),
+            format!("The {} presses a {} into your palm, wordless. +{} HP. {}", "healer".blue().bold(), "salve".yellow().dimmed(), h, hp_str),
+        ),
+        Class::Ranger => (
+            format!("The healer applies wilderness herbs and tonics. +{} HP. HP: {}/{}", heal, hp, max_hp),
+            format!("The {} applies {} and tonics. +{} HP. {}", "healer".blue().bold(), "wilderness herbs".green(), h, hp_str),
+        ),
+        Class::Necromancer => (
+            format!("The healer's prayers grate, but the wounds close. +{} HP. HP: {}/{}", heal, hp, max_hp),
+            format!("The {}'s {} grate, but the wounds close. +{} HP. {}", "healer".blue().bold(), "prayers".magenta(), h, hp_str),
+        ),
+    }
+}
+
 pub fn portal(class: &Class, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
