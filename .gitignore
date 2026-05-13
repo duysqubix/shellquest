@@ -3,4 +3,5 @@ target/
 .sisyphus/
 .worktrees/
 docs/plans/
+.opencode/
 
