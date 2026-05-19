@@ -374,13 +374,22 @@ pub fn print_boss_spawn(boss: &crate::boss::Boss) {
     eprintln!();
 }
 
-pub fn print_boss_tick(boss: &crate::boss::Boss, player_dmg: Option<i32>, boss_dmg: Option<i32>) {
-    if let Some(dmg) = player_dmg {
-        eprintln!("{} {} You strike for {}! (HP: {}/{})",
-            "💀".bold(),
-            format!("[BOSS] {}!", boss.name).red().bold(),
-            format!("{}", dmg).green().bold(),
-            boss.hp.max(0), boss.max_hp);
+pub fn print_boss_tick(boss: &crate::boss::Boss, player_dmg: Option<(i32, bool)>, boss_dmg: Option<i32>) {
+    if let Some((dmg, is_crit)) = player_dmg {
+        if is_crit {
+            eprintln!("{} {} {} You strike for {}! (HP: {}/{})",
+                "💀".bold(),
+                "CRITICAL!".yellow().bold(),
+                format!("[BOSS] {}!", boss.name).red().bold(),
+                format!("{}", dmg).yellow().bold(),
+                boss.hp.max(0), boss.max_hp);
+        } else {
+            eprintln!("{} {} You strike for {}! (HP: {}/{})",
+                "💀".bold(),
+                format!("[BOSS] {}!", boss.name).red().bold(),
+                format!("{}", dmg).green().bold(),
+                boss.hp.max(0), boss.max_hp);
+        }
     } else {
         eprintln!("{} {} You swing and miss!",
             "💀".bold(),
@@ -406,6 +415,13 @@ pub fn print_boss_victory(boss: &crate::boss::Boss, xp: u32, gold: u32) {
         "║".yellow().bold());
     eprintln!("{}", "╚══════════════════════════════════════════════╝".yellow().bold());
     eprintln!();
+}
+
+pub fn print_soul_drain(hp_restored: i32, hp: i32, max_hp: i32) {
+    eprintln!("   {} {} {}",
+        "🩸".bold(),
+        format!("Soul drained — +{} HP", hp_restored).magenta().bold(),
+        format!("(HP: {}/{})", hp, max_hp).magenta().dimmed());
 }
 
 pub fn print_boss_flee(boss_name: &str, reason: &str) {

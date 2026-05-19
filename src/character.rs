@@ -418,6 +418,47 @@ impl Character {
         self.hp <= 0
     }
 
+    /// Apply on-kill class signature. Returns HP actually restored (0 if no effect).
+    /// Only Necromancer's Soul Drain fires here.
+    pub fn signature_on_kill(&mut self) -> i32 {
+        if !matches!(self.class, Class::Necromancer) {
+            return 0;
+        }
+        let heal = (self.intelligence / 3).max(1);
+        let before = self.hp;
+        self.hp = (self.hp + heal).min(self.max_hp);
+        self.hp - before
+    }
+}
+
+/// Returns (extra damage, label) from class signature on a player hit.
+/// Stat snapshot is taken at the call site so arena (snapshot) and boss/mob (live) callers share this.
+pub fn signature_bonus(
+    class: &Class,
+    intelligence: i32,
+    strength: i32,
+    hp: i32,
+    max_hp: i32,
+    is_first_strike: bool,
+) -> (i32, Option<&'static str>) {
+    match class {
+        Class::Wizard => {
+            let bonus = (intelligence / 4).max(0);
+            if bonus > 0 { (bonus, Some("arcane burn")) } else { (0, None) }
+        }
+        Class::Ranger if is_first_strike => {
+            let bonus = (intelligence / 3).max(0);
+            if bonus > 0 { (bonus, Some("mark prey")) } else { (0, None) }
+        }
+        Class::Warrior if hp * 3 < max_hp => {
+            let bonus = (strength / 4).max(0);
+            if bonus > 0 { (bonus, Some("battle frenzy")) } else { (0, None) }
+        }
+        _ => (0, None),
+    }
+}
+
+impl Character {
     pub fn die(&mut self) {
         self.deaths += 1;
         self.xp = 0;

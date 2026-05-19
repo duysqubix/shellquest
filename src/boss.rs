@@ -80,14 +80,46 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     let mut rng = rand::thread_rng();
     let player_power = state.character.attack_power();
     let player_defense = state.character.defense();
+    let player_int = state.character.intelligence;
+    let player_str = state.character.strength;
+    let player_hp = state.character.hp;
+    let player_max_hp = state.character.max_hp;
+    let player_class = state.character.class.clone();
+
+    let boss_at_full_hp = state.active_boss.as_ref().is_some_and(|b| b.hp == b.max_hp);
 
     let hit_roll: i32 = rng.gen_range(1..=20);
-    let player_dmg = {
+    let crit_threshold = (20 - player_int / 4).max(15);
+    let mut signature_label: Option<&'static str> = None;
+    let player_dmg: Option<(i32, bool)> = {
         let boss = state.active_boss.as_mut().unwrap();
-        if hit_roll + player_power > 10 {
-            let dmg = rng.gen_range((player_power / 2).max(1)..=player_power.max(1));
+        let hit_landed = match player_class {
+            crate::character::Class::Rogue => hit_roll + player_power > 10 || hit_roll == 1,
+            _ => hit_roll + player_power > 10,
+        };
+        if hit_landed {
+            if matches!(player_class, crate::character::Class::Rogue) && hit_roll == 1 {
+                signature_label = Some("shadow strike");
+            }
+            let mut raw_dmg = rng.gen_range((player_power / 2).max(1)..=player_power.max(1));
+            let (sig_bonus, sig_label) = crate::character::signature_bonus(
+                &player_class,
+                player_int,
+                player_str,
+                player_hp,
+                player_max_hp,
+                boss_at_full_hp,
+            );
+            if sig_bonus > 0 {
+                raw_dmg += sig_bonus;
+                if signature_label.is_none() {
+                    signature_label = sig_label;
+                }
+            }
+            let is_crit = hit_roll >= crit_threshold;
+            let dmg = if is_crit { raw_dmg * 2 } else { raw_dmg };
             boss.hp -= dmg;
-            Some(dmg)
+            Some((dmg, is_crit))
         } else {
             None
         }
@@ -102,6 +134,7 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
 
     if boss_hp_after <= 0 {
         crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, None);
+        print_signature_line(signature_label);
         crate::display::print_boss_victory(state.active_boss.as_ref().unwrap(), boss_xp, boss_gold);
 
         let loot = crate::loot::roll_boss_loot();
@@ -121,6 +154,16 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
         let leveled = state.character.gain_xp(boss_xp);
         state.character.gold += boss_gold;
         crate::events::add_to_inventory_pub(state, loot);
+
+        let drained = state.character.signature_on_kill();
+        if drained > 0 {
+            crate::display::print_soul_drain(drained, state.character.hp, state.character.max_hp);
+            state.add_journal(JournalEntry::new(
+                EventType::Combat,
+                format!("Soul drained from {}: +{} HP.", boss_name, drained),
+            ));
+        }
+
         if leveled {
             crate::events::emit_level_up(state);
         }
@@ -135,6 +178,7 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
         if died {
             if state.permadeath {
                 crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, Some(dmg));
+                print_signature_line(signature_label);
                 crate::display::print_permadeath_eulogy(&state.character, &boss_name);
                 let path = crate::state::save_path();
                 let _ = std::fs::remove_file(&path);
@@ -143,6 +187,7 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
                 state.character.die();
                 let gold_loss = gold_before * 15 / 100;
                 crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, Some(dmg));
+                print_signature_line(signature_label);
                 crate::display::print_boss_flee(
                     &boss_name,
                     "laughs as you fall... and vanishes into the void",
@@ -161,10 +206,18 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     };
 
     crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, boss_dmg);
+    print_signature_line(signature_label);
     state.add_journal(JournalEntry::new(
         EventType::Combat,
         format!("[BOSS] {} — HP: {}/{}", boss_name, boss_hp_after.max(0), boss_max_hp),
     ));
+}
+
+fn print_signature_line(label: Option<&'static str>) {
+    use colored::Colorize;
+    if let Some(label) = label {
+        eprintln!("   {} {}", "✨".cyan(), label.cyan().italic());
+    }
 }
 
 #[cfg(test)]

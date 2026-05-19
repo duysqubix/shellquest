@@ -579,7 +579,7 @@ fn handle_banish(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones:
     let gold = rng.gen_range(3..=10);
     let leveled = state.character.gain_xp(xp);
     state.character.gold += gold;
-    state.character.kills += 1;
+    register_kill(state);
     let targets = [
         "rogue process",
         "runaway daemon",
@@ -657,7 +657,7 @@ fn handle_docker_banish(state: &mut GameState, rng: &mut impl Rng) {
     let gold = rng.gen_range(2..=8);
     let leveled = state.character.gain_xp(xp);
     state.character.gold += gold;
-    state.character.kills += 1;
+    register_kill(state);
     let msgs = [
         "You banish the container to the void! Its resources return to the host!",
         "SIGTERM! The container dissolves into freed memory!",
@@ -745,6 +745,14 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
     }
 }
 
+fn register_kill(state: &mut GameState) {
+    state.character.kills += 1;
+    let drained = state.character.signature_on_kill();
+    if drained > 0 {
+        crate::display::print_soul_drain(drained, state.character.hp, state.character.max_hp);
+    }
+}
+
 // Used by Task 2 to replace the hardcoded passive-heal gen_ratio gate.
 fn passive_heal_denominator() -> u32 {
     10
@@ -825,7 +833,7 @@ fn combat(
     let monster_hits = dodge_roll > (8 + player_defense / 2);
 
     if player_hits && !monster_hits {
-        state.character.kills += 1;
+        register_kill(state);
         let leveled = state.character.gain_xp(final_reward);
         let (plain, colored) = crate::messages::combat_win(&state.character.class, monster_name, final_reward);
         display::print_combat_win(&colored);
@@ -836,7 +844,7 @@ fn combat(
         let gold_before = state.character.gold;
         let died = state.character.take_damage(damage);
         if !died {
-            state.character.kills += 1;
+            register_kill(state);
             let leveled = state.character.gain_xp(final_reward);
             let (plain, colored) = crate::messages::combat_tough(&state.character.class, monster_name, damage, final_reward);
             display::print_combat_tough(&colored, false);
@@ -912,7 +920,7 @@ fn combat_elite(
     let monster_hits = dodge_roll > (8 + player_defense / 2);
 
     if player_hits && !monster_hits {
-        state.character.kills += 1;
+        register_kill(state);
         let leveled = state.character.gain_xp(final_reward);
         let (plain, colored) = crate::messages::combat_elite_win(&state.character.class, monster_name, final_reward);
         display::print_combat_win(&colored);
@@ -923,7 +931,7 @@ fn combat_elite(
         let gold_before = state.character.gold;
         let died = state.character.take_damage(damage);
         if !died {
-            state.character.kills += 1;
+            register_kill(state);
             let leveled = state.character.gain_xp(final_reward);
             let (plain, colored) = crate::messages::combat_elite_tough(&state.character.class, monster_name, damage, final_reward);
             display::print_combat_tough(&colored, false);

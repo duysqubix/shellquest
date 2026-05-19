@@ -266,6 +266,8 @@ pub struct ArenaEntrySnapshot {
     pub defense: i32,
     pub prestige: u32,
     pub gold: u32,
+    pub intelligence: i32,
+    pub strength: i32,
 }
 
 impl ArenaEntrySnapshot {
@@ -279,6 +281,8 @@ impl ArenaEntrySnapshot {
             defense: character.defense(),
             prestige: character.total_prestiges,
             gold: character.gold,
+            intelligence: character.intelligence,
+            strength: character.strength,
         }
     }
 }
@@ -606,20 +610,60 @@ fn run_compact_combat(
         let t = &ARENA_TUNING;
         let player_power = entry.attack_power;
         let hit_roll: i32 = rng.gen_range(1..=20);
-        if hit_roll != t.player_hit_fumble && hit_roll + player_power > t.player_hit_threshold {
-            let dmg = rng.gen_range(
+        let is_rogue = matches!(class, crate::character::Class::Rogue);
+        let nat_one_saved_by_rogue = hit_roll == t.player_hit_fumble && is_rogue;
+        let hit_landed = (hit_roll != t.player_hit_fumble || nat_one_saved_by_rogue)
+            && hit_roll + player_power > t.player_hit_threshold;
+        if hit_landed {
+            let mut raw_dmg = rng.gen_range(
                 (player_power / t.player_dmg_power_divisor).max(1)
                     ..=player_power.max(1),
             );
-            enemy.hp -= dmg;
-            let (_plain, colored) = crate::messages::tournament_player_hit(
+            let (sig_bonus, sig_label) = crate::character::signature_bonus(
                 class,
-                &enemy.name,
-                dmg,
-                enemy.hp.max(0),
-                enemy.max_hp,
+                entry.intelligence,
+                entry.strength,
+                player_hp,
+                entry.max_hp,
+                total_turns == 1,
             );
+            let mut signature_label: Option<&'static str> = if nat_one_saved_by_rogue {
+                Some("shadow strike")
+            } else {
+                None
+            };
+            if sig_bonus > 0 {
+                raw_dmg += sig_bonus;
+                if signature_label.is_none() {
+                    signature_label = sig_label;
+                }
+            }
+            let crit_threshold = (20 - entry.intelligence / 4).max(15);
+            let is_crit = hit_roll >= crit_threshold;
+            let dmg = if is_crit { raw_dmg * 2 } else { raw_dmg };
+            enemy.hp -= dmg;
+            let (_plain, colored) = if is_crit {
+                crate::messages::tournament_player_crit(
+                    class,
+                    &enemy.name,
+                    dmg,
+                    enemy.hp.max(0),
+                    enemy.max_hp,
+                )
+            } else {
+                crate::messages::tournament_player_hit(
+                    class,
+                    &enemy.name,
+                    dmg,
+                    enemy.hp.max(0),
+                    enemy.max_hp,
+                )
+            };
             turn_lines.push(CombatExchange { colored });
+            if let Some(label) = signature_label {
+                let line = format!("   {} {}", "✨".cyan(), label.cyan().italic());
+                turn_lines.push(CombatExchange { colored: line });
+            }
         } else {
             let (_plain, colored) =
                 crate::messages::tournament_player_miss(class, &enemy.name);
@@ -627,6 +671,21 @@ fn run_compact_combat(
         }
 
         if enemy.hp <= 0 {
+            if matches!(class, crate::character::Class::Necromancer) {
+                let heal = (entry.intelligence / 3).max(1);
+                let before = player_hp;
+                player_hp = (player_hp + heal).min(entry.max_hp);
+                let restored = player_hp - before;
+                if restored > 0 {
+                    let line = format!(
+                        "   {} {} {}",
+                        "🩸".bold(),
+                        format!("Soul drained — +{} HP", restored).magenta().bold(),
+                        format!("(HP: {}/{})", player_hp, entry.max_hp).magenta().dimmed()
+                    );
+                    turn_lines.push(CombatExchange { colored: line });
+                }
+            }
             all_exchanges.extend(turn_lines);
             return CombatResult {
                 player_won: true,
@@ -1069,6 +1128,8 @@ mod tests {
             defense: 10,
             prestige,
             gold,
+            intelligence: 10,
+            strength: 10,
         }
     }
 
@@ -1927,6 +1988,8 @@ mod tests {
             defense: 20,
             prestige: 0,
             gold: 10,
+            intelligence: 6,
+            strength: 10,
         };
         let mut enemy = ArenaEnemy {
             name: "Test Bug".to_string(),
@@ -1964,6 +2027,7 @@ mod tests {
             hp: 1_000_000, max_hp: 1_000_000,
             attack_power: 1, defense: 200,
             prestige: 0, gold: 0,
+            intelligence: 6, strength: 10,
         };
         let mut enemy = ArenaEnemy {
             name: "Stress Test".to_string(),

@@ -732,6 +732,37 @@ pub fn tournament_player_hit(class: &Class, enemy_name: &str, damage: i32, enemy
     }
 }
 
+pub fn tournament_player_crit(class: &Class, enemy_name: &str, damage: i32, enemy_hp: i32, enemy_max_hp: i32) -> Msg {
+    let m = color_monster(enemy_name);
+    let d = color_damage(damage);
+    let hp_plain = format!("{}/{}", enemy_hp.max(0), enemy_max_hp);
+    let hp_colored = hp_plain.red();
+    let tag_plain = "CRITICAL!";
+    let tag = "CRITICAL!".yellow().bold();
+    match class {
+        Class::Wizard => (
+            format!("{} Arcane lightning splits the {} for {} damage! (HP: {})", tag_plain, enemy_name, damage, hp_plain),
+            format!("{} {} splits the {} for {} damage! (HP: {})", tag, "Arcane lightning".blue().bold(), m, d, hp_colored),
+        ),
+        Class::Warrior => (
+            format!("{} Your blade cleaves the {} for {} damage! (HP: {})", tag_plain, enemy_name, damage, hp_plain),
+            format!("{} Your {} cleaves the {} for {} damage! (HP: {})", tag, "blade".red().bold(), m, d, hp_colored),
+        ),
+        Class::Rogue => (
+            format!("{} Vital strike on the {} for {} damage! (HP: {})", tag_plain, enemy_name, damage, hp_plain),
+            format!("{} {} on the {} for {} damage! (HP: {})", tag, "Vital strike".yellow().bold(), m, d, hp_colored),
+        ),
+        Class::Ranger => (
+            format!("{} Headshot — your arrow drops the {} for {} damage! (HP: {})", tag_plain, enemy_name, damage, hp_plain),
+            format!("{} {} — your arrow drops the {} for {} damage! (HP: {})", tag, "Headshot".green().bold(), m, d, hp_colored),
+        ),
+        Class::Necromancer => (
+            format!("{} Death magic engulfs the {} for {} damage! (HP: {})", tag_plain, enemy_name, damage, hp_plain),
+            format!("{} {} engulfs the {} for {} damage! (HP: {})", tag, "Death magic".magenta().bold(), m, d, hp_colored),
+        ),
+    }
+}
+
 pub fn tournament_player_miss(class: &Class, enemy_name: &str) -> Msg {
     let m = color_monster(enemy_name);
     match class {
