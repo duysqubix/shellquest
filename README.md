@@ -18,42 +18,53 @@
                                         #                             
 ```
 
-*Your shell is the dungeon. Every command counts.*
+***Your shell is the dungeon. Every command is a turn.***
 
 [![Crates.io](https://img.shields.io/crates/v/shellquest?style=flat-square&color=orange)](https://crates.io/crates/shellquest)
 [![Downloads](https://img.shields.io/crates/d/shellquest?style=flat-square&color=blue)](https://crates.io/crates/shellquest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Stars](https://img.shields.io/github/stars/duysqubix/shellquest?style=flat-square&color=yellow)](https://github.com/duysqubix/shellquest)
 
-[Install](#install) · [Quick Start](#quick-start) · [Classes](#classes) · [Commands](#commands)
+[Install](#install) · [Quick Start](#quick-start) · [Classes](#classes--signatures) · [Arena](#arena) · [Commands](#commands)
 
 </div>
 
 ---
 
-You type hundreds of commands a day. `ls`, `git push`, `cargo build`. Every one disappears into the void -- no reward, no acknowledgment, just a prompt waiting for the next one.
+You spend your day in the terminal. Hundreds of commands. `ls`, `git push`, `cargo build`. They vanish into the void — no XP, no loot, no glory.
 
-`shellquest` hooks into your shell and turns every command into a game event. XP, loot, combat, bosses. You don't do anything differently. You just stop losing progress.
+`shellquest` makes them count.
+
+Hook your shell **once**. From then on, every command is a swing of the blade. `git commit` forges relics. `grep` flushes monsters from the brush. `docker stop` summons world bosses. `vim` heals you. Bad commands? Traps. Wrong directory? Welcome to the **Abyss of `node_modules`** — danger 5, here be dragons.
+
+You don't change how you work. You just stop losing progress.
 
 ```bash
 ~/projects $ git push
-  🏆 Quest complete! You pushed your code to the realm! +21 XP +8 gold
+  🏆 The siege succeeds! Code pushed to the realm! +21 XP, +8 gold
 
 ~/projects $ cargo build
-  💎 ★·.· The forge burns hot! You crafted: ★Vorpal Pointer★ (+18 Weapon) [Epic] ·.·★
+  💎 ★·.· Your hammer strikes true! Forged: ★Vorpal Pointer★ (+18) ·.·★
+
+~/code $ grep -r "TODO" .
+  ⚔️  CRITICAL! Your dagger finds a vital point on the Null Pointer Imp for 24 damage! ✦ shadow strike ✦
+
+~/big-monorepo $ docker stop db
+  ⚠️  WORLD BOSS: THE MEMORY CORRUPTION HAS APPEARED! 95 HP. The fight begins.
+
+~ $ vim README.md
+  🧘 You vanish into the text. Wounds close. +6 HP, +3 XP. HP: 47/47
 
 ~/projects $ bad_command
-  🪤 You stumble on a trap! Took 3 damage. HP: 44/47
+  🪤 A crude mechanism bites! -4 HP. Unfair.
 
-~/projects $ grep -r "TODO" .
-  ⚔️  A Lint Wraith appears! You dodge! Riposte for 14 damage. Victory! +19 XP
-
-~/projects $ vim README.md
-  🧘 You enter a meditative state. HP restored: 47/47. +6 XP
-
-~/projects $ docker stop db
-  ☠️  BOSS BATTLE: The Memory Corruption looms from the void! 95 HP. The fight begins.
+~/projects $ git commit -m "fix typo"
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  LEVEL UP! Your might grows! Level 27. Title: Pipe Weaver
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+That's a real terminal session. No screenshots, no animations, no nonsense. Just your shell with a 150-level RPG bolted on.
 
 ---
 
@@ -94,130 +105,178 @@ sq hook --shell zsh >> ~/.zshrc
 </details>
 
 > [!NOTE]
-> Requires [Rust](https://rustup.rs) (cargo).
+> Requires [Rust](https://rustup.rs) (cargo). Hook is idempotent — installing twice does nothing weird.
 
 ---
 
-## Quick start
+## Quick Start
 
 ```bash
-sq init           # pick your class and race
-sq status         # view your character sheet
-sq journal        # read the adventure log
+sq init           # roll your hero — pick class, race, permadeath
+sq status         # view your character sheet and inventory
+sq journal        # read the last 20 adventure log entries
 sq help arena     # learn how to play the arena
 ```
 
-That's it. Just use your terminal.
+Then just… use your terminal. The game plays itself around you.
 
 ---
 
-## Help & Manual
+## What You Get
 
-The `sq` CLI includes a built-in manual for every command.
+A full, code-backed RPG hiding inside your prompt:
 
-- `sq help` — View the topic index
-- `sq help <topic>` — View a specific command guide (e.g., `sq help arena`)
-- `sq --help` — View standard CLI usage and flags
-
----
-
-## What you get
-
-- **5 classes** -- Wizard, Warrior, Rogue, Ranger, Necromancer
-- **5 races** -- Human, Elf, Dwarf, Orc, Goblin
-- **150 levels** with a scaling XP curve, titles from *Terminal Novice* to *Root Overlord*
-- **15 subclasses** -- unlocked at prestige
-- **130+ items** across 5 rarity tiers: Common (70%) down to Legendary (0.01%)
-- **11 zones** determined by your current directory, each with unique flavor and danger scaling
-- **Attrition combat** — fights chip HP over time; dangerous zones can kill the unwary
-- **Elite encounters** — rare Enraged variants break through with sharper attacks and richer rewards
-- **5 named bosses**, spawning at 1 in 1,000 commands
-- **Prestige system** -- reset at 150, keep your gear, go again stronger
-- **Permadeath mode** -- optional; standard death costs 15% of your gold and resets current-level XP
+- **5 classes × 5 races × 15 prestige subclasses** — 375 unique character builds
+- **150 levels**, scaling XP curve, **15 progression titles** from *Terminal Novice* to *Root Overlord*
+- **132 items** across 5 rarity tiers — Common (70%) · Uncommon (25%) · Rare (4%) · Epic (0.99%) · Legendary (0.01%)
+- **11 zones** mapped to your `$PWD` — `node_modules` is the Abyss (danger 5), `/tmp` is the Wasteland (danger 3), `$HOME` is safe. Danger scales loot and XP.
+- **30+ event handlers** — `git commit` crafts, `kill` banishes, `vim` meditates, `sudo` surges, `grep` scries, `man` reads ancient tomes, and every command has its own flavor
+- **Attrition combat** — d20-style rolls; tough fights chip HP for hours
+- **Elite encounters** — rare *Enraged* variants hit harder and drop richer loot
+- **INT-scaled critical hits** — smarter heroes crit more often (threshold = `max(15, 20 − INT/4)`)
+- **5 class signature passives** — each class has its own combat trick (see [Classes](#classes--signatures))
+- **5 named world bosses** spawning at **1 in 1,000** commands. No warning. No mercy.
+- **5-tier arena gauntlet** — transactional risk/reward combat with cash-out mechanics
+- **Daily-refreshing shop** — 6 items, rotates at UTC midnight, home directory only
+- **Passive home healing** — recover 1 HP per 30s while at `$HOME` (capped at 30 min stored)
+- **Prestige system** — reset at 150, keep your gear, choose a subclass, go again stronger
+- **Permadeath mode** — opt in at character creation. You get an **eulogy**. The save file is deleted. *Roll a new hero, adventurer.*
+- **Sage update notifier** — an in-world herald checks crates.io and announces new versions in-character
 
 ---
 
-## Classes
+## Classes & Signatures
 
-Each class earns +50% XP on affinity commands.
+Each class earns **+50% XP** on its affinity commands and unlocks a unique **signature passive** in combat.
 
-| Class | Affinity | Flavor |
-|-------|----------|--------|
-| Wizard | `python`, `node`, `ruby`, `vim`, `emacs`, `man` | Scholarly. Grimoire-keeper. Knows 47 ways to open a file. |
-| Warrior | `cargo`, `make`, `cmake`, `gcc`, `ninja` | Compiler-whisperer. Builds things that actually run. |
-| Rogue | `grep`, `rg`, `ssh`, `find`, `ls` | Lurks in pipes. Finds things that don't want to be found. |
-| Ranger | `curl`, `wget`, `docker`, `kubectl`, `terraform` | Tames the cloud. Mostly. |
-| Necromancer | `kill`, `pkill`, `rm`, `git`, `shred` | Raises and destroys. Often the same operation. |
+| Class | Affinity Commands | Signature | Flavor |
+|-------|-------------------|-----------|--------|
+| 🧙 **Wizard** | `python`, `node`, `ruby`, `vim`, `emacs`, `man` | **Arcane Burn** — bonus damage scaling with INT | Grimoire-keeper. Knows 47 ways to open a file. |
+| ⚔️ **Warrior** | `cargo`, `make`, `cmake`, `gcc`, `ninja` | **Battle Frenzy** — bonus damage when below ⅓ HP | Compiler-whisperer. Builds things that actually run. |
+| 🗡️ **Rogue** | `grep`, `rg`, `ssh`, `find`, `ls` | **Shadow Strike** — survives the fumble; nat 1s still land | Lurks in pipes. Finds things that don't want to be found. |
+| 🏹 **Ranger** | `curl`, `wget`, `docker`, `kubectl`, `terraform` | **Mark Prey** — bonus damage on the opening strike | Tames the cloud. Mostly. |
+| 💀 **Necromancer** | `kill`, `pkill`, `rm`, `git`, `shred` | **Soul Drain** — heal HP every time you land a kill | Raises and destroys. Often the same operation. |
+
+All combat messages — combat, craft, loot, meditation, death — are **rewritten per class**. A Wizard's victories sound like spellwork. A Necromancer's failed commands have *ironic backlash*. Your hero has a voice.
+
+---
+
+## Races
+
+| Race | STR | DEX | INT |
+|------|:---:|:---:|:---:|
+| Human | +1 | +1 | +1 |
+| Elf | +0 | +2 | +2 |
+| Dwarf | +3 | +0 | +1 |
+| Orc | +4 | +1 | −1 |
+| Goblin | −1 | +3 | +1 |
+
+Stack a race onto your class. Necromancer Goblin? +3 DEX +1 INT on top of `6/6/18`. The math is real.
 
 ---
 
 ## Bosses
 
-Five named bosses roam the dungeon. They don't announce their arrival.
+Five world bosses prowl the dungeon. They spawn at **1 in 1,000** commands. They do not announce their arrival.
 
-**The Kernel Panic** · **Lord of /dev/null** · **SIGKILL Supreme** · **The Infinite Loop** · **The Memory Corruption**
+| Boss | HP | Atk | XP | Gold |
+|------|:--:|:---:|:--:|:----:|
+| ☠️ The Kernel Panic | 100 | 22 | 900 | 350 |
+| 🌀 The Infinite Loop | 110 | 15 | 950 | 300 |
+| ⚡ SIGKILL Supreme | 90 | 25 | 800 | 320 |
+| 💀 The Memory Corruption | 95 | 20 | 850 | 310 |
+| 🕳️ Lord of /dev/null | 85 | 18 | 700 | 280 |
 
-1 in 1,000 commands. d20 combat. No guarantees.
-
----
-
-## Prestige
-
-Level 150. Choose a subclass. Reset. Go again stronger.
-
-What resets: level and XP.
-What you keep: gold, gear, kills, inventory.
-What you gain: +2 to all stats per prestige tier, +10 max HP per prestige tier, one of 15 subclasses.
-
-Level 150. You can stop. You won't.
+Boss combat is d20-style with INT-scaled crits. Loot is Rare/Epic/Legendary only — no Common scraps from a god. Stale bosses flee after 24 hours; if you ignore them, they leave.
 
 ---
 
 ## Arena
 
-The Arena is an interactive combat gauntlet where you face waves of increasingly difficult enemies for massive rewards.
+The **Arena** is an interactive combat gauntlet. Five tiers, each with its own gate, fee, and reward curve. **Risk/reward**: after every round you choose to **Continue** for deeper rewards or **Cash Out** to bank what you've earned. Get KO'd and you lose everything from this run — including the entry fee.
 
-- **Risk vs Reward** — Cash out early to keep your winnings, or push further for better loot.
-- **Interactive** — After each auto-resolved fight, choose to Continue deeper or Cash Out with your current winnings.
-- **Tiers** — Multiple difficulty tiers with level and prestige requirements.
-- **Limitations** — Arena runs are not resumable. If you close your terminal or interrupt the process before finishing, the run rolls back to the pre-arena state (including your entry fee).
+| Tier | Rounds | Unlock | Entry Fee |
+|------|:------:|--------|-----------|
+| **The Pit** | 5 | — | `max(40, lvl×12)` |
+| **The Gauntlet** | 10 | lvl 25 *or* prestige 1 | `max(100, lvl×18 + p×50)` |
+| **The Colosseum** | 15 | lvl 60 *or* prestige 1 | `max(300, lvl×28 + p×150)` |
+| **The Abyssal Arena** | 25 | lvl 100 *or* prestige 2 | `max(800, lvl×40 + p×250)` |
+| 👑 **Godslayer's Court** | 50 | lvl 150 **and** prestige 3 | `max(2500, lvl×60 + p×400)` |
+
+- **25 named enemies** — Segmentation Fault Sprite, Buffer Overflow Beast, Null Pointer Imp, Deadlock Demon, Race Condition Raider, and more
+- **Chest milestones** drop guaranteed loot at preset rounds
+- **Inventory full?** Chest loot converts to half its sell value in gold
+- **KO penalty** — fee is consumed, HP drops to 25% of max, journal logs your shameful exit
+- **Atomic runs** — `Ctrl+C` mid-arena? Full rollback. Nothing was saved.
+- **Crown** — clear Godslayer's Court for the only crown in the game
+
+Requires an interactive TTY. No piping `yes` into the arena, hero.
+
+```bash
+sq arena       # enter the gauntlet
+sq help arena  # full rules
+```
+
+---
+
+## Prestige & Titles
+
+Hit **level 150** and you can prestige. You don't lose much — you become more.
+
+| What | Outcome |
+|------|---------|
+| **Resets** | Level → 1, XP → 0 |
+| **Keeps** | Gold, gear, inventory, kills, journal, shop state |
+| **Gains** | +2 STR/DEX/INT and +10 max HP **per prestige tier** |
+| **Unlocks** | One of **15 class subclasses** (3 per class) |
+
+Titles ladder all the way up:
+
+> *Terminal Novice → Shell Apprentice → Command Adept → Pipe Weaver → Script Sorcerer → Kernel Knight → Daemon Slayer → Binary Sage → System Architect → Process Overlord → Thread Titan → Memory Monarch → Stack Sovereign → Root Demigod → **Root Overlord***
+
+Prestige titles stack on top: *Prestigious* · *Exalted* · *Transcendent* · *Mythical* · *Godlike*.
+
+Level 150. You can stop. You won't.
 
 ---
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `sq help [topic]` | View the in-game manual and command guides |
-| `sq init` | Create your character |
-| `sq status` / `sq stat` | View your character sheet and inventory |
-| `sq inventory` | Check gear and potions |
+| Command | What |
+|---------|------|
+| `sq help [topic]` | Built-in manual — `sq help`, `sq help arena`, `sq help prestige`, etc. |
+| `sq init` | Roll a character — class, race, permadeath choice |
+| `sq status` / `sq stat` | Character sheet **and** inventory |
+| `sq inventory` / `sq inv` | Inventory only |
 | `sq journal` | Last 20 adventure log entries |
-| `sq shop` | Browse the shop (home directory only) |
-| `sq buy <n>` | Buy item by number from `sq shop` list |
-| `sq sell <n>` | Sell inventory item at the shop (home directory only) |
-| `sq equip <name>` / `sq wear <name>` | Equip armor or ring from inventory |
-| `sq wield <name>` | Wield a weapon from inventory |
-| `sq remove <name>` / `sq unequip <name>` | Unequip weapon, armor, or ring → back to inventory |
+| `sq equip <name>` / `sq wear <name>` | Equip armor or ring |
+| `sq wield <name>` | Wield a weapon |
+| `sq remove <name>` / `sq unequip <name>` | Send equipped gear back to inventory |
 | `sq drink <name>` | Drink a potion |
-| `sq drop <name>` | Drop an item from inventory permanently |
+| `sq drop <name>` | Permanently drop an item |
+| 🏠 `sq shop` | Browse the shop *(home directory only)* |
+| 🏠 `sq buy <n>` | Buy item by number from the shop |
+| 🏠 `sq sell <n>` | Sell inventory item for half its buy price |
+| `sq arena` | Enter the 5-tier combat gauntlet |
 | `sq prestige` | Ascend at level 150 |
-| `sq arena` | Enter the interactive combat gauntlet (risk/reward) |
-| `sq tournament` | Deprecated; use `sq arena` instead |
-| `sq hook --shell zsh` | Print shell hook code |
-| `sq update` | Update to latest via cargo |
+| `sq hook --shell zsh` | Print shell hook code (zsh / bash / fish) |
+| `sq update` | Update via cargo |
 | `sq reset` | Delete your character (permanent) |
-| `sq tick --cmd ...` | Internal: Process a command (used by shell hook) |
+| `sq tournament` | Deprecated alias for `sq arena` |
+| `sq tick --cmd ...` | Internal — called by the shell hook on every command |
 
+> 🏠 = must be in your `$HOME` directory. Shops don't follow you into the dungeon.
 
 ---
 
 ## Contributing
 
-PRs welcome. More monsters, more loot, more zones -- the dungeon is always hiring.
+PRs welcome. More monsters, more zones, more loot, more flavor — the dungeon is always hiring.
+
+The codebase is small and approachable Rust: `src/events.rs` is the game loop, `src/messages.rs` is the per-class flavor text, `src/loot.rs` is the item tables. Read [AGENTS.md](./AGENTS.md) for an architecture overview.
 
 ---
 
-MIT -- do whatever you want with it.
+MIT — do whatever you want with it.
 
 Made with Rust and vibes.
