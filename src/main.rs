@@ -101,9 +101,9 @@ enum Commands {
         /// Item number from the shop list
         number: usize,
     },
-    /// Sell an inventory item at the shop by number or name (see `sq inventory`)
+    /// Sell an inventory item at the shop by number or name; `sq sell junk` sweeps all Common/Uncommon items
     Sell {
-        /// Item number (1-indexed) or partial name match
+        /// Item number (1-indexed), partial name match, or the literal word `junk`
         item: Vec<String>,
     },
     /// Drink a potion from inventory to restore HP
@@ -872,6 +872,11 @@ fn cmd_sell(query: &str) {
         return;
     }
 
+    if query.eq_ignore_ascii_case("junk") {
+        cmd_sell_junk(&mut game);
+        return;
+    }
+
     let idx = if let Ok(n) = query.parse::<usize>() {
         if n == 0 || n > game.character.inventory.len() {
             println!(
@@ -926,6 +931,63 @@ fn cmd_sell(query: &str) {
     if let Err(e) = state::save(&game) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
+}
+
+fn cmd_sell_junk(game: &mut state::GameState) {
+    let inv = std::mem::take(&mut game.character.inventory);
+    let result = sweep_junk(inv);
+
+    if result.sold_count == 0 {
+        game.character.inventory = result.kept;
+        println!(
+            "{} No junk in your inventory. {} and up are kept.",
+            "⚠️".yellow(),
+            "Rare".green().bold()
+        );
+        return;
+    }
+
+    let old_gold = game.character.gold;
+    game.character.inventory = result.kept;
+    game.character.gold += result.total_price;
+
+    println!(
+        "{} Sold {} junk item{} for {} gold.",
+        "💰".bold(),
+        format!("{}", result.sold_count).white().bold(),
+        if result.sold_count == 1 { "" } else { "s" },
+        format!("{}", result.total_price).yellow().bold(),
+    );
+    println!(
+        "   Gold: {} → {}",
+        format!("{}", old_gold).dimmed(),
+        format!("{}", game.character.gold).yellow().bold(),
+    );
+
+    if let Err(e) = state::save(game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+    }
+}
+
+struct SweepResult {
+    kept: Vec<character::Item>,
+    sold_count: usize,
+    total_price: u32,
+}
+
+fn sweep_junk(items: Vec<character::Item>) -> SweepResult {
+    let mut kept = Vec::new();
+    let mut sold_count = 0;
+    let mut total_price: u32 = 0;
+    for item in items {
+        if matches!(item.rarity, character::Rarity::Common | character::Rarity::Uncommon) {
+            total_price += loot::item_price(&item) / 2;
+            sold_count += 1;
+        } else {
+            kept.push(item);
+        }
+    }
+    SweepResult { kept, sold_count, total_price }
 }
 
 fn fuzzy_match_name(item_name: &str, query: &str) -> bool {
@@ -1460,6 +1522,78 @@ mod tests {
             "no-match output must surface 'journal' as a close suggestion:\n{}",
             out
         );
+    }
+
+    fn item_full(name: &str, power: i32, rarity: Rarity) -> Item {
+        Item { name: name.to_string(), slot: ItemSlot::Weapon, power, rarity }
+    }
+
+    #[test]
+    fn sweep_junk_empty_inventory_returns_empty_result() {
+        let r = sweep_junk(vec![]);
+        assert_eq!(r.sold_count, 0);
+        assert_eq!(r.total_price, 0);
+        assert!(r.kept.is_empty());
+    }
+
+    #[test]
+    fn sweep_junk_preserves_order_of_kept_items_and_sums_prices() {
+        let inv = vec![
+            item_full("Common Stick", 2, Rarity::Common),
+            item_full("Rare One", 10, Rarity::Rare),
+            item_full("Uncommon Tonic", 5, Rarity::Uncommon),
+            item_full("Epic Blade", 25, Rarity::Epic),
+            item_full("Rare Two", 12, Rarity::Rare),
+        ];
+        let expected_price = loot::item_price(&inv[0]) / 2 + loot::item_price(&inv[2]) / 2;
+        let r = sweep_junk(inv);
+        assert_eq!(r.sold_count, 2);
+        assert_eq!(r.total_price, expected_price);
+        let kept_names: Vec<&str> = r.kept.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(kept_names, vec!["Rare One", "Epic Blade", "Rare Two"]);
+    }
+
+    #[test]
+    fn sweep_junk_never_sells_epic_or_legendary() {
+        let epic = item_full("Doombringer", 20, Rarity::Epic);
+        let legendary = item_full("Worldslayer", 50, Rarity::Legendary);
+        let r = sweep_junk(vec![epic, legendary]);
+        assert_eq!(r.sold_count, 0);
+        assert_eq!(r.total_price, 0);
+        assert_eq!(r.kept.len(), 2);
+        let names: Vec<&str> = r.kept.iter().map(|i| i.name.as_str()).collect();
+        assert!(names.contains(&"Doombringer"));
+        assert!(names.contains(&"Worldslayer"));
+    }
+
+    #[test]
+    fn sweep_junk_sells_an_uncommon_item_too() {
+        let item = item_full("Decent Mace", 6, Rarity::Uncommon);
+        let expected_price = loot::item_price(&item) / 2;
+        let r = sweep_junk(vec![item]);
+        assert_eq!(r.sold_count, 1);
+        assert!(r.kept.is_empty());
+        assert_eq!(r.total_price, expected_price);
+    }
+
+    #[test]
+    fn sweep_junk_keeps_a_single_rare_item() {
+        let rare = item_full("Rare Blade", 10, Rarity::Rare);
+        let r = sweep_junk(vec![rare]);
+        assert_eq!(r.sold_count, 0);
+        assert_eq!(r.total_price, 0);
+        assert_eq!(r.kept.len(), 1);
+        assert_eq!(r.kept[0].name, "Rare Blade");
+    }
+
+    #[test]
+    fn sweep_junk_sells_a_single_common_item() {
+        let item = item_full("Rusty Spoon", 4, Rarity::Common);
+        let expected_price = loot::item_price(&item) / 2;
+        let r = sweep_junk(vec![item]);
+        assert_eq!(r.sold_count, 1);
+        assert!(r.kept.is_empty());
+        assert_eq!(r.total_price, expected_price);
     }
 }
 

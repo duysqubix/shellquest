@@ -1,7 +1,47 @@
-use crate::character::{Character, Rarity};
+use crate::character::{Character, Item, ItemSlot, Rarity};
 use crate::journal::{EventType, JournalEntry};
 use crate::zones::Zone;
 use colored::*;
+
+// ── Inventory grouping (display-side organization) ──
+
+pub struct InventoryGroup<'a> {
+    pub slot: ItemSlot,
+    pub items: Vec<&'a Item>,
+}
+
+fn rarity_rank(r: &Rarity) -> u8 {
+    match r {
+        Rarity::Common => 0,
+        Rarity::Uncommon => 1,
+        Rarity::Rare => 2,
+        Rarity::Epic => 3,
+        Rarity::Legendary => 4,
+    }
+}
+
+pub fn group_inventory_by_slot(items: &[Item]) -> Vec<InventoryGroup<'_>> {
+    const DISPLAY_ORDER: [ItemSlot; 4] = [
+        ItemSlot::Weapon,
+        ItemSlot::Armor,
+        ItemSlot::Ring,
+        ItemSlot::Potion,
+    ];
+    DISPLAY_ORDER
+        .iter()
+        .map(|slot| {
+            let mut bucket: Vec<&Item> =
+                items.iter().filter(|i| i.slot == *slot).collect();
+            bucket.sort_by(|a, b| {
+                rarity_rank(&b.rarity)
+                    .cmp(&rarity_rank(&a.rarity))
+                    .then(b.power.cmp(&a.power))
+            });
+            InventoryGroup { slot: *slot, items: bucket }
+        })
+        .filter(|g| !g.items.is_empty())
+        .collect()
+}
 
 // ── Rich inline color helpers (MUD-style) ──
 
@@ -297,6 +337,24 @@ pub fn print_status(char: &Character, permadeath: bool) {
     println!();
 }
 
+fn slot_icon(slot: ItemSlot) -> &'static str {
+    match slot {
+        ItemSlot::Weapon => "⚔ ",
+        ItemSlot::Armor => "🛡 ",
+        ItemSlot::Ring => "💍",
+        ItemSlot::Potion => "🧪",
+    }
+}
+
+fn slot_section_label(slot: ItemSlot) -> &'static str {
+    match slot {
+        ItemSlot::Weapon => "Weapons",
+        ItemSlot::Armor => "Armor",
+        ItemSlot::Ring => "Rings",
+        ItemSlot::Potion => "Potions",
+    }
+}
+
 pub fn print_inventory(char: &Character) {
     println!();
     println!("{}", "📦 Inventory".bold().cyan());
@@ -305,16 +363,26 @@ pub fn print_inventory(char: &Character) {
     if char.inventory.is_empty() {
         println!("{}", "  (empty)".dimmed());
     } else {
-        for (i, item) in char.inventory.iter().enumerate() {
-            let (name_styled, rarity_styled) = format_item_rarity(&item.name, &item.rarity);
+        let groups = group_inventory_by_slot(&char.inventory);
+        let mut idx = 1;
+        for group in &groups {
             println!(
-                "  {}. {} (+{} {}) {}",
-                format!("{}", i + 1).dimmed(),
-                name_styled,
-                item.power,
-                format!("{}", item.slot).dimmed(),
-                rarity_styled
+                "{} {} {}",
+                slot_icon(group.slot),
+                slot_section_label(group.slot).bold(),
+                format!("({})", group.items.len()).dimmed()
             );
+            for item in &group.items {
+                let (name_styled, rarity_styled) = format_item_rarity(&item.name, &item.rarity);
+                println!(
+                    "  {}. {} (+{}) {}",
+                    format!("{}", idx).dimmed(),
+                    name_styled,
+                    item.power,
+                    rarity_styled
+                );
+                idx += 1;
+            }
         }
     }
     println!();
@@ -480,4 +548,92 @@ pub fn print_permadeath_eulogy(char: &Character, killer: &str) {
     );
     eprintln!("{}", "☠  ═══════════════════════════════════════════  ☠".red().bold());
     eprintln!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::character::{Item, ItemSlot, Rarity};
+
+    fn make_item(name: &str, slot: ItemSlot, power: i32, rarity: Rarity) -> Item {
+        Item { name: name.to_string(), slot, power, rarity }
+    }
+
+    #[test]
+    fn group_inventory_by_slot_empty_returns_no_groups() {
+        let groups = group_inventory_by_slot(&[]);
+        assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn group_inventory_by_slot_single_weapon_produces_one_weapon_group() {
+        let items = vec![make_item("Iron Sword", ItemSlot::Weapon, 5, Rarity::Common)];
+        let groups = group_inventory_by_slot(&items);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].slot, ItemSlot::Weapon);
+        assert_eq!(groups[0].items.len(), 1);
+        assert_eq!(groups[0].items[0].name, "Iron Sword");
+    }
+
+    #[test]
+    fn group_inventory_by_slot_returns_groups_in_fixed_display_order() {
+        let items = vec![
+            make_item("Potion", ItemSlot::Potion, 5, Rarity::Common),
+            make_item("Ring", ItemSlot::Ring, 5, Rarity::Common),
+            make_item("Armor", ItemSlot::Armor, 5, Rarity::Common),
+            make_item("Weapon", ItemSlot::Weapon, 5, Rarity::Common),
+        ];
+        let groups = group_inventory_by_slot(&items);
+        let slots: Vec<ItemSlot> = groups.iter().map(|g| g.slot).collect();
+        assert_eq!(
+            slots,
+            vec![ItemSlot::Weapon, ItemSlot::Armor, ItemSlot::Ring, ItemSlot::Potion]
+        );
+    }
+
+    #[test]
+    fn group_inventory_by_slot_skips_slots_with_no_items() {
+        let items = vec![
+            make_item("Sword", ItemSlot::Weapon, 5, Rarity::Common),
+            make_item("Mana Potion", ItemSlot::Potion, 5, Rarity::Common),
+        ];
+        let groups = group_inventory_by_slot(&items);
+        let slots: Vec<ItemSlot> = groups.iter().map(|g| g.slot).collect();
+        assert_eq!(slots, vec![ItemSlot::Weapon, ItemSlot::Potion]);
+    }
+
+    #[test]
+    fn group_inventory_by_slot_sorts_equal_rarity_by_power_descending() {
+        let items = vec![
+            make_item("Weak", ItemSlot::Weapon, 3, Rarity::Common),
+            make_item("Strong", ItemSlot::Weapon, 7, Rarity::Common),
+            make_item("Mid", ItemSlot::Weapon, 5, Rarity::Common),
+        ];
+        let groups = group_inventory_by_slot(&items);
+        let names: Vec<&str> = groups[0].items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, vec!["Strong", "Mid", "Weak"]);
+    }
+
+    #[test]
+    fn group_inventory_by_slot_sorts_items_by_rarity_descending_within_group() {
+        let items = vec![
+            make_item("Common Sword", ItemSlot::Weapon, 5, Rarity::Common),
+            make_item("Legendary Sword", ItemSlot::Weapon, 5, Rarity::Legendary),
+            make_item("Rare Sword", ItemSlot::Weapon, 5, Rarity::Rare),
+            make_item("Uncommon Sword", ItemSlot::Weapon, 5, Rarity::Uncommon),
+            make_item("Epic Sword", ItemSlot::Weapon, 5, Rarity::Epic),
+        ];
+        let groups = group_inventory_by_slot(&items);
+        let names: Vec<&str> = groups[0].items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "Legendary Sword",
+                "Epic Sword",
+                "Rare Sword",
+                "Uncommon Sword",
+                "Common Sword",
+            ]
+        );
+    }
 }

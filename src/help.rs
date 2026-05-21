@@ -199,13 +199,14 @@ const TOPICS: &[HelpTopic] = &[
     HelpTopic {
         name: "sell",
         aliases: &[],
-        summary: "Sell an inventory item at the shop by number or name.",
-        usage: "sq sell <number|name>",
-        details: "Two selection modes: a 1-indexed slot from your `sq inventory` listing (so `sq sell 3` removes the third inventory item), or a partial item name. The name path uses the same matcher as `sq equip`, `sq drop`, and `sq drink` — an exact item name always matches, case-insensitive substrings match (e.g. `rusty` finds `Rusty Pipe`), and multi-word queries match when every typed token appears anywhere in the item name (e.g. `big sword` finds `Big Sword of Awesome`). When several inventory items match the same name, the first inventory match is sold by default; append `.1`, `.2`, … to pick the N-th match (e.g. `sq sell potion.2` sells the second matching potion). Sells for half of the item's listed buy price. Only available from your home directory; called from elsewhere it prints a home-only hint and exits without removing the item.",
+        summary: "Sell an inventory item at the shop by number, name, or sweep all junk.",
+        usage: "sq sell <number|name|junk>",
+        details: "Three selection modes. (1) A 1-indexed slot from your `sq inventory` listing (so `sq sell 3` removes the third inventory item). (2) A partial item name — same matcher as `sq equip`, `sq drop`, and `sq drink`: exact name always matches, case-insensitive substrings match (e.g. `rusty` finds `Rusty Pipe`), and multi-word queries match when every typed token appears anywhere in the item name (e.g. `big sword` finds `Big Sword of Awesome`); when several inventory items match the same name, the first inventory match is sold by default — append `.1`, `.2`, … to pick the N-th match (e.g. `sq sell potion.2` sells the second matching potion). (3) The literal word `junk` — sweeps every Common and Uncommon item out of your inventory in one shot, leaving Rare, Epic, and Legendary items untouched; a quick way to clean up after a long grind. All three modes sell for half of the item's listed buy price. Only available from your home directory; called from elsewhere it prints a home-only hint and exits without removing the item.",
         examples: &[
             "cd ~ && sq sell 3",
             "cd ~ && sq sell rusty",
             "cd ~ && sq sell potion.2",
+            "cd ~ && sq sell junk",
         ],
         related: &["shop", "buy", "inventory"],
     },
