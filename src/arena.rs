@@ -268,6 +268,7 @@ pub struct ArenaEntrySnapshot {
     pub gold: u32,
     pub intelligence: i32,
     pub strength: i32,
+    pub dexterity: i32,
 }
 
 impl ArenaEntrySnapshot {
@@ -283,6 +284,7 @@ impl ArenaEntrySnapshot {
             gold: character.gold,
             intelligence: character.intelligence,
             strength: character.strength,
+            dexterity: character.dexterity,
         }
     }
 }
@@ -439,6 +441,23 @@ fn apply_chest_item_to_inventory(
     ChestApplyResult::Rejected
 }
 
+pub fn format_cash_out_preview(
+    tier: &ArenaTier,
+    entry_fee: u32,
+    xp_to_next: u32,
+    rounds_cleared: u32,
+) -> (String, String) {
+    let (gold, xp) = tier.compute_rewards(entry_fee, xp_to_next, rounds_cleared);
+    let plain = format!("Cash Out now: +{} gold, +{} XP", gold, xp);
+    let colored = format!(
+        "{} {}, {}",
+        "💰 Cash Out now:".yellow().bold(),
+        format!("+{} gold", gold).yellow().bold(),
+        format!("+{} XP", xp).cyan().bold()
+    );
+    (plain, colored)
+}
+
 fn format_arena_journal_msg(
     outcome: &ArenaOutcome,
     tier_name: &str,
@@ -473,8 +492,6 @@ pub struct ArenaCombatTuning {
     pub enemy_attack_per_round: i32,
     pub enemy_attack_power_divisor: i32,
     pub enemy_attack_per_prestige: i32,
-    pub player_hit_fumble: i32,
-    pub player_hit_threshold: i32,
     pub player_dmg_power_divisor: i32,
     pub enemy_hit_threshold_base: i32,
     pub enemy_hit_defense_divisor: i32,
@@ -482,8 +499,86 @@ pub struct ArenaCombatTuning {
     pub enemy_dmg_defense_divisor: i32,
     pub recovery_base: i32,
     pub recovery_max_hp_divisor: i32,
-    pub max_combat_lines: usize,
     pub max_turns: u32,
+}
+
+pub const DEFAULT_COMBAT_PACING_MS: u64 = 1500;
+
+pub const NO_PACING_ENV: &str = "SQ_NO_PACING";
+
+fn resolve_combat_pacing_ms(no_pacing_env: Option<&str>) -> u64 {
+    if no_pacing_env.is_some() {
+        0
+    } else {
+        DEFAULT_COMBAT_PACING_MS
+    }
+}
+
+pub fn combat_pacing_ms() -> u64 {
+    let env_value = std::env::var(NO_PACING_ENV).ok();
+    resolve_combat_pacing_ms(env_value.as_deref())
+}
+
+pub fn pause_between_combat_lines() {
+    let ms = combat_pacing_ms();
+    if ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+}
+
+pub const PLAYER_ACCURACY_FLOOR: i32 = 6;
+pub const PLAYER_DEX_ACCURACY_DIVISOR: i32 = 4;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum PlayerHitOutcome {
+    Hit,
+    Miss,
+    FumbleSavedByRogue,
+}
+
+pub fn compute_player_hit(
+    hit_roll: i32,
+    dexterity: i32,
+    class: &crate::character::Class,
+) -> PlayerHitOutcome {
+    let is_rogue = matches!(class, crate::character::Class::Rogue);
+    if hit_roll == 1 {
+        return if is_rogue {
+            PlayerHitOutcome::FumbleSavedByRogue
+        } else {
+            PlayerHitOutcome::Miss
+        };
+    }
+    let dex_bonus = dexterity / PLAYER_DEX_ACCURACY_DIVISOR;
+    if hit_roll + dex_bonus > PLAYER_ACCURACY_FLOOR {
+        PlayerHitOutcome::Hit
+    } else {
+        PlayerHitOutcome::Miss
+    }
+}
+
+pub const ENEMY_DEX_DODGE_DIVISOR: i32 = 5;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum EnemyHitOutcome {
+    Hit,
+    Miss,
+}
+
+pub fn compute_enemy_hit(
+    dodge_roll: i32,
+    defense: i32,
+    dexterity: i32,
+) -> EnemyHitOutcome {
+    let t = &ARENA_TUNING;
+    let threshold = t.enemy_hit_threshold_base
+        + defense / t.enemy_hit_defense_divisor
+        + dexterity / ENEMY_DEX_DODGE_DIVISOR;
+    if dodge_roll > threshold || dodge_roll == t.enemy_hit_crit {
+        EnemyHitOutcome::Hit
+    } else {
+        EnemyHitOutcome::Miss
+    }
 }
 
 pub const ARENA_TUNING: ArenaCombatTuning = ArenaCombatTuning {
@@ -495,8 +590,6 @@ pub const ARENA_TUNING: ArenaCombatTuning = ArenaCombatTuning {
     enemy_attack_per_round: 3,
     enemy_attack_power_divisor: 2,
     enemy_attack_per_prestige: 8,
-    player_hit_fumble: 1,
-    player_hit_threshold: 10,
     player_dmg_power_divisor: 2,
     enemy_hit_threshold_base: 8,
     enemy_hit_defense_divisor: 2,
@@ -504,7 +597,6 @@ pub const ARENA_TUNING: ArenaCombatTuning = ArenaCombatTuning {
     enemy_dmg_defense_divisor: 3,
     recovery_base: 4,
     recovery_max_hp_divisor: 10,
-    max_combat_lines: 8,
     max_turns: 1000,
 };
 
@@ -602,7 +694,7 @@ fn run_compact_combat(
             return CombatResult {
                 player_won: false,
                 final_player_hp: player_hp,
-                exchanges: compact_exchanges(all_exchanges, total_turns),
+                exchanges: all_exchanges,
                 total_turns,
             };
         }
@@ -610,11 +702,10 @@ fn run_compact_combat(
         let t = &ARENA_TUNING;
         let player_power = entry.attack_power;
         let hit_roll: i32 = rng.gen_range(1..=20);
-        let is_rogue = matches!(class, crate::character::Class::Rogue);
-        let nat_one_saved_by_rogue = hit_roll == t.player_hit_fumble && is_rogue;
-        let hit_landed = (hit_roll != t.player_hit_fumble || nat_one_saved_by_rogue)
-            && hit_roll + player_power > t.player_hit_threshold;
-        if hit_landed {
+        let outcome = compute_player_hit(hit_roll, entry.dexterity, class);
+        let nat_one_saved_by_rogue = matches!(outcome, PlayerHitOutcome::FumbleSavedByRogue);
+        let landed = !matches!(outcome, PlayerHitOutcome::Miss);
+        if landed {
             let mut raw_dmg = rng.gen_range(
                 (player_power / t.player_dmg_power_divisor).max(1)
                     ..=player_power.max(1),
@@ -690,30 +781,31 @@ fn run_compact_combat(
             return CombatResult {
                 player_won: true,
                 final_player_hp: player_hp,
-                exchanges: compact_exchanges(all_exchanges, total_turns),
+                exchanges: all_exchanges,
                 total_turns,
             };
         }
 
         let player_defense = entry.defense;
         let dodge_roll: i32 = rng.gen_range(1..=20);
-        if dodge_roll > (t.enemy_hit_threshold_base + player_defense / t.enemy_hit_defense_divisor)
-            || dodge_roll == t.enemy_hit_crit
-        {
-            let dmg = (enemy.attack - player_defense / t.enemy_dmg_defense_divisor).max(1);
-            player_hp -= dmg;
-            let (_plain, colored) = crate::messages::tournament_enemy_hit(
-                &enemy.name,
-                dmg,
-                player_hp.max(0),
-                entry.max_hp,
-                total_turns,
-            );
-            turn_lines.push(CombatExchange { colored });
-        } else {
-            let (_plain, colored) =
-                crate::messages::tournament_enemy_miss(&enemy.name, total_turns);
-            turn_lines.push(CombatExchange { colored });
+        match compute_enemy_hit(dodge_roll, player_defense, entry.dexterity) {
+            EnemyHitOutcome::Hit => {
+                let dmg = (enemy.attack - player_defense / t.enemy_dmg_defense_divisor).max(1);
+                player_hp -= dmg;
+                let (_plain, colored) = crate::messages::tournament_enemy_hit(
+                    &enemy.name,
+                    dmg,
+                    player_hp.max(0),
+                    entry.max_hp,
+                    total_turns,
+                );
+                turn_lines.push(CombatExchange { colored });
+            }
+            EnemyHitOutcome::Miss => {
+                let (_plain, colored) =
+                    crate::messages::tournament_enemy_miss(&enemy.name, total_turns);
+                turn_lines.push(CombatExchange { colored });
+            }
         }
 
         if player_hp <= 0 {
@@ -721,48 +813,13 @@ fn run_compact_combat(
             return CombatResult {
                 player_won: false,
                 final_player_hp: player_hp,
-                exchanges: compact_exchanges(all_exchanges, total_turns),
+                exchanges: all_exchanges,
                 total_turns,
             };
         }
 
         all_exchanges.extend(turn_lines);
     }
-}
-
-fn compact_exchanges(exchanges: Vec<CombatExchange>, total_turns: u32) -> Vec<CombatExchange> {
-    if exchanges.len() <= ARENA_TUNING.max_combat_lines {
-        return exchanges;
-    }
-
-    let mut result = Vec::new();
-
-    let prefix_len = 4.min(exchanges.len());
-    for i in 0..prefix_len {
-        result.push(CombatExchange {
-            colored: exchanges[i].colored.clone(),
-        });
-    }
-
-    let skipped = total_turns.saturating_sub(3);
-    let summary_colored = format!(
-        "{} {} {}",
-        "...".dimmed(),
-        format!("{} more exchanges", skipped).dimmed(),
-        "...".dimmed()
-    );
-    result.push(CombatExchange {
-        colored: summary_colored,
-    });
-
-    let suffix_start = exchanges.len().saturating_sub(2);
-    for i in suffix_start..exchanges.len() {
-        result.push(CombatExchange {
-            colored: exchanges[i].colored.clone(),
-        });
-    }
-
-    result
 }
 
 fn read_line_trimmed() -> Option<String> {
@@ -1001,6 +1058,7 @@ pub fn run_arena_session(
         run.current_hp = combat.final_player_hp;
 
         for ex in &combat.exchanges {
+            pause_between_combat_lines();
             eprintln!("   {}", ex.colored);
         }
 
@@ -1051,6 +1109,13 @@ pub fn run_arena_session(
             "   Round {} cleared! Current HP: {}/{}",
             run.rounds_cleared, run.current_hp, entry.max_hp
         );
+        let (_plain_preview, colored_preview) = format_cash_out_preview(
+            &tier,
+            entry_fee,
+            entry.xp_to_next,
+            run.rounds_cleared,
+        );
+        eprintln!("   {}", colored_preview);
         eprintln!("   1) Continue");
         eprintln!("   2) Cash Out");
 
@@ -1130,6 +1195,7 @@ mod tests {
             gold,
             intelligence: 10,
             strength: 10,
+            dexterity: 10,
         }
     }
 
@@ -1419,6 +1485,173 @@ mod tests {
         assert_eq!(snap.xp_to_next, c.xp_to_next);
         assert_eq!(snap.attack_power, c.attack_power());
         assert_eq!(snap.defense, c.defense());
+    }
+
+    #[test]
+    fn snapshot_copies_dexterity() {
+        let mut c = make_character(10, 0, 100);
+        c.dexterity = 17;
+        let snap = ArenaEntrySnapshot::from_character(&c);
+        assert_eq!(snap.dexterity, 17);
+    }
+
+    #[test]
+    fn pacing_ms_returns_zero_when_env_disables_pacing() {
+        assert_eq!(resolve_combat_pacing_ms(Some("1")), 0);
+        assert_eq!(resolve_combat_pacing_ms(Some("")), 0);
+        assert_eq!(resolve_combat_pacing_ms(Some("anything")), 0);
+    }
+
+    #[test]
+    fn pacing_ms_returns_default_when_env_unset() {
+        assert_eq!(resolve_combat_pacing_ms(None), DEFAULT_COMBAT_PACING_MS);
+    }
+
+    #[test]
+    fn pacing_default_is_one_point_five_seconds() {
+        assert_eq!(DEFAULT_COMBAT_PACING_MS, 1500);
+    }
+
+    #[test]
+    fn pause_actually_sleeps_when_pacing_enabled() {
+        std::env::remove_var(NO_PACING_ENV);
+        let start = std::time::Instant::now();
+        pause_between_combat_lines();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= std::time::Duration::from_millis(DEFAULT_COMBAT_PACING_MS - 50),
+            "expected sleep >= ~{}ms, got {:?}",
+            DEFAULT_COMBAT_PACING_MS - 50,
+            elapsed
+        );
+    }
+
+    #[test]
+    fn player_nat_one_misses_for_non_rogue() {
+        assert_eq!(
+            compute_player_hit(1, 30, &Class::Warrior),
+            PlayerHitOutcome::Miss
+        );
+        assert_eq!(
+            compute_player_hit(1, 30, &Class::Wizard),
+            PlayerHitOutcome::Miss
+        );
+    }
+
+    #[test]
+    fn player_nat_one_saved_by_rogue() {
+        assert_eq!(
+            compute_player_hit(1, 8, &Class::Rogue),
+            PlayerHitOutcome::FumbleSavedByRogue
+        );
+    }
+
+    #[test]
+    fn player_low_roll_misses_with_low_dex() {
+        assert_eq!(
+            compute_player_hit(3, 0, &Class::Warrior),
+            PlayerHitOutcome::Miss
+        );
+        assert_eq!(
+            compute_player_hit(5, 4, &Class::Wizard),
+            PlayerHitOutcome::Miss
+        );
+    }
+
+    #[test]
+    fn player_low_roll_hits_with_high_dex() {
+        assert_eq!(
+            compute_player_hit(3, 20, &Class::Warrior),
+            PlayerHitOutcome::Hit
+        );
+        assert_eq!(
+            compute_player_hit(5, 12, &Class::Wizard),
+            PlayerHitOutcome::Hit
+        );
+    }
+
+    #[test]
+    fn player_high_roll_always_hits() {
+        assert_eq!(
+            compute_player_hit(20, 0, &Class::Warrior),
+            PlayerHitOutcome::Hit
+        );
+        assert_eq!(
+            compute_player_hit(15, 0, &Class::Necromancer),
+            PlayerHitOutcome::Hit
+        );
+    }
+
+    #[test]
+    fn player_accuracy_boundary_uses_strict_greater_than() {
+        assert_eq!(
+            compute_player_hit(6, 0, &Class::Warrior),
+            PlayerHitOutcome::Miss
+        );
+        assert_eq!(
+            compute_player_hit(7, 0, &Class::Warrior),
+            PlayerHitOutcome::Hit
+        );
+    }
+
+    #[test]
+    fn enemy_misses_against_low_defense_low_dex_low_roll() {
+        assert_eq!(compute_enemy_hit(5, 10, 0), EnemyHitOutcome::Miss);
+    }
+
+    #[test]
+    fn enemy_hits_against_low_defense_low_dex_high_roll() {
+        assert_eq!(compute_enemy_hit(17, 10, 0), EnemyHitOutcome::Hit);
+    }
+
+    #[test]
+    fn high_player_dex_makes_enemy_miss_mid_roll() {
+        let with_low_dex = compute_enemy_hit(15, 10, 0);
+        let with_high_dex = compute_enemy_hit(15, 10, 25);
+        assert_eq!(with_low_dex, EnemyHitOutcome::Hit);
+        assert_eq!(with_high_dex, EnemyHitOutcome::Miss);
+    }
+
+    #[test]
+    fn nat_twenty_always_hits_through_dex_and_defense() {
+        assert_eq!(compute_enemy_hit(20, 200, 200), EnemyHitOutcome::Hit);
+    }
+
+    #[test]
+    fn enemy_dodge_threshold_uses_strict_greater_than() {
+        let threshold = ARENA_TUNING.enemy_hit_threshold_base
+            + 10 / ARENA_TUNING.enemy_hit_defense_divisor
+            + 0 / ENEMY_DEX_DODGE_DIVISOR;
+        assert_eq!(threshold, 13);
+        assert_eq!(compute_enemy_hit(13, 10, 0), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit(14, 10, 0), EnemyHitOutcome::Hit);
+    }
+
+    #[test]
+    fn cash_out_preview_includes_gold_and_xp_amounts() {
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 5);
+        assert!(plain.contains("+110 gold"), "plain: {}", plain);
+        assert!(plain.contains("+120 XP"), "plain: {}", plain);
+    }
+
+    #[test]
+    fn cash_out_preview_labels_the_choice() {
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 1);
+        assert!(plain.to_lowercase().contains("cash out"), "plain: {}", plain);
+    }
+
+    #[test]
+    fn cash_out_preview_round_zero_shows_zero_rewards() {
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 0);
+        assert!(plain.contains("+0 gold"), "plain: {}", plain);
+        assert!(plain.contains("+0 XP"), "plain: {}", plain);
+    }
+
+    #[test]
+    fn cash_out_preview_colored_contains_amounts() {
+        let (_plain, colored) = format_cash_out_preview(&TIER_GAUNTLET, 200, 300, 10);
+        assert!(colored.contains("290"), "colored: {}", colored);
+        assert!(colored.contains("270"), "colored: {}", colored);
     }
 
     // --- Arena tiers array ordering ---
@@ -1973,7 +2206,7 @@ mod tests {
     // --- Seeded compact combat log ---
 
     #[test]
-    fn seeded_compact_combat_log_collapses() {
+    fn seeded_long_combat_returns_all_exchanges_without_summary() {
         use rand::SeedableRng;
         use rand::rngs::StdRng;
         use crate::character::Class;
@@ -1990,6 +2223,7 @@ mod tests {
             gold: 10,
             intelligence: 6,
             strength: 10,
+            dexterity: 8,
         };
         let mut enemy = ArenaEnemy {
             name: "Test Bug".to_string(),
@@ -2005,14 +2239,20 @@ mod tests {
             "Expected long fight, got {} turns",
             result.total_turns
         );
-        assert_eq!(
+        assert!(
+            result.exchanges.len() >= result.total_turns as usize,
+            "Expected at least one exchange per turn, got {} exchanges for {} turns",
             result.exchanges.len(),
-            7,
-            "Expected compacted log (7 lines), got {}",
-            result.exchanges.len()
+            result.total_turns
         );
-        let has_summary = result.exchanges.iter().any(|ex| ex.colored.contains("more exchanges"));
-        assert!(has_summary, "Expected summary line in compacted combat log");
+        let has_summary = result
+            .exchanges
+            .iter()
+            .any(|ex| ex.colored.contains("more exchanges"));
+        assert!(
+            !has_summary,
+            "Combat log must not be compacted; pacing replaces noise control"
+        );
     }
 
     #[test]
@@ -2028,6 +2268,7 @@ mod tests {
             attack_power: 1, defense: 200,
             prestige: 0, gold: 0,
             intelligence: 6, strength: 10,
+            dexterity: 8,
         };
         let mut enemy = ArenaEnemy {
             name: "Stress Test".to_string(),
