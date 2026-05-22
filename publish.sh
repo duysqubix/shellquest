@@ -91,11 +91,22 @@ ok "Pushed to GitHub"
 
 # ── GitHub release ──
 info "Creating GitHub release..."
-gh release create "v${NEW_VERSION}" \
-  --title "v${NEW_VERSION}" \
-  --generate-notes \
-  --latest \
-  2>&1 | tail -1
+NOTES_FILE="release-notes/v${NEW_VERSION}.md"
+if [ -f "$NOTES_FILE" ]; then
+  ok "Using release notes from ${NOTES_FILE}"
+  gh release create "v${NEW_VERSION}" \
+    --title "v${NEW_VERSION}" \
+    --notes-file "$NOTES_FILE" \
+    --latest \
+    2>&1 | tail -1
+else
+  warn "No ${NOTES_FILE} found — falling back to auto-generated notes from commits"
+  gh release create "v${NEW_VERSION}" \
+    --title "v${NEW_VERSION}" \
+    --generate-notes \
+    --latest \
+    2>&1 | tail -1
+fi
 ok "GitHub release v${NEW_VERSION} created"
 
 # ── Cargo publish ──
