@@ -75,6 +75,8 @@ pub struct Item {
     pub slot: ItemSlot,
     pub power: i32,
     pub rarity: Rarity,
+    #[serde(default)]
+    pub enchant_level: u32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -281,14 +283,23 @@ impl Character {
 
     pub fn attack_power(&self) -> i32 {
         let base = self.strength + (self.dexterity / 2);
-        let weapon_bonus = self.weapon.as_ref().map_or(0, |w| w.power);
+        let weapon_bonus = self
+            .weapon
+            .as_ref()
+            .map_or(0, |w| w.power + w.enchant_level as i32);
         base + weapon_bonus
     }
 
     pub fn defense(&self) -> i32 {
         let base = self.dexterity / 3;
-        let armor_bonus = self.armor.as_ref().map_or(0, |a| a.power);
-        let ring_bonus = self.ring.as_ref().map_or(0, |r| r.power);
+        let armor_bonus = self
+            .armor
+            .as_ref()
+            .map_or(0, |a| a.power + a.enchant_level as i32);
+        let ring_bonus = self
+            .ring
+            .as_ref()
+            .map_or(0, |r| r.power + r.enchant_level as i32);
         base + armor_bonus + ring_bonus
     }
 
@@ -496,12 +507,7 @@ mod tests {
     use super::*;
 
     fn make_item(slot: ItemSlot, power: i32, rarity: Rarity) -> Item {
-        Item {
-            name: "Test Item".to_string(),
-            slot,
-            power,
-            rarity,
-        }
+        Item { name: "Test Item".to_string(), slot, power, rarity, enchant_level: 0 }
     }
 
     // --- Character::new() ---
@@ -637,6 +643,20 @@ mod tests {
     }
 
     #[test]
+    fn attack_power_includes_weapon_enchant_level() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        let weapon = Item {
+            name: "Enchanted Sword".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 10,
+            rarity: Rarity::Common,
+            enchant_level: 3,
+        };
+        c.equip(weapon);
+        assert_eq!(c.attack_power(), 17 + 9 / 2 + 10 + 3);
+    }
+
+    #[test]
     fn defense_no_equipment() {
         let c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
         // DEX 9; base = 9/3 = 3
@@ -649,6 +669,28 @@ mod tests {
         c.equip(make_item(ItemSlot::Armor, 5, Rarity::Common));
         c.equip(make_item(ItemSlot::Ring, 3, Rarity::Common));
         assert_eq!(c.defense(), 9 / 3 + 5 + 3);
+    }
+
+    #[test]
+    fn defense_includes_armor_and_ring_enchant_levels() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        let armor = Item {
+            name: "Enchanted Plate".to_string(),
+            slot: ItemSlot::Armor,
+            power: 5,
+            rarity: Rarity::Common,
+            enchant_level: 2,
+        };
+        let ring = Item {
+            name: "Enchanted Band".to_string(),
+            slot: ItemSlot::Ring,
+            power: 3,
+            rarity: Rarity::Common,
+            enchant_level: 1,
+        };
+        c.equip(armor);
+        c.equip(ring);
+        assert_eq!(c.defense(), 9 / 3 + (5 + 2) + (3 + 1));
     }
 
     #[test]
@@ -916,5 +958,28 @@ mod tests {
         let l50_cost: u32 = 50 * 45 + 80;
         assert_eq!(l50_cost, 2330);
         assert!(l50_cost < 3000);
+    }
+
+    #[test]
+    fn item_loads_without_enchant_level_field_defaults_to_zero() {
+        let json = r#"{"name":"Old Sword","slot":"Weapon","power":5,"rarity":"Common"}"#;
+        let item: Item = serde_json::from_str(json).expect("legacy item must load");
+        assert_eq!(item.enchant_level, 0);
+    }
+
+    #[test]
+    fn item_round_trips_with_enchant_level() {
+        let item = Item {
+            name: "Sword".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 5,
+            rarity: Rarity::Common,
+            enchant_level: 3,
+        };
+        let json = serde_json::to_string(&item).expect("serialize");
+        let back: Item = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.enchant_level, 3);
+        assert_eq!(back.power, 5);
+        assert_eq!(back.name, "Sword");
     }
 }

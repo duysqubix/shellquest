@@ -106,6 +106,11 @@ enum Commands {
         /// Item number (1-indexed), partial name match, or the literal word `junk`
         item: Vec<String>,
     },
+    /// Enchant an equipped item (+1 power, max +5). Wizard class can enchant anywhere; others must be in $HOME.
+    Enchant {
+        /// Equipped item name (partial match)
+        name: Vec<String>,
+    },
     /// Drink a potion from inventory to restore HP
     Drink {
         /// Item name (or partial match)
@@ -142,6 +147,7 @@ fn main() {
         Commands::Shop => cmd_shop(),
         Commands::Buy { number } => cmd_buy(number),
         Commands::Sell { item } => cmd_sell(&item.join(" ")),
+        Commands::Enchant { name } => cmd_enchant(&name.join(" ")),
         Commands::Equip { name } => cmd_equip(&name.join(" ")),
         Commands::Wield { name } => cmd_wield(&name.join(" ")),
         Commands::Remove { name } => cmd_remove(&name.join(" ")),
@@ -908,7 +914,7 @@ fn cmd_sell(query: &str) {
         }
     };
 
-    let sell_price = loot::item_price(&game.character.inventory[idx]) / 2;
+    let sell_price = loot::sell_price(&game.character.inventory[idx]);
     let item = game.character.inventory.remove(idx);
     let old_gold = game.character.gold;
     game.character.gold += sell_price;
@@ -981,13 +987,166 @@ fn sweep_junk(items: Vec<character::Item>) -> SweepResult {
     let mut total_price: u32 = 0;
     for item in items {
         if matches!(item.rarity, character::Rarity::Common | character::Rarity::Uncommon) {
-            total_price += loot::item_price(&item) / 2;
+            total_price += loot::sell_price(&item);
             sold_count += 1;
         } else {
             kept.push(item);
         }
     }
     SweepResult { kept, sold_count, total_price }
+}
+
+#[derive(Debug, PartialEq)]
+enum EquippedSlot {
+    Weapon,
+    Armor,
+    Ring,
+}
+
+fn find_equipped_slot_to_enchant(game: &state::GameState, query: &str) -> Result<EquippedSlot, &'static str> {
+    let q = query.to_lowercase();
+    let mut matches: Vec<EquippedSlot> = Vec::new();
+    if let Some(w) = &game.character.weapon {
+        if w.name.to_lowercase().contains(&q) || fuzzy_match_name(&w.name, query) {
+            matches.push(EquippedSlot::Weapon);
+        }
+    }
+    if let Some(a) = &game.character.armor {
+        if a.name.to_lowercase().contains(&q) || fuzzy_match_name(&a.name, query) {
+            matches.push(EquippedSlot::Armor);
+        }
+    }
+    if let Some(r) = &game.character.ring {
+        if r.name.to_lowercase().contains(&q) || fuzzy_match_name(&r.name, query) {
+            matches.push(EquippedSlot::Ring);
+        }
+    }
+    match matches.len() {
+        0 => Err("no_match"),
+        1 => Ok(matches.remove(0)),
+        _ => Err("ambiguous"),
+    }
+}
+
+fn cmd_enchant(query: &str) {
+    if query.is_empty() {
+        eprintln!(
+            "{} Usage: {} (enchant an equipped item, +1 power per enchant, max +5)",
+            "❌".bold(),
+            "sq enchant <item name>".cyan()
+        );
+        return;
+    }
+
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    let is_wizard = matches!(game.character.class, character::Class::Wizard);
+    if !is_wizard {
+        let cwd = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let home = dirs::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if cwd != home {
+            println!(
+                "{} The enchanting workbench is only accessible from your {}. (Wizards can enchant anywhere.)",
+                "🏠".bold(),
+                "home directory".cyan().bold()
+            );
+            return;
+        }
+    }
+
+    let slot = match find_equipped_slot_to_enchant(&game, query) {
+        Ok(s) => s,
+        Err("no_match") => {
+            println!(
+                "{} No equipped item matching {}. Equip the item first with {} / {}.",
+                "⚠️".yellow(),
+                format!("\"{}\"", query).white().bold(),
+                "sq wield".cyan(),
+                "sq equip".cyan()
+            );
+            return;
+        }
+        Err("ambiguous") => {
+            println!(
+                "{} Multiple equipped items match {}. Be more specific.",
+                "⚠️".yellow(),
+                format!("\"{}\"", query).white().bold()
+            );
+            return;
+        }
+        Err(_) => return,
+    };
+
+    let item_ref = match slot {
+        EquippedSlot::Weapon => game.character.weapon.as_ref().unwrap(),
+        EquippedSlot::Armor => game.character.armor.as_ref().unwrap(),
+        EquippedSlot::Ring => game.character.ring.as_ref().unwrap(),
+    };
+
+    if !loot::is_enchantable(item_ref) {
+        println!("{} That item cannot be enchanted.", "⚠️".yellow());
+        return;
+    }
+
+    if !loot::can_enchant_further(item_ref) {
+        println!(
+            "{} {} is already at maximum enchantment ({}).",
+            "⚠️".yellow(),
+            item_ref.name.white().bold(),
+            format!("+{}", loot::MAX_ENCHANT_LEVEL).yellow().bold()
+        );
+        return;
+    }
+
+    let cost = loot::enchant_cost(item_ref);
+    if game.character.gold < cost {
+        println!(
+            "{} Not enough gold. Need {} gold (you have {}).",
+            "⚠️".yellow(),
+            format!("{}", cost).yellow().bold(),
+            format!("{}", game.character.gold).yellow()
+        );
+        return;
+    }
+
+    let item_mut = match slot {
+        EquippedSlot::Weapon => game.character.weapon.as_mut().unwrap(),
+        EquippedSlot::Armor => game.character.armor.as_mut().unwrap(),
+        EquippedSlot::Ring => game.character.ring.as_mut().unwrap(),
+    };
+    item_mut.enchant_level += 1;
+    let new_level = item_mut.enchant_level;
+    let item_name = item_mut.name.clone();
+
+    let old_gold = game.character.gold;
+    game.character.gold -= cost;
+
+    println!(
+        "{} {} is now {} (cost: {} gold).",
+        "✨".bold(),
+        item_name.white().bold(),
+        display::enchant_tag(new_level).trim_start(),
+        format!("{}", cost).yellow().bold()
+    );
+    println!(
+        "   Gold: {} → {}",
+        format!("{}", old_gold).dimmed(),
+        format!("{}", game.character.gold).yellow().bold()
+    );
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+    }
 }
 
 fn fuzzy_match_name(item_name: &str, query: &str) -> bool {
@@ -1185,7 +1344,7 @@ mod tests {
     }
 
     fn item(name: &str) -> Item {
-        Item { name: name.to_string(), slot: ItemSlot::Weapon, power: 1, rarity: Rarity::Common }
+        Item { name: name.to_string(), slot: ItemSlot::Weapon, power: 1, rarity: Rarity::Common, enchant_level: 0 }
     }
 
     #[test]
@@ -1525,7 +1684,7 @@ mod tests {
     }
 
     fn item_full(name: &str, power: i32, rarity: Rarity) -> Item {
-        Item { name: name.to_string(), slot: ItemSlot::Weapon, power, rarity }
+        Item { name: name.to_string(), slot: ItemSlot::Weapon, power, rarity, enchant_level: 0 }
     }
 
     #[test]

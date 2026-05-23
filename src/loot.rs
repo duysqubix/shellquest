@@ -213,12 +213,7 @@ const LEGENDARY: &[LootEntry] = &[
 fn pick_from(rng: &mut impl Rng, table: &[LootEntry], rarity: Rarity) -> Item {
     let entry = &table[rng.gen_range(0..table.len())];
     let power = rng.gen_range(entry.power_range.0..=entry.power_range.1);
-    Item {
-        name: entry.name.to_string(),
-        slot: entry.slot,
-        power,
-        rarity,
-    }
+    Item { name: entry.name.to_string(), slot: entry.slot, power, rarity, enchant_level: 0 }
 }
 
 pub fn roll_loot(_danger_level: u32) -> Item {
@@ -375,9 +370,120 @@ pub fn item_price(item: &Item) -> u32 {
     (item.power as u32) * multiplier + multiplier
 }
 
+pub fn enchant_cost(item: &Item) -> u32 {
+    item_price(item) * (item.enchant_level + 1)
+}
+
+pub const MAX_ENCHANT_LEVEL: u32 = 5;
+
+pub fn is_enchantable(item: &Item) -> bool {
+    !matches!(item.slot, crate::character::ItemSlot::Potion)
+}
+
+pub fn can_enchant_further(item: &Item) -> bool {
+    item.enchant_level < MAX_ENCHANT_LEVEL
+}
+
+pub fn sell_price(item: &Item) -> u32 {
+    let base = item_price(item);
+    base / 2 + item.enchant_level * (base / 5)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::character::ItemSlot;
+
+    fn make_test_item(slot: ItemSlot, power: i32, rarity: Rarity, enchant_level: u32) -> Item {
+        Item {
+            name: "Test".to_string(),
+            slot,
+            power,
+            rarity,
+            enchant_level,
+        }
+    }
+
+    #[test]
+    fn enchant_cost_at_level_zero_equals_item_price() {
+        let item = make_test_item(ItemSlot::Weapon, 2, Rarity::Common, 0);
+        assert_eq!(enchant_cost(&item), item_price(&item));
+    }
+
+    #[test]
+    fn enchant_cost_at_level_two_is_three_times_item_price() {
+        let item = make_test_item(ItemSlot::Weapon, 2, Rarity::Common, 2);
+        assert_eq!(enchant_cost(&item), item_price(&item) * 3);
+    }
+
+    #[test]
+    fn enchant_cost_at_level_four_is_five_times_item_price() {
+        let item = make_test_item(ItemSlot::Weapon, 2, Rarity::Common, 4);
+        assert_eq!(enchant_cost(&item), item_price(&item) * 5);
+    }
+
+    #[test]
+    fn enchant_cost_total_for_common_max_enchant_is_15x_base() {
+        let mut item = make_test_item(ItemSlot::Weapon, 2, Rarity::Common, 0);
+        let mut total: u32 = 0;
+        for _ in 0..5 {
+            total += enchant_cost(&item);
+            item.enchant_level += 1;
+        }
+        assert_eq!(total, item_price(&item) * 15);
+    }
+
+    #[test]
+    fn is_enchantable_rejects_potions() {
+        let p = make_test_item(ItemSlot::Potion, 5, Rarity::Common, 0);
+        assert!(!is_enchantable(&p));
+    }
+
+    #[test]
+    fn is_enchantable_accepts_weapon_armor_ring() {
+        assert!(is_enchantable(&make_test_item(ItemSlot::Weapon, 1, Rarity::Common, 0)));
+        assert!(is_enchantable(&make_test_item(ItemSlot::Armor, 1, Rarity::Common, 0)));
+        assert!(is_enchantable(&make_test_item(ItemSlot::Ring, 1, Rarity::Common, 0)));
+    }
+
+    #[test]
+    fn can_enchant_further_allows_levels_0_through_4() {
+        for lvl in 0..=4 {
+            let item = make_test_item(ItemSlot::Weapon, 1, Rarity::Common, lvl);
+            assert!(can_enchant_further(&item), "level {lvl} should still be enchantable");
+        }
+    }
+
+    #[test]
+    fn can_enchant_further_blocks_at_level_5() {
+        let item = make_test_item(ItemSlot::Weapon, 1, Rarity::Common, 5);
+        assert!(!can_enchant_further(&item));
+    }
+
+    #[test]
+    fn sell_price_at_enchant_zero_equals_half_item_price() {
+        let item = make_test_item(ItemSlot::Weapon, 5, Rarity::Common, 0);
+        assert_eq!(sell_price(&item), item_price(&item) / 2);
+    }
+
+    #[test]
+    fn sell_price_includes_enchant_bonus_per_level() {
+        let item = make_test_item(ItemSlot::Weapon, 5, Rarity::Common, 3);
+        let base = item_price(&item);
+        assert_eq!(sell_price(&item), base / 2 + 3 * (base / 5));
+    }
+
+    #[test]
+    fn sell_price_never_exceeds_total_investment() {
+        let base_item = make_test_item(ItemSlot::Weapon, 5, Rarity::Common, 0);
+        let mut max_item = base_item.clone();
+        max_item.enchant_level = 5;
+        let buy = item_price(&base_item);
+        let enchant_invested: u32 = (1..=5u32).map(|n| buy * n).sum();
+        let total_invested = buy + enchant_invested;
+        assert!(sell_price(&max_item) < total_invested,
+            "enchant-then-sell must not be profitable");
+    }
 
     #[test]
     fn roll_loot_returns_non_empty_name() {
@@ -421,24 +527,9 @@ mod tests {
 
     #[test]
     fn item_price_scales_by_rarity() {
-        let common = Item {
-            name: "A".to_string(),
-            slot: ItemSlot::Weapon,
-            power: 5,
-            rarity: Rarity::Common,
-        };
-        let uncommon = Item {
-            name: "B".to_string(),
-            slot: ItemSlot::Weapon,
-            power: 5,
-            rarity: Rarity::Uncommon,
-        };
-        let rare = Item {
-            name: "C".to_string(),
-            slot: ItemSlot::Weapon,
-            power: 5,
-            rarity: Rarity::Rare,
-        };
+        let common = Item { name: "A".to_string(), slot: ItemSlot::Weapon, power: 5, rarity: Rarity::Common, enchant_level: 0 };
+        let uncommon = Item { name: "B".to_string(), slot: ItemSlot::Weapon, power: 5, rarity: Rarity::Uncommon, enchant_level: 0 };
+        let rare = Item { name: "C".to_string(), slot: ItemSlot::Weapon, power: 5, rarity: Rarity::Rare, enchant_level: 0 };
         let common_price = item_price(&common);
         let uncommon_price = item_price(&uncommon);
         let rare_price = item_price(&rare);
@@ -458,24 +549,14 @@ mod tests {
 
     #[test]
     fn item_price_formula_correct() {
-        let item = Item {
-            name: "X".to_string(),
-            slot: ItemSlot::Armor,
-            power: 3,
-            rarity: Rarity::Common,
-        };
+        let item = Item { name: "X".to_string(), slot: ItemSlot::Armor, power: 3, rarity: Rarity::Common, enchant_level: 0 };
         // multiplier = 5; price = 3 * 5 + 5 = 20
         assert_eq!(item_price(&item), 20);
     }
 
     #[test]
     fn item_price_legendary_formula() {
-        let item = Item {
-            name: "X".to_string(),
-            slot: ItemSlot::Weapon,
-            power: 10,
-            rarity: Rarity::Legendary,
-        };
+        let item = Item { name: "X".to_string(), slot: ItemSlot::Weapon, power: 10, rarity: Rarity::Legendary, enchant_level: 0 };
         // multiplier = 100; price = 10 * 100 + 100 = 1100
         assert_eq!(item_price(&item), 1100);
     }

@@ -997,7 +997,7 @@ mod tests {
     }
 
     fn make_item(name: &str, slot: ItemSlot, power: i32, rarity: Rarity) -> Item {
-        Item { name: name.to_string(), slot, power, rarity }
+        Item { name: name.to_string(), slot, power, rarity, enchant_level: 0 }
     }
 
     #[test]

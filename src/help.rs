@@ -32,6 +32,7 @@ pub const CANONICAL_TOPIC_ORDER: &[&str] = &[
     "shop",
     "buy",
     "sell",
+    "enchant",
     "drink",
     "prestige",
     "reset",
@@ -86,7 +87,7 @@ const TOPICS: &[HelpTopic] = &[
             "sq inventory",
             "sq inv",
         ],
-        related: &["status", "drop", "equip", "wield", "drink"],
+        related: &["status", "drop", "equip", "wield", "drink", "enchant"],
     },
     HelpTopic {
         name: "journal",
@@ -209,6 +210,19 @@ const TOPICS: &[HelpTopic] = &[
             "cd ~ && sq sell junk",
         ],
         related: &["shop", "buy", "inventory"],
+    },
+    HelpTopic {
+        name: "enchant",
+        aliases: &[],
+        summary: "Spend gold to add +1 power to an equipped item (max +5 per item).",
+        usage: "sq enchant <item name>",
+        details: "Targets only EQUIPPED items (weapon, armor, or ring). Each enchant adds +1 to the item's effective power and costs `item_price × (current_enchant_level + 1)` gold — so the first enchant costs the item's full buy price, the second costs 2x, the third 3x, and so on. Max enchant level per item is +5; total cost to fully enchant an item is therefore 15× its buy price (e.g. 225 gold for a Common, 2,250 for a Rare, 30,000 for a Legendary). Potions cannot be enchanted. Enchanted items show an `[Enchanted +N]` tag in escalating colors — green at +1, cyan at +2, blue at +3, magenta at +4, and rainbow per-character at the max +5. Sell-price recovers a small fraction of the enchant investment so enchant-then-sell is always a net loss. Access rule: the **Wizard** class can enchant from anywhere (arcane workbench mastery); all other classes must be standing in their home directory.",
+        examples: &[
+            "cd ~ && sq enchant pike",
+            "cd ~ && sq enchant iron sword",
+            "sq enchant blade   # (Wizard only, anywhere)",
+        ],
+        related: &["inventory", "status", "wield", "equip"],
     },
     HelpTopic {
         name: "drink",

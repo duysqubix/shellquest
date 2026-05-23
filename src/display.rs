@@ -288,15 +288,18 @@ pub fn print_status(char: &Character, permadeath: bool) {
     // Equipment
     let weapon_str = char.weapon.as_ref().map_or("(none)".dimmed().to_string(), |w| {
         let (name, rarity) = format_item_rarity(&w.name, &w.rarity);
-        format!("{} (+{}) {}", name, w.power, rarity)
+        let eff = w.power + w.enchant_level as i32;
+        format!("{} (+{}) {}{}", name, eff, rarity, enchant_tag(w.enchant_level))
     });
     let armor_str = char.armor.as_ref().map_or("(none)".dimmed().to_string(), |a| {
         let (name, rarity) = format_item_rarity(&a.name, &a.rarity);
-        format!("{} (+{}) {}", name, a.power, rarity)
+        let eff = a.power + a.enchant_level as i32;
+        format!("{} (+{}) {}{}", name, eff, rarity, enchant_tag(a.enchant_level))
     });
     let ring_str = char.ring.as_ref().map_or("(none)".dimmed().to_string(), |r| {
         let (name, rarity) = format_item_rarity(&r.name, &r.rarity);
-        format!("{} (+{}) {}", name, r.power, rarity)
+        let eff = r.power + r.enchant_level as i32;
+        format!("{} (+{}) {}{}", name, eff, rarity, enchant_tag(r.enchant_level))
     });
 
     println!("{}  {} {}", "│".dimmed(), "Weapon:".bold(), weapon_str);
@@ -355,6 +358,35 @@ fn slot_section_label(slot: ItemSlot) -> &'static str {
     }
 }
 
+pub fn enchant_tag(level: u32) -> String {
+    if level == 0 {
+        return String::new();
+    }
+    let label = format!("[Enchanted +{}]", level);
+    let styled = match level {
+        1 => label.green().bold().to_string(),
+        2 => label.cyan().bold().to_string(),
+        3 => label.blue().bold().to_string(),
+        4 => label.magenta().bold().to_string(),
+        _ => label
+            .chars()
+            .enumerate()
+            .map(|(i, c)| {
+                let s = c.to_string();
+                match i % 6 {
+                    0 => s.red().bold().to_string(),
+                    1 => s.yellow().bold().to_string(),
+                    2 => s.green().bold().to_string(),
+                    3 => s.cyan().bold().to_string(),
+                    4 => s.blue().bold().to_string(),
+                    _ => s.magenta().bold().to_string(),
+                }
+            })
+            .collect::<String>(),
+    };
+    format!(" {}", styled)
+}
+
 pub fn print_inventory(char: &Character) {
     println!();
     println!("{}", "📦 Inventory".bold().cyan());
@@ -374,12 +406,14 @@ pub fn print_inventory(char: &Character) {
             );
             for item in &group.items {
                 let (name_styled, rarity_styled) = format_item_rarity(&item.name, &item.rarity);
+                let effective_power = item.power + item.enchant_level as i32;
                 println!(
-                    "  {}. {} (+{}) {}",
+                    "  {}. {} (+{}) {}{}",
                     format!("{}", idx).dimmed(),
                     name_styled,
-                    item.power,
-                    rarity_styled
+                    effective_power,
+                    rarity_styled,
+                    enchant_tag(item.enchant_level),
                 );
                 idx += 1;
             }
@@ -556,7 +590,7 @@ mod tests {
     use crate::character::{Item, ItemSlot, Rarity};
 
     fn make_item(name: &str, slot: ItemSlot, power: i32, rarity: Rarity) -> Item {
-        Item { name: name.to_string(), slot, power, rarity }
+        Item { name: name.to_string(), slot, power, rarity, enchant_level: 0 }
     }
 
     #[test]
@@ -635,5 +669,37 @@ mod tests {
                 "Common Sword",
             ]
         );
+    }
+
+    #[test]
+    fn enchant_tag_level_zero_returns_empty_string() {
+        assert_eq!(enchant_tag(0), "");
+    }
+
+    #[test]
+    fn enchant_tag_level_one_contains_label_and_has_color_prefix() {
+        colored::control::set_override(false);
+        let tag = enchant_tag(1);
+        assert!(tag.starts_with(' '));
+        assert!(tag.contains("[Enchanted +1]"));
+    }
+
+    #[test]
+    fn enchant_tag_level_five_contains_label() {
+        colored::control::set_override(false);
+        let tag = enchant_tag(5);
+        assert!(tag.contains("[Enchanted +5]"));
+    }
+
+    #[test]
+    fn enchant_tag_each_level_uses_distinct_color() {
+        colored::control::set_override(true);
+        let t1 = enchant_tag(1);
+        let t2 = enchant_tag(2);
+        let t3 = enchant_tag(3);
+        let t4 = enchant_tag(4);
+        let t5 = enchant_tag(5);
+        let distinct = std::collections::HashSet::from([t1.clone(), t2.clone(), t3.clone(), t4.clone(), t5.clone()]);
+        assert_eq!(distinct.len(), 5, "all five tag styles should be visually distinct");
     }
 }

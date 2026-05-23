@@ -939,7 +939,7 @@ pub(crate) fn apply_arena_commit(
                         });
                     }
                     ChestApplyResult::Rejected => {
-                        let sell_value = crate::loot::item_price(item) / 2;
+                        let sell_value = crate::loot::sell_price(item);
                         overflow_gold = overflow_gold.saturating_add(sell_value);
                         deferred.push(ArenaDeferredOutput::OverflowConverted {
                             item_name: item.name.clone(),
@@ -1902,21 +1902,11 @@ mod tests {
         game.character.best_tournament_round = 0;
 
         for i in 0..20 {
-            game.character.inventory.push(Item {
-                name: format!("Legendary {}", i),
-                slot: ItemSlot::Weapon,
-                power: 50 + i as i32,
-                rarity: Rarity::Legendary,
-            });
+            game.character.inventory.push(Item { name: format!("Legendary {}", i), slot: ItemSlot::Weapon, power: 50 + i as i32, rarity: Rarity::Legendary, enchant_level: 0 });
         }
 
-        let chest_item = Item {
-            name: "Rusty Dagger".to_string(),
-            slot: ItemSlot::Weapon,
-            power: 2,
-            rarity: Rarity::Common,
-        };
-        let sell_value = crate::loot::item_price(&chest_item) / 2;
+        let chest_item = Item { name: "Rusty Dagger".to_string(), slot: ItemSlot::Weapon, power: 2, rarity: Rarity::Common, enchant_level: 0 };
+        let sell_value = crate::loot::sell_price(&chest_item);
 
         let commit = ArenaCommit {
             outcome: ArenaOutcome::CashOut { rounds_cleared: 3 },
@@ -2012,24 +2002,9 @@ mod tests {
     #[test]
     fn snapshot_copies_equipped_stats() {
         let mut c = make_character(10, 1, 500);
-        c.equip(Item {
-            name: "Sword".to_string(),
-            slot: ItemSlot::Weapon,
-            power: 15,
-            rarity: Rarity::Rare,
-        });
-        c.equip(Item {
-            name: "Plate".to_string(),
-            slot: ItemSlot::Armor,
-            power: 10,
-            rarity: Rarity::Uncommon,
-        });
-        c.equip(Item {
-            name: "Ring".to_string(),
-            slot: ItemSlot::Ring,
-            power: 5,
-            rarity: Rarity::Common,
-        });
+        c.equip(Item { name: "Sword".to_string(), slot: ItemSlot::Weapon, power: 15, rarity: Rarity::Rare, enchant_level: 0 });
+        c.equip(Item { name: "Plate".to_string(), slot: ItemSlot::Armor, power: 10, rarity: Rarity::Uncommon, enchant_level: 0 });
+        c.equip(Item { name: "Ring".to_string(), slot: ItemSlot::Ring, power: 5, rarity: Rarity::Common, enchant_level: 0 });
 
         let snap = ArenaEntrySnapshot::from_character(&c);
         assert_eq!(snap.attack_power, c.attack_power());
@@ -2090,6 +2065,7 @@ mod tests {
                 slot: ItemSlot::Weapon,
                 power: 5,
                 rarity: Rarity::Common,
+                enchant_level: 0,
             }],
             kills: 5,
             best_round: None,
@@ -2141,12 +2117,7 @@ mod tests {
         game.character.hp = 80;
         game.character.best_tournament_round = 0;
 
-        let item = Item {
-            name: "Iron Sword".to_string(),
-            slot: ItemSlot::Weapon,
-            power: 10,
-            rarity: Rarity::Uncommon,
-        };
+        let item = Item { name: "Iron Sword".to_string(), slot: ItemSlot::Weapon, power: 10, rarity: Rarity::Uncommon, enchant_level: 0 };
 
         let commit = ArenaCommit {
             outcome: ArenaOutcome::CashOut { rounds_cleared: 3 },
@@ -2371,21 +2342,11 @@ mod tests {
         game.character.hp = 80;
 
         for i in 0..20 {
-            game.character.inventory.push(Item {
-                name: format!("Legendary {}", i),
-                slot: ItemSlot::Weapon,
-                power: 50 + i as i32,
-                rarity: Rarity::Legendary,
-            });
+            game.character.inventory.push(Item { name: format!("Legendary {}", i), slot: ItemSlot::Weapon, power: 50 + i as i32, rarity: Rarity::Legendary, enchant_level: 0 });
         }
 
-        let chest_item = Item {
-            name: "Rusty Dagger".to_string(),
-            slot: ItemSlot::Weapon,
-            power: 2,
-            rarity: Rarity::Common,
-        };
-        let sell_value = crate::loot::item_price(&chest_item) / 2;
+        let chest_item = Item { name: "Rusty Dagger".to_string(), slot: ItemSlot::Weapon, power: 2, rarity: Rarity::Common, enchant_level: 0 };
+        let sell_value = crate::loot::sell_price(&chest_item);
         assert!(sell_value > 0, "test fixture sanity: overflow value must be > 0");
 
         let commit = ArenaCommit {
@@ -2428,20 +2389,10 @@ mod tests {
         game.character.hp = 80;
 
         for i in 0..20 {
-            game.character.inventory.push(Item {
-                name: format!("Weak {}", i),
-                slot: ItemSlot::Weapon,
-                power: 1,
-                rarity: Rarity::Common,
-            });
+            game.character.inventory.push(Item { name: format!("Weak {}", i), slot: ItemSlot::Weapon, power: 1, rarity: Rarity::Common, enchant_level: 0 });
         }
 
-        let chest_item = Item {
-            name: "Strong Sword".to_string(),
-            slot: ItemSlot::Weapon,
-            power: 100,
-            rarity: Rarity::Rare,
-        };
+        let chest_item = Item { name: "Strong Sword".to_string(), slot: ItemSlot::Weapon, power: 100, rarity: Rarity::Rare, enchant_level: 0 };
 
         let commit = ArenaCommit {
             outcome: ArenaOutcome::CashOut { rounds_cleared: 3 },
