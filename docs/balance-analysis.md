@@ -500,6 +500,18 @@ pub struct Item {
 
 Attack/defense formulas add `enchant_level` to the power contribution from each item. Sell price = `item_price(base) + enchant_level × (5 × rarity_mult)` (the rule of thumb: sell gives back ~10% of enchant investment).
 
+### Post-v1.18 observation (v1.20 surfaced via `sq identify`)
+
+At max enchant (+5), the **sell-enchant-bonus on a Legendary exceeds the base sell value**. Concrete example from a Legendary with `item_price = 2,170`:
+
+- Base sell: `2170 / 2 = 1,085`
+- Per-level enchant bonus: `2170 / 5 = 434`
+- +5 enchant bonus: `5 × 434 = 2,170`
+- Total sell at +5: `1,085 + 2,170 = 3,255`
+- Bonus / base ratio: **3.0×**
+
+Enchant-then-sell remains a substantial net loss in absolute terms (recovery ~3,255 on ~32,550 invested ≈ 10% — exactly the design target). But the *proportion* of sell value that's enchant-derived climbs from 0% at +0 to 67% at +5. A v1.22+ rebalance could cap the per-level bonus (e.g. `min(item_price / 5, item_price / 10)` once enchant_level exceeds 3) to keep the breakdown closer to 50/50 — purely a feel-of-the-display concern, not an economy break.
+
 ---
 
 ## 6 · Bestiary + loot overhaul proposal

@@ -33,6 +33,7 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 
 ### Testing Requirements
 - `cargo build` to verify compilation (`cargo clippy` is not installed in the current toolchain — skip it)
+- **Known cargo cache quirk**: `cargo build --bin sq` sometimes reports `Finished … (0 crates compiled)` while the on-disk `target/debug/sq` is stale relative to source — this happens when the test profile was rebuilt but the prod binary fingerprint went out of sync. If a freshly-edited change is missing from manual QA on `target/debug/sq`, run `cargo clean -p shellquest && cargo build --bin sq` to force a full prod rebuild (~3s, eats ~250MB of cache). Observed in v1.18 and v1.20 manual QA cycles.
 - `cargo test` to run the unit test suite. Manual testing is also required for CLI flow:
   - `sq init` → create character
   - `sq status` → view sheet
