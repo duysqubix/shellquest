@@ -55,7 +55,7 @@ pub fn maybe_spawn(state: &mut crate::state::GameState) {
     }
 
     let mut rng = rand::thread_rng();
-    if rng.gen_ratio(1, 1000) {
+    if rng.gen_ratio(1, 500) {
         let boss = spawn_boss();
         crate::display::print_boss_spawn(&boss);
         state.active_boss = Some(boss);

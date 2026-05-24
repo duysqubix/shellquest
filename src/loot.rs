@@ -358,14 +358,13 @@ pub fn roll_loot_scaled(danger_level: u32) -> Item {
     }
 }
 
-/// Calculate a gold price for an item based on rarity and power.
 pub fn item_price(item: &Item) -> u32 {
     let multiplier = match item.rarity {
         Rarity::Common => 5,
-        Rarity::Uncommon => 10,
-        Rarity::Rare => 20,
-        Rarity::Epic => 40,
-        Rarity::Legendary => 100,
+        Rarity::Uncommon => 8,
+        Rarity::Rare => 13,
+        Rarity::Epic => 22,
+        Rarity::Legendary => 35,
     };
     (item.power as u32) * multiplier + multiplier
 }
@@ -557,8 +556,22 @@ mod tests {
     #[test]
     fn item_price_legendary_formula() {
         let item = Item { name: "X".to_string(), slot: ItemSlot::Weapon, power: 10, rarity: Rarity::Legendary, enchant_level: 0 };
-        // multiplier = 100; price = 10 * 100 + 100 = 1100
-        assert_eq!(item_price(&item), 1100);
+        // multiplier = 35; price = 10 * 35 + 35 = 385
+        assert_eq!(item_price(&item), 385);
+    }
+
+    #[test]
+    fn rarity_multipliers_within_industry_range_common_to_legendary_ratio_56x() {
+        let common = Item { name: "C".to_string(), slot: ItemSlot::Weapon, power: 1, rarity: Rarity::Common, enchant_level: 0 };
+        let legendary = Item { name: "L".to_string(), slot: ItemSlot::Weapon, power: 1, rarity: Rarity::Legendary, enchant_level: 0 };
+        let common_price = item_price(&common);
+        let legendary_price = item_price(&legendary);
+        let ratio = legendary_price as f32 / common_price as f32;
+        assert!(
+            ratio > 5.0 && ratio < 10.0,
+            "Common→Legendary multiplier ratio must stay in industry-typical 5-10x range, got {}x",
+            ratio
+        );
     }
 
     #[test]

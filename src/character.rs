@@ -51,8 +51,8 @@ impl Race {
             Race::Human => (1, 1, 1),
             Race::Elf => (0, 2, 2),
             Race::Dwarf => (3, 0, 1),
-            Race::Orc => (4, 1, -1),
-            Race::Goblin => (-1, 3, 1),
+            Race::Orc => (3, 1, -1),
+            Race::Goblin => (0, 3, 1),
         }
     }
 }
@@ -454,14 +454,14 @@ pub fn signature_bonus(
 ) -> (i32, Option<&'static str>) {
     match class {
         Class::Wizard => {
-            let bonus = (intelligence / 4).max(0);
+            let bonus = (intelligence / 5).max(0);
             if bonus > 0 { (bonus, Some("arcane burn")) } else { (0, None) }
         }
         Class::Ranger if is_first_strike => {
             let bonus = (intelligence / 3).max(0);
             if bonus > 0 { (bonus, Some("mark prey")) } else { (0, None) }
         }
-        Class::Warrior if hp * 3 < max_hp => {
+        Class::Warrior if hp * 5 < max_hp * 3 => {
             let bonus = (strength / 4).max(0);
             if bonus > 0 { (bonus, Some("battle frenzy")) } else { (0, None) }
         }
@@ -472,7 +472,7 @@ pub fn signature_bonus(
 impl Character {
     pub fn die(&mut self) {
         self.deaths += 1;
-        self.xp = 0;
+        self.xp /= 2;
         self.gold = self.gold.saturating_sub(self.gold * 15 / 100);
         self.hp = self.max_hp / 2;
     }
@@ -536,20 +536,42 @@ mod tests {
     #[test]
     fn new_warrior_orc_initial_stats() {
         let c = Character::new("Grok".to_string(), Class::Warrior, Race::Orc);
-        // Warrior base: STR 16, DEX 8, INT 6; Orc bonus: +4/+1/-1
-        assert_eq!(c.strength, 20);
+        // Warrior base: STR 16, DEX 8, INT 6; Orc bonus: +3/+1/-1
+        assert_eq!(c.strength, 19);
         assert_eq!(c.dexterity, 9);
         assert_eq!(c.intelligence, 5);
-        assert_eq!(c.max_hp, 20 + 20 * 2); // 60
+        assert_eq!(c.max_hp, 20 + 19 * 2); // 58
     }
 
     #[test]
     fn new_rogue_goblin_initial_stats() {
         let c = Character::new("Sneak".to_string(), Class::Rogue, Race::Goblin);
-        // Rogue base: STR 8, DEX 16, INT 6; Goblin bonus: -1/+3/+1
-        assert_eq!(c.strength, 7);
+        // Rogue base: STR 8, DEX 16, INT 6; Goblin bonus: 0/+3/+1
+        assert_eq!(c.strength, 8);
         assert_eq!(c.dexterity, 19);
         assert_eq!(c.intelligence, 7);
+    }
+
+    #[test]
+    fn race_stat_budgets_stay_in_three_to_four_range() {
+        for race in [Race::Human, Race::Elf, Race::Dwarf, Race::Orc, Race::Goblin] {
+            let (s, d, i) = race.stat_bonus();
+            let budget = s + d + i;
+            assert!(
+                (3..=4).contains(&budget),
+                "{:?} race stat budget out of design range: {} (must be 3 or 4)",
+                race, budget
+            );
+        }
+    }
+
+    #[test]
+    fn race_max_stat_bonus_capped_at_three() {
+        for race in [Race::Human, Race::Elf, Race::Dwarf, Race::Orc, Race::Goblin] {
+            let (s, d, i) = race.stat_bonus();
+            let max = s.max(d).max(i);
+            assert!(max <= 3, "{:?} race max single-stat bonus exceeds +3: {}", race, max);
+        }
     }
 
     #[test]
@@ -735,11 +757,69 @@ mod tests {
     }
 
     #[test]
-    fn die_resets_xp() {
+    fn die_halves_xp() {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
         c.xp = 50;
         c.die();
+        assert_eq!(c.xp, 25);
+    }
+
+    #[test]
+    fn die_with_odd_xp_uses_integer_division() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        c.xp = 99;
+        c.die();
+        assert_eq!(c.xp, 49);
+    }
+
+    #[test]
+    fn die_with_zero_xp_stays_zero() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        c.xp = 0;
+        c.die();
         assert_eq!(c.xp, 0);
+    }
+
+    #[test]
+    fn wizard_signature_now_uses_int_over_five() {
+        let (bonus, label) = signature_bonus(&Class::Wizard, 25, 0, 100, 100, false);
+        assert_eq!(bonus, 5);
+        assert_eq!(label, Some("arcane burn"));
+    }
+
+    #[test]
+    fn wizard_signature_at_low_int_returns_zero_no_label() {
+        let (bonus, label) = signature_bonus(&Class::Wizard, 4, 0, 100, 100, false);
+        assert_eq!(bonus, 0);
+        assert_eq!(label, None);
+    }
+
+    #[test]
+    fn warrior_battle_frenzy_fires_below_sixty_percent_hp() {
+        let (bonus, label) = signature_bonus(&Class::Warrior, 0, 20, 50, 100, false);
+        assert_eq!(bonus, 5);
+        assert_eq!(label, Some("battle frenzy"));
+    }
+
+    #[test]
+    fn warrior_battle_frenzy_silent_at_full_hp() {
+        let (bonus, label) = signature_bonus(&Class::Warrior, 0, 20, 100, 100, false);
+        assert_eq!(bonus, 0);
+        assert_eq!(label, None);
+    }
+
+    #[test]
+    fn warrior_battle_frenzy_silent_at_seventy_percent_hp() {
+        let (bonus, label) = signature_bonus(&Class::Warrior, 0, 20, 70, 100, false);
+        assert_eq!(bonus, 0);
+        assert_eq!(label, None);
+    }
+
+    #[test]
+    fn warrior_battle_frenzy_fires_at_exactly_fifty_nine_percent() {
+        let (bonus, label) = signature_bonus(&Class::Warrior, 0, 20, 59, 100, false);
+        assert_eq!(bonus, 5);
+        assert_eq!(label, Some("battle frenzy"));
     }
 
     // --- heal() ---

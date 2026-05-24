@@ -210,8 +210,13 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
     crate::boss::maybe_spawn(state);
 }
 
+fn trap_damage(max_hp: i32, rng: &mut impl Rng) -> i32 {
+    let pct: f32 = rng.gen_range(0.03..0.06);
+    ((max_hp as f32 * pct).round() as i32).max(1)
+}
+
 fn handle_trap(state: &mut GameState, rng: &mut impl Rng) {
-    let damage = rng.gen_range(1..=3);
+    let damage = trap_damage(state.character.max_hp, rng);
     let gold_before = state.character.gold;
     let died = state.character.take_damage(damage);
     if died {
@@ -998,6 +1003,35 @@ mod tests {
 
     fn make_item(name: &str, slot: ItemSlot, power: i32, rarity: Rarity) -> Item {
         Item { name: name.to_string(), slot, power, rarity, enchant_level: 0 }
+    }
+
+    #[test]
+    fn trap_damage_at_max_hp_30_returns_one_or_two() {
+        let mut rng = rand::thread_rng();
+        for _ in 0..200 {
+            let dmg = trap_damage(30, &mut rng);
+            assert!(dmg >= 1 && dmg <= 2, "L1 trap dmg out of band: {}", dmg);
+        }
+    }
+
+    #[test]
+    fn trap_damage_at_max_hp_555_returns_band_17_to_33() {
+        let mut rng = rand::thread_rng();
+        for _ in 0..200 {
+            let dmg = trap_damage(555, &mut rng);
+            assert!(dmg >= 17 && dmg <= 34, "L100 trap dmg out of band: {}", dmg);
+        }
+    }
+
+    #[test]
+    fn trap_damage_always_at_least_one() {
+        let mut rng = rand::thread_rng();
+        for max in [1, 5, 10, 20, 30] {
+            for _ in 0..50 {
+                let dmg = trap_damage(max, &mut rng);
+                assert!(dmg >= 1, "trap dmg must be >= 1 even at low HP {}", max);
+            }
+        }
     }
 
     #[test]
