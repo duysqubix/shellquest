@@ -63,6 +63,13 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - Auto-equip logic: new item replaces equipped if higher power, otherwise goes to inventory (capped at 20)
 - **Arena Transactions**: Arena results are committed atomically at the end of a session. Runs are not resumable. Hard interruptions result in a rollback to the pre-arena state (including the entry fee).
 
+### Release Cadence (effective post-v1.22.0)
+- **Batch related work into larger themed releases** — do not ship after every distinct feature. Accumulate features into release arcs.
+- **Threshold for a release**: the release notes file would have 5+ paragraphs of player-visible material covering a coherent theme. Below that bar, commits stay on `master` awaiting their thematic partners.
+- **Exception**: critical bug fixes always ship as immediate patch releases.
+- **Anti-pattern**: 7 releases in one session (as happened during the v1.18→v1.22 balance overhaul). That cadence felt fragmented; future overhauls should ship as 1-2 atomic releases per arc, not 5-7.
+- **Conventional commits remain unchanged** — every commit is still atomic and properly typed (`feat:`, `fix:`, etc). The change is purely about *when* to invoke `publish.sh`, not how to structure individual commits on master.
+
 ## Dependencies
 
 ### External
