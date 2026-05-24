@@ -192,6 +192,48 @@ pub fn print_level_up(msg: &str) {
     eprintln!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".yellow().bold());
 }
 
+pub struct GearBonus {
+    pub attack: i32,
+    pub attack_breakdown: String,
+    pub defense: i32,
+    pub defense_breakdown: String,
+}
+
+fn item_part_label(slot_name: &str, base: i32, enchant: u32) -> String {
+    if enchant > 0 {
+        format!("{} {} +{} enchant", slot_name, base, enchant)
+    } else {
+        format!("{} {}", slot_name, base)
+    }
+}
+
+pub fn gear_bonus(char: &Character) -> GearBonus {
+    let mut attack = 0;
+    let mut atk_parts: Vec<String> = Vec::new();
+    if let Some(w) = char.weapon.as_ref() {
+        attack += w.power + w.enchant_level as i32;
+        atk_parts.push(item_part_label("weapon", w.power, w.enchant_level));
+    }
+
+    let mut defense = 0;
+    let mut def_parts: Vec<String> = Vec::new();
+    if let Some(a) = char.armor.as_ref() {
+        defense += a.power + a.enchant_level as i32;
+        def_parts.push(item_part_label("armor", a.power, a.enchant_level));
+    }
+    if let Some(r) = char.ring.as_ref() {
+        defense += r.power + r.enchant_level as i32;
+        def_parts.push(item_part_label("ring", r.power, r.enchant_level));
+    }
+
+    GearBonus {
+        attack,
+        attack_breakdown: atk_parts.join(", "),
+        defense,
+        defense_breakdown: def_parts.join(", "),
+    }
+}
+
 pub fn print_status(char: &Character, permadeath: bool) {
     let class_colored = format!("{}", char.class).cyan().bold();
     let race_colored = format!("{}", char.race).magenta();
@@ -305,6 +347,30 @@ pub fn print_status(char: &Character, permadeath: bool) {
     println!("{}  {} {}", "│".dimmed(), "Weapon:".bold(), weapon_str);
     println!("{}  {} {}", "│".dimmed(), "Armor: ".bold(), armor_str);
     println!("{}  {} {}", "│".dimmed(), "Ring:  ".bold(), ring_str);
+
+    let bonus = gear_bonus(char);
+    if bonus.attack > 0 || bonus.defense > 0 {
+        println!("{}", "│".dimmed());
+        println!("{}  {}", "│".dimmed(), "Gear bonuses:".bold());
+        if bonus.attack > 0 {
+            println!(
+                "{}    {} {}  {}",
+                "│".dimmed(),
+                "Attack: ".bold(),
+                format!("+{}", bonus.attack).yellow().bold(),
+                format!("({})", bonus.attack_breakdown).dimmed()
+            );
+        }
+        if bonus.defense > 0 {
+            println!(
+                "{}    {} {}  {}",
+                "│".dimmed(),
+                "Defense:".bold(),
+                format!("+{}", bonus.defense).yellow().bold(),
+                format!("({})", bonus.defense_breakdown).dimmed()
+            );
+        }
+    }
     println!("{}", "│".dimmed());
 
     println!(
@@ -406,6 +472,19 @@ pub fn render_item_detail(item: &Item, source: ItemSource) -> String {
     ));
 
     let is_potion = matches!(item.slot, ItemSlot::Potion);
+
+    if !is_potion {
+        let affects = match item.slot {
+            ItemSlot::Weapon => "attack_power",
+            ItemSlot::Armor | ItemSlot::Ring => "defense",
+            ItemSlot::Potion => unreachable!(),
+        };
+        out.push_str(&format!(
+            "  {}     {}\n",
+            "Affects:".bold(),
+            affects.cyan()
+        ));
+    }
 
     if is_potion {
         out.push_str(&format!(
@@ -894,6 +973,67 @@ mod tests {
         assert!(!out.contains("Base power:"), "potion should not show Base power:\n{out}");
         assert!(!out.contains("Enchant:"), "potion should not show Enchant:\n{out}");
         assert!(!out.contains("Effective:"), "potion should not show Effective:\n{out}");
+        assert!(!out.contains("Affects:"), "potion has no affects line (single-use):\n{out}");
+    }
+
+    #[test]
+    fn render_item_detail_weapon_shows_affects_attack_power() {
+        colored::control::set_override(false);
+        let it = item_with("Iron Sword", ItemSlot::Weapon, 5, Rarity::Common, 0);
+        let out = render_item_detail(&it, ItemSource::Equipped);
+        assert!(out.contains("Affects:"), "weapon must show Affects line:\n{out}");
+        assert!(out.contains("attack_power"), "weapon affects attack_power:\n{out}");
+    }
+
+    #[test]
+    fn render_item_detail_armor_shows_affects_defense() {
+        colored::control::set_override(false);
+        let it = item_with("Plate Mail", ItemSlot::Armor, 5, Rarity::Common, 0);
+        let out = render_item_detail(&it, ItemSource::Equipped);
+        assert!(out.contains("Affects:"), "armor must show Affects line:\n{out}");
+        assert!(out.contains("defense"), "armor affects defense:\n{out}");
+    }
+
+    #[test]
+    fn render_item_detail_ring_shows_affects_defense() {
+        colored::control::set_override(false);
+        let it = item_with("Ring of Vigor", ItemSlot::Ring, 5, Rarity::Common, 0);
+        let out = render_item_detail(&it, ItemSource::Equipped);
+        assert!(out.contains("Affects:"), "ring must show Affects line:\n{out}");
+        assert!(out.contains("defense"), "ring affects defense:\n{out}");
+    }
+
+    #[test]
+    fn gear_bonus_naked_character_zero_both() {
+        use crate::character::{Character, Class, Race};
+        let c = Character::new("Test".to_string(), Class::Warrior, Race::Human);
+        let b = gear_bonus(&c);
+        assert_eq!(b.attack, 0);
+        assert_eq!(b.defense, 0);
+        assert_eq!(b.attack_breakdown, "");
+        assert_eq!(b.defense_breakdown, "");
+    }
+
+    #[test]
+    fn gear_bonus_full_loadout_sums_correctly() {
+        use crate::character::{Character, Class, Race};
+        let mut c = Character::new("Test".to_string(), Class::Warrior, Race::Human);
+        let mut weapon = item_with("W", ItemSlot::Weapon, 10, Rarity::Rare, 3);
+        weapon.enchant_level = 3;
+        let mut armor = item_with("A", ItemSlot::Armor, 8, Rarity::Common, 2);
+        armor.enchant_level = 2;
+        let mut ring = item_with("R", ItemSlot::Ring, 4, Rarity::Common, 0);
+        ring.enchant_level = 0;
+        c.weapon = Some(weapon);
+        c.armor = Some(armor);
+        c.ring = Some(ring);
+        let b = gear_bonus(&c);
+        assert_eq!(b.attack, 13, "weapon 10 + 3 enchant");
+        assert_eq!(b.defense, 14, "armor 10 + ring 4");
+        assert!(b.attack_breakdown.contains("weapon 10 +3 enchant"));
+        assert!(b.defense_breakdown.contains("armor 8 +2 enchant"));
+        assert!(b.defense_breakdown.contains("ring 4"));
+        assert!(!b.defense_breakdown.contains("ring 4 +0"), "no-enchant ring should not show enchant note");
     }
 
     #[test]
