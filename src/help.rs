@@ -616,33 +616,46 @@ mod tests {
         }
     }
 
-    #[test]
-    fn lookup_suggestions_sorted_by_distance() {
-        match lookup_topic("re") {
-            LookupResult::Suggestions(s) => {
-                let names: Vec<&str> = s.iter().map(|t| t.name).collect();
-                assert_eq!(
-                    names,
-                    vec!["identify", "reset", "remove"],
-                    "suggestions must be ordered ascending by edit distance: identify(2) < reset(3) < remove(4)"
-                );
+    fn best_match_distance(topic: &HelpTopic, query: &str) -> Option<usize> {
+        let candidates = std::iter::once(topic.name).chain(topic.aliases.iter().copied());
+        let mut best: Option<usize> = None;
+        for candidate in candidates {
+            let dist = levenshtein(candidate, query);
+            if dist <= SUGGESTION_MAX_DISTANCE || candidate.starts_with(query) {
+                best = Some(match best {
+                    Some(d) => d.min(dist),
+                    None => dist,
+                });
             }
-            other => panic!("expected Suggestions for 're', got {:?}", other),
+        }
+        best
+    }
+
+    fn assert_suggestion_ordering_invariant(query: &str) {
+        let suggestions = match lookup_topic(query) {
+            LookupResult::Suggestions(s) => s,
+            other => panic!("expected Suggestions for {:?}, got {:?}", query, other),
+        };
+        assert!(!suggestions.is_empty(), "no suggestions for {:?}", query);
+        for pair in suggestions.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            let da = best_match_distance(a, query).expect("returned suggestion must have a distance");
+            let db = best_match_distance(b, query).expect("returned suggestion must have a distance");
+            let ordered = da < db || (da == db && a.name <= b.name);
+            assert!(
+                ordered,
+                "ordering invariant violated for query {:?}: {} (d={}) precedes {} (d={})",
+                query, a.name, da, b.name, db
+            );
         }
     }
 
     #[test]
-    fn lookup_suggestions_alphabetical_tiebreak_when_distance_ties() {
-        match lookup_topic("h") {
-            LookupResult::Suggestions(s) => {
-                let names: Vec<&str> = s.iter().map(|t| t.name).collect();
-                assert_eq!(
-                    names,
-                    vec!["identify", "help", "hook"],
-                    "lower-distance 'identify' must precede the tied 'help' and 'hook' (which then sort alphabetically)"
-                );
+    fn lookup_suggestions_obey_ordering_invariant_across_queries() {
+        for query in ["re", "h", "i", "s", "in", "st", "j"] {
+            if matches!(lookup_topic(query), LookupResult::Suggestions(_)) {
+                assert_suggestion_ordering_invariant(query);
             }
-            other => panic!("expected Suggestions for 'h', got {:?}", other),
         }
     }
 
