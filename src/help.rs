@@ -22,6 +22,7 @@ pub const CANONICAL_TOPIC_ORDER: &[&str] = &[
     "init",
     "status",
     "inventory",
+    "identify",
     "journal",
     "tick",
     "hook",
@@ -70,24 +71,38 @@ const TOPICS: &[HelpTopic] = &[
         aliases: &["stat"],
         summary: "View your character sheet.",
         usage: "sq status",
-        details: "Prints your name, class, race, level and XP bar, current/max HP, gold, prestige tier, equipped weapon/armor/ring, and the zone derived from your current directory, followed by the same inventory listing `sq inventory` would produce — a single-screen snapshot of your character before equipping or selling. The alias `sq stat` is identical to `sq status`.",
+        details: "Prints your name, class, race, level and XP bar, current/max HP, gold, prestige tier, equipped weapon/armor/ring, and the zone derived from your current directory, followed by the same inventory listing `sq inventory` would produce — a single-screen snapshot of your character before equipping or selling. The alias `sq stat` is identical to `sq status`. To drill into a single equipped or inventory item, use `sq identify <name>`.",
         examples: &[
             "sq status",
             "sq stat",
         ],
-        related: &["inventory", "journal"],
+        related: &["inventory", "identify", "journal"],
     },
     HelpTopic {
         name: "inventory",
         aliases: &["inv"],
         summary: "Check your unequipped items.",
         usage: "sq inventory",
-        details: "Lists every unequipped item you carry — weapons, armor, rings, and potions — each with name, slot, power, and rarity. Inventory is hard-capped at 20 slots: when new loot would overflow, the weakest item is dropped automatically to make room. To act on items, use `sq wield <name>` for weapons, `sq equip <name>` for armor or rings, `sq drink <name>` for potions, `sq drop <name>` to discard permanently, or `sq sell <number|name>` from your home directory to convert an item into gold at half its shop price.",
+        details: "Lists every unequipped item you carry — weapons, armor, rings, and potions — each with name, slot, power, and rarity. Inventory is hard-capped at 20 slots: when new loot would overflow, the weakest item is dropped automatically to make room. To act on items, use `sq wield <name>` for weapons, `sq equip <name>` for armor or rings, `sq drink <name>` for potions, `sq drop <name>` to discard permanently, or `sq sell <number|name>` from your home directory to convert an item into gold at half its shop price. For a deep-dive on any single item — base power, enchant level, effective power, buy price, sell breakdown, and where it lives — use `sq identify <name>`.",
         examples: &[
             "sq inventory",
             "sq inv",
         ],
-        related: &["status", "drop", "equip", "wield", "drink", "enchant"],
+        related: &["status", "identify", "drop", "equip", "wield", "drink", "enchant"],
+    },
+    HelpTopic {
+        name: "identify",
+        aliases: &["id"],
+        summary: "Show full stats and modifiers for an inventory or equipped item.",
+        usage: "sq identify <item name>",
+        details: "Prints a card-style detail block for one item: name, slot, rarity, base power, enchant tag and effective power (when enchanted), buy price, sell-value breakdown (base + enchant bonus = total), and where the item lives (Equipped in a specific slot, or `Inventory slot N of M`). Read-only — no state is mutated and no save is written, so unlike `sq enchant`, `sq buy`, or `sq sell` there is no home-directory restriction; identify works from anywhere. Name matching mirrors `sq equip`, `sq drop`, and `sq sell`: an exact name always matches, case-insensitive substrings match (e.g. `scythe` finds `Scythe of Segfault`), and multi-word queries match when every typed token appears anywhere in the item name (e.g. `ring fortune` finds `Ring of Fortune`). The lookup searches BOTH equipped slots (weapon, armor, ring, in that order) and inventory (in inventory order); equipped matches come first in the candidate list, so when the same name appears in both places the equipped copy is shown by default. Append `.1`, `.2`, … to disambiguate (e.g. `sq identify scythe.2` shows the inventory copy when one is also equipped). Potions show a `Heals:` line instead of base/effective power and skip the enchant block entirely.",
+        examples: &[
+            "sq identify scythe",
+            "sq id ring fortune",
+            "sq identify pike.2",
+            "sq identify common potion",
+        ],
+        related: &["inventory", "status", "enchant", "sell"],
     },
     HelpTopic {
         name: "journal",
@@ -608,8 +623,8 @@ mod tests {
                 let names: Vec<&str> = s.iter().map(|t| t.name).collect();
                 assert_eq!(
                     names,
-                    vec!["reset", "remove"],
-                    "lower-distance 'reset' must precede higher-distance 'remove'"
+                    vec!["identify", "reset", "remove"],
+                    "suggestions must be ordered ascending by edit distance: identify(2) < reset(3) < remove(4)"
                 );
             }
             other => panic!("expected Suggestions for 're', got {:?}", other),
@@ -623,8 +638,8 @@ mod tests {
                 let names: Vec<&str> = s.iter().map(|t| t.name).collect();
                 assert_eq!(
                     names,
-                    vec!["help", "hook"],
-                    "tied distances must sort by canonical name ascending"
+                    vec!["identify", "help", "hook"],
+                    "lower-distance 'identify' must precede the tied 'help' and 'hook' (which then sort alphabetically)"
                 );
             }
             other => panic!("expected Suggestions for 'h', got {:?}", other),

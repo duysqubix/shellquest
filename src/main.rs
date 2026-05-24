@@ -111,6 +111,12 @@ enum Commands {
         /// Equipped item name (partial match)
         name: Vec<String>,
     },
+    /// Show full stats and modifiers for an inventory or equipped item
+    #[clap(visible_alias = "id")]
+    Identify {
+        /// Item name (or partial match); append `.N` to pick the N-th match
+        name: Vec<String>,
+    },
     /// Drink a potion from inventory to restore HP
     Drink {
         /// Item name (or partial match)
@@ -148,6 +154,7 @@ fn main() {
         Commands::Buy { number } => cmd_buy(number),
         Commands::Sell { item } => cmd_sell(&item.join(" ")),
         Commands::Enchant { name } => cmd_enchant(&name.join(" ")),
+        Commands::Identify { name } => cmd_identify(&name.join(" ")),
         Commands::Equip { name } => cmd_equip(&name.join(" ")),
         Commands::Wield { name } => cmd_wield(&name.join(" ")),
         Commands::Remove { name } => cmd_remove(&name.join(" ")),
@@ -1003,6 +1010,12 @@ enum EquippedSlot {
     Ring,
 }
 
+#[derive(Debug, PartialEq)]
+enum ItemLookup {
+    Equipped(EquippedSlot),
+    Inventory(usize),
+}
+
 fn find_equipped_slot_to_enchant(game: &state::GameState, query: &str) -> Result<EquippedSlot, &'static str> {
     let q = query.to_lowercase();
     let mut matches: Vec<EquippedSlot> = Vec::new();
@@ -1149,6 +1162,64 @@ fn cmd_enchant(query: &str) {
     }
 }
 
+fn cmd_identify(query: &str) {
+    if query.is_empty() {
+        eprintln!(
+            "{} Usage: {} (alias: {})",
+            "❌".bold(),
+            "sq identify <item name>".cyan(),
+            "sq id <item name>".cyan()
+        );
+        return;
+    }
+
+    let game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    let lookup = match find_inventory_or_equipped_item(&game, query) {
+        Ok(Some(l)) => l,
+        Ok(None) => {
+            println!(
+                "{} No item matching {} in your inventory or equipped slots.",
+                "⚠️".yellow(),
+                format!("\"{}\"", query).white().bold()
+            );
+            return;
+        }
+        Err(msg) => {
+            println!("{} {}", "⚠️".yellow(), msg);
+            return;
+        }
+    };
+
+    let total_inv = game.character.inventory.len();
+    let (item_ref, source) = match lookup {
+        ItemLookup::Equipped(EquippedSlot::Weapon) => (
+            game.character.weapon.as_ref().unwrap(),
+            display::ItemSource::Equipped,
+        ),
+        ItemLookup::Equipped(EquippedSlot::Armor) => (
+            game.character.armor.as_ref().unwrap(),
+            display::ItemSource::Equipped,
+        ),
+        ItemLookup::Equipped(EquippedSlot::Ring) => (
+            game.character.ring.as_ref().unwrap(),
+            display::ItemSource::Equipped,
+        ),
+        ItemLookup::Inventory(idx) => (
+            &game.character.inventory[idx],
+            display::ItemSource::Inventory { index: idx + 1, total: total_inv },
+        ),
+    };
+
+    display::print_item_detail(item_ref, source);
+}
+
 fn fuzzy_match_name(item_name: &str, query: &str) -> bool {
     let name_lower = item_name.to_lowercase();
     query
@@ -1201,6 +1272,62 @@ fn find_inventory_item(game: &state::GameState, name: &str) -> Result<Option<usi
             query,
             query,
             matches.len()
+        )),
+    }
+}
+
+fn equipped_item_name_matches(item: &character::Item, query: &str) -> bool {
+    let q = query.to_lowercase();
+    let name_lower = item.name.to_lowercase();
+    name_lower == q || name_lower.contains(&q) || fuzzy_match_name(&item.name, query)
+}
+
+fn find_inventory_or_equipped_item(
+    game: &state::GameState,
+    name: &str,
+) -> Result<Option<ItemLookup>, String> {
+    let (query, n) = if let Some(dot_pos) = name.rfind('.') {
+        let suffix = &name[dot_pos + 1..];
+        match suffix.parse::<usize>() {
+            Ok(0) => {
+                return Err("Item index must be 1 or higher (e.g. scythe.1)".to_string());
+            }
+            Ok(n) => (&name[..dot_pos], n),
+            Err(_) => (name, 1usize),
+        }
+    } else {
+        (name, 1usize)
+    };
+
+    let mut candidates: Vec<ItemLookup> = Vec::new();
+    if let Some(w) = &game.character.weapon {
+        if equipped_item_name_matches(w, query) {
+            candidates.push(ItemLookup::Equipped(EquippedSlot::Weapon));
+        }
+    }
+    if let Some(a) = &game.character.armor {
+        if equipped_item_name_matches(a, query) {
+            candidates.push(ItemLookup::Equipped(EquippedSlot::Armor));
+        }
+    }
+    if let Some(r) = &game.character.ring {
+        if equipped_item_name_matches(r, query) {
+            candidates.push(ItemLookup::Equipped(EquippedSlot::Ring));
+        }
+    }
+    for idx in find_inventory_items(game, query) {
+        candidates.push(ItemLookup::Inventory(idx));
+    }
+
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+
+    match candidates.into_iter().nth(n - 1) {
+        Some(c) => Ok(Some(c)),
+        None => Err(format!(
+            "Only matching items below '{}.{}' index — use a lower number.",
+            query, n
         )),
     }
 }
@@ -1601,6 +1728,47 @@ mod tests {
     }
 
     #[test]
+    fn parser_identify_canonical_yields_identify_variant() {
+        let cli = Cli::try_parse_from(["sq", "identify", "scythe"])
+            .expect("'sq identify scythe' must parse");
+        match cli.command {
+            Commands::Identify { name } => {
+                assert_eq!(name, vec!["scythe".to_string()]);
+            }
+            _ => panic!("expected Commands::Identify"),
+        }
+    }
+
+    #[test]
+    fn parser_id_alias_routes_to_identify_variant() {
+        let cli = Cli::try_parse_from(["sq", "id", "ring", "of", "fortune"])
+            .expect("'sq id ring of fortune' must parse via the `id` alias");
+        match cli.command {
+            Commands::Identify { name } => {
+                assert_eq!(name, vec!["ring".to_string(), "of".to_string(), "fortune".to_string()]);
+            }
+            _ => panic!("expected Commands::Identify via alias"),
+        }
+    }
+
+    #[test]
+    fn help_topic_identify_resolves_canonical_and_id_alias() {
+        use help::{lookup_topic, LookupResult};
+
+        match lookup_topic("identify") {
+            LookupResult::Found(t) => assert_eq!(t.name, "identify"),
+            other => panic!("expected Found(identify), got {:?}", other),
+        }
+        match lookup_topic("id") {
+            LookupResult::Found(t) => assert_eq!(
+                t.name, "identify",
+                "alias 'id' must resolve to canonical 'identify'"
+            ),
+            other => panic!("expected Found(identify) via 'id', got {:?}", other),
+        }
+    }
+
+    #[test]
     fn parser_dash_dash_help_still_routes_to_clap() {
         let err = match Cli::try_parse_from(["sq", "--help"]) {
             Ok(_) => panic!("'sq --help' must short-circuit on clap's DisplayHelp path, not parse"),
@@ -1753,6 +1921,167 @@ mod tests {
         assert_eq!(r.sold_count, 1);
         assert!(r.kept.is_empty());
         assert_eq!(r.total_price, expected_price);
+    }
+
+    fn state_with_loadout(
+        weapon: Option<Item>,
+        armor: Option<Item>,
+        ring: Option<Item>,
+        inventory: Vec<Item>,
+    ) -> state::GameState {
+        let mut s = make_state_with_items(inventory);
+        s.character.weapon = weapon;
+        s.character.armor = armor;
+        s.character.ring = ring;
+        s
+    }
+
+    #[test]
+    fn identify_lookup_matches_equipped_weapon_by_exact_name() {
+        let s = state_with_loadout(
+            Some(item("Scythe of Segfault")),
+            None,
+            None,
+            vec![],
+        );
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "Scythe of Segfault"),
+            Ok(Some(ItemLookup::Equipped(EquippedSlot::Weapon))),
+        );
+    }
+
+    #[test]
+    fn identify_lookup_matches_equipped_armor_by_substring() {
+        let s = state_with_loadout(
+            None,
+            Some(item("Leather Cuirass")),
+            None,
+            vec![],
+        );
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "leather"),
+            Ok(Some(ItemLookup::Equipped(EquippedSlot::Armor))),
+        );
+    }
+
+    #[test]
+    fn identify_lookup_matches_equipped_ring_via_fuzzy_tokens() {
+        let s = state_with_loadout(
+            None,
+            None,
+            Some(item("Ring of Fortune")),
+            vec![],
+        );
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "ring fortune"),
+            Ok(Some(ItemLookup::Equipped(EquippedSlot::Ring))),
+        );
+    }
+
+    #[test]
+    fn identify_lookup_matches_inventory_item_by_substring() {
+        let s = make_state_with_items(vec![item("Rusty Pipe")]);
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "rusty"),
+            Ok(Some(ItemLookup::Inventory(0))),
+        );
+    }
+
+    #[test]
+    fn identify_lookup_matches_inventory_via_fuzzy_tokens() {
+        let s = make_state_with_items(vec![item("Big Sword of Awesome")]);
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "big of"),
+            Ok(Some(ItemLookup::Inventory(0))),
+        );
+    }
+
+    #[test]
+    fn identify_lookup_returns_none_on_no_match() {
+        let s = state_with_loadout(
+            Some(item("Pike of Ping")),
+            None,
+            None,
+            vec![item("Rusty Pipe")],
+        );
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "hammer"),
+            Ok(None),
+        );
+    }
+
+    #[test]
+    fn identify_lookup_equipped_wins_over_inventory_by_default() {
+        let s = state_with_loadout(
+            Some(item("Scythe of Segfault")),
+            None,
+            None,
+            vec![item("Scythe of Segfault")],
+        );
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "scythe"),
+            Ok(Some(ItemLookup::Equipped(EquippedSlot::Weapon))),
+        );
+    }
+
+    #[test]
+    fn identify_lookup_dot_two_picks_inventory_after_equipped() {
+        let s = state_with_loadout(
+            Some(item("Scythe of Segfault")),
+            None,
+            None,
+            vec![item("Scythe of Segfault")],
+        );
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "scythe.2"),
+            Ok(Some(ItemLookup::Inventory(0))),
+        );
+    }
+
+    #[test]
+    fn identify_lookup_dot_three_with_only_two_matches_returns_err() {
+        let s = state_with_loadout(
+            Some(item("Pike of Ping")),
+            None,
+            None,
+            vec![item("Pike of Ping")],
+        );
+        let result = find_inventory_or_equipped_item(&s, "pike.3");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn identify_lookup_dot_zero_returns_err() {
+        let s = make_state_with_items(vec![item("Rusty Pipe")]);
+        let result = find_inventory_or_equipped_item(&s, "rusty.0");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("1 or higher"));
+    }
+
+    #[test]
+    fn identify_lookup_orders_equipped_before_inventory_across_slots() {
+        let s = state_with_loadout(
+            Some(item("Spike Mace")),
+            Some(item("Spike Plate")),
+            Some(item("Spike Ring")),
+            vec![item("Spike Dagger")],
+        );
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "spike"),
+            Ok(Some(ItemLookup::Equipped(EquippedSlot::Weapon))),
+        );
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "spike.2"),
+            Ok(Some(ItemLookup::Equipped(EquippedSlot::Armor))),
+        );
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "spike.3"),
+            Ok(Some(ItemLookup::Equipped(EquippedSlot::Ring))),
+        );
+        assert_eq!(
+            find_inventory_or_equipped_item(&s, "spike.4"),
+            Ok(Some(ItemLookup::Inventory(0))),
+        );
     }
 }
 

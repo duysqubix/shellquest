@@ -358,6 +358,132 @@ fn slot_section_label(slot: ItemSlot) -> &'static str {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ItemSource {
+    Equipped,
+    Inventory { index: usize, total: usize },
+}
+
+fn rarity_label(rarity: &Rarity) -> String {
+    let text = format!("{}", rarity);
+    match rarity {
+        Rarity::Common => text.dimmed().to_string(),
+        Rarity::Uncommon => text.white().bold().to_string(),
+        Rarity::Rare => text.green().bold().to_string(),
+        Rarity::Epic => text.magenta().bold().to_string(),
+        Rarity::Legendary => text.yellow().bold().on_black().to_string(),
+    }
+}
+
+const ITEM_DETAIL_RULE_WIDTH: usize = 42;
+
+pub fn render_item_detail(item: &Item, source: ItemSource) -> String {
+    use crate::loot;
+
+    let mut out = String::new();
+    let rule = "─".repeat(ITEM_DETAIL_RULE_WIDTH).dimmed().to_string();
+
+    out.push('\n');
+    out.push_str(&format!("{}\n", "🔍 Item Details".bold().cyan()));
+    out.push_str(&format!("{}\n", rule));
+
+    let (name_styled, _) = format_item_rarity(&item.name, &item.rarity);
+    let rarity_styled = rarity_label(&item.rarity);
+    out.push_str(&format!(
+        "  {}        {}\n",
+        "Name:".bold(),
+        name_styled
+    ));
+    out.push_str(&format!(
+        "  {}        {}\n",
+        "Slot:".bold(),
+        format!("{}", item.slot)
+    ));
+    out.push_str(&format!(
+        "  {}      {}\n",
+        "Rarity:".bold(),
+        rarity_styled
+    ));
+
+    let is_potion = matches!(item.slot, ItemSlot::Potion);
+
+    if is_potion {
+        out.push_str(&format!(
+            "  {}       {}\n",
+            "Heals:".bold(),
+            format!("{}", item.power).green().bold()
+        ));
+    } else {
+        out.push_str(&format!(
+            "  {}  {}\n",
+            "Base power:".bold(),
+            format!("+{}", item.power).white().bold()
+        ));
+        if item.enchant_level > 0 {
+            out.push_str(&format!(
+                "  {}     {}\n",
+                "Enchant:".bold(),
+                enchant_tag(item.enchant_level).trim_start()
+            ));
+            let eff = item.power + item.enchant_level as i32;
+            out.push_str(&format!(
+                "  {}   {}  {}\n",
+                "Effective:".bold(),
+                format!("+{}", eff).yellow().bold(),
+                format!("(base {} + enchant {})", item.power, item.enchant_level).dimmed()
+            ));
+        }
+    }
+
+    let buy = loot::item_price(item);
+    out.push_str(&format!(
+        "  {}   {}\n",
+        "Buy price:".bold(),
+        format!("{} gold", buy).yellow()
+    ));
+
+    let total_sell = loot::sell_price(item);
+    if item.enchant_level > 0 {
+        let mut base_item = item.clone();
+        base_item.enchant_level = 0;
+        let base_sell = loot::sell_price(&base_item);
+        let enchant_bonus = total_sell.saturating_sub(base_sell);
+        out.push_str(&format!(
+            "  {}  {} base + {} enchant bonus = {}\n",
+            "Sell value:".bold(),
+            format!("{} gold", base_sell).yellow(),
+            format!("{} gold", enchant_bonus).yellow(),
+            format!("{} gold", total_sell).yellow().bold()
+        ));
+    } else {
+        out.push_str(&format!(
+            "  {}  {}\n",
+            "Sell value:".bold(),
+            format!("{} gold", total_sell).yellow().bold()
+        ));
+    }
+
+    let source_str = match source {
+        ItemSource::Equipped => format!("Equipped ({} slot)", item.slot),
+        ItemSource::Inventory { index, total } => {
+            format!("Inventory slot {} of {}", index, total)
+        }
+    };
+    out.push_str(&format!(
+        "  {}      {}\n",
+        "Source:".bold(),
+        source_str.cyan()
+    ));
+
+    out.push_str(&format!("{}\n", rule));
+    out.push('\n');
+    out
+}
+
+pub fn print_item_detail(item: &Item, source: ItemSource) {
+    print!("{}", render_item_detail(item, source));
+}
+
 pub fn enchant_tag(level: u32) -> String {
     if level == 0 {
         return String::new();
@@ -701,5 +827,131 @@ mod tests {
         let t5 = enchant_tag(5);
         let distinct = std::collections::HashSet::from([t1.clone(), t2.clone(), t3.clone(), t4.clone(), t5.clone()]);
         assert_eq!(distinct.len(), 5, "all five tag styles should be visually distinct");
+    }
+
+    fn item_with(name: &str, slot: ItemSlot, power: i32, rarity: Rarity, enchant_level: u32) -> Item {
+        Item { name: name.to_string(), slot, power, rarity, enchant_level }
+    }
+
+    #[test]
+    fn render_item_detail_common_weapon_shows_core_fields() {
+        colored::control::set_override(false);
+        let it = item_with("Iron Sword", ItemSlot::Weapon, 5, Rarity::Common, 0);
+        let out = render_item_detail(&it, ItemSource::Inventory { index: 3, total: 12 });
+        assert!(out.contains("🔍 Item Details"), "header missing:\n{out}");
+        assert!(out.contains("Name:"));
+        assert!(out.contains("Iron Sword"));
+        assert!(out.contains("Slot:"));
+        assert!(out.contains("Weapon"));
+        assert!(out.contains("Rarity:"));
+        assert!(out.contains("Common"), "rarity word 'Common' must appear:\n{out}");
+        assert!(!out.contains("[Common]"), "rarity should render as plain word, not as bracketed tag:\n{out}");
+        assert!(out.contains("Base power:"));
+        assert!(out.contains("+5"));
+        assert!(out.contains("Buy price:"));
+        assert!(out.contains("Sell value:"));
+        assert!(out.contains("Source:"));
+        assert!(out.contains("Inventory slot 3 of 12"));
+        assert!(!out.contains("Enchant:"), "common item should not show Enchant line:\n{out}");
+        assert!(!out.contains("Effective:"), "common item should not show Effective line:\n{out}");
+        assert!(!out.contains("Heals:"), "weapon should not show Heals line:\n{out}");
+    }
+
+    #[test]
+    fn render_item_detail_enchanted_epic_ring_shows_enchant_and_effective() {
+        colored::control::set_override(false);
+        let it = item_with("Ring of Fortune", ItemSlot::Ring, 12, Rarity::Epic, 3);
+        let out = render_item_detail(&it, ItemSource::Equipped);
+        assert!(out.contains("Ring of Fortune"));
+        assert!(out.contains("Epic"));
+        assert!(!out.contains("[Epic]"), "rarity should render as plain word, not as bracketed tag:\n{out}");
+        assert!(out.contains("Base power:"));
+        assert!(out.contains("+12"));
+        assert!(out.contains("Enchant:"));
+        assert!(out.contains("[Enchanted +3]"));
+        assert!(out.contains("Effective:"));
+        assert!(out.contains("+15"));
+        assert!(out.contains("base 12 + enchant 3"));
+        assert!(out.contains("Sell value:"));
+        assert!(out.contains("base + "));
+        assert!(out.contains("enchant bonus = "));
+        assert!(out.contains("Source:"));
+        assert!(out.contains("Equipped (Ring slot)"));
+    }
+
+    #[test]
+    fn render_item_detail_potion_shows_heals_not_enchant() {
+        colored::control::set_override(false);
+        let it = item_with("Common Potion", ItemSlot::Potion, 5, Rarity::Common, 0);
+        let out = render_item_detail(&it, ItemSource::Inventory { index: 7, total: 20 });
+        assert!(out.contains("Common Potion"));
+        assert!(out.contains("Slot:"));
+        assert!(out.contains("Potion"));
+        assert!(out.contains("Heals:"));
+        assert!(out.contains("Buy price:"));
+        assert!(out.contains("Sell value:"));
+        assert!(out.contains("Inventory slot 7 of 20"));
+        assert!(!out.contains("Base power:"), "potion should not show Base power:\n{out}");
+        assert!(!out.contains("Enchant:"), "potion should not show Enchant:\n{out}");
+        assert!(!out.contains("Effective:"), "potion should not show Effective:\n{out}");
+    }
+
+    #[test]
+    fn render_item_detail_equipped_source_names_slot_per_item_kind() {
+        colored::control::set_override(false);
+        let weapon = item_with("Pike", ItemSlot::Weapon, 6, Rarity::Common, 0);
+        let armor = item_with("Plate", ItemSlot::Armor, 6, Rarity::Common, 0);
+        let ring = item_with("Band", ItemSlot::Ring, 6, Rarity::Common, 0);
+        assert!(render_item_detail(&weapon, ItemSource::Equipped).contains("Equipped (Weapon slot)"));
+        assert!(render_item_detail(&armor, ItemSource::Equipped).contains("Equipped (Armor slot)"));
+        assert!(render_item_detail(&ring, ItemSource::Equipped).contains("Equipped (Ring slot)"));
+    }
+
+    #[test]
+    fn render_item_detail_aligns_all_value_columns() {
+        colored::control::set_override(false);
+        let it = item_with("Pike", ItemSlot::Weapon, 6, Rarity::Rare, 2);
+        let out = render_item_detail(&it, ItemSource::Equipped);
+        let labels = [
+            "Name:",
+            "Slot:",
+            "Rarity:",
+            "Base power:",
+            "Enchant:",
+            "Effective:",
+            "Buy price:",
+            "Sell value:",
+            "Source:",
+        ];
+        for line in out.lines() {
+            for label in labels {
+                if let Some(idx) = line.find(label) {
+                    let after_label = idx + label.len();
+                    let trimmed_tail = &line[after_label..];
+                    let value_col = after_label
+                        + trimmed_tail.chars().take_while(|c| *c == ' ').count();
+                    assert_eq!(
+                        value_col, 15,
+                        "label {:?} should align its value at column 15, got col {} on line:\n{}",
+                        label, value_col, line
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn render_item_detail_sell_value_math_matches_loot_helper() {
+        colored::control::set_override(false);
+        let it = item_with("Pike of Ping", ItemSlot::Weapon, 8, Rarity::Uncommon, 2);
+        let out = render_item_detail(&it, ItemSource::Equipped);
+        let buy = crate::loot::item_price(&it);
+        let total = crate::loot::sell_price(&it);
+        let base = buy / 2;
+        let bonus = 2 * (buy / 5);
+        assert_eq!(base + bonus, total, "test fixture sanity");
+        assert!(out.contains(&format!("{} gold base", base)), "missing base sell:\n{out}");
+        assert!(out.contains(&format!("{} gold enchant", bonus)), "missing bonus sell:\n{out}");
+        assert!(out.contains(&format!("= {} gold", total)), "missing total sell:\n{out}");
     }
 }
