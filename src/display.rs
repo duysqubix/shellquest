@@ -319,6 +319,21 @@ pub fn print_status(char: &Character, permadeath: bool) {
         "INT:".bold(),
         format!("{}", char.intelligence).blue()
     );
+
+    let base_atk = char.strength + char.dexterity / 2;
+    let base_def = char.dexterity / 3;
+    let bonus = gear_bonus(char);
+    println!(
+        "{}  {} {} {}  {} {} {}",
+        "│".dimmed(),
+        "ATK:".bold(),
+        format!("{}", base_atk).red().bold(),
+        format!("(+{})", bonus.attack).dimmed(),
+        "DEF:".bold(),
+        format!("{}", base_def).green().bold(),
+        format!("(+{})", bonus.defense).dimmed(),
+    );
+
     println!(
         "{}  {} {}",
         "│".dimmed(),
@@ -348,7 +363,6 @@ pub fn print_status(char: &Character, permadeath: bool) {
     println!("{}  {} {}", "│".dimmed(), "Armor: ".bold(), armor_str);
     println!("{}  {} {}", "│".dimmed(), "Ring:  ".bold(), ring_str);
 
-    let bonus = gear_bonus(char);
     if bonus.attack > 0 || bonus.defense > 0 {
         println!("{}", "│".dimmed());
         println!("{}  {}", "│".dimmed(), "Gear bonuses:".bold());
