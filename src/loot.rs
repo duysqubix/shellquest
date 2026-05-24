@@ -23,192 +23,221 @@ fn roll_rarity(rng: &mut impl Rng) -> Rarity {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  COMMON ITEMS — the bread and butter (lots of variety)
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
+//  COMMON ITEMS - the everyday clutter (mundane office supplies and stale snacks)
+// ===============================================================
 
 const COMMON: &[LootEntry] = &[
     // Weapons
-    LootEntry { name: "Rusty Pipe", slot: ItemSlot::Weapon, power_range: (1, 3) },
-    LootEntry { name: "Keyboard of Smiting", slot: ItemSlot::Weapon, power_range: (2, 4) },
-    LootEntry { name: "Mouse of Clicking", slot: ItemSlot::Weapon, power_range: (1, 3) },
-    LootEntry { name: "Broken USB Stick", slot: ItemSlot::Weapon, power_range: (1, 2) },
-    LootEntry { name: "Ethernet Whip", slot: ItemSlot::Weapon, power_range: (2, 3) },
-    LootEntry { name: "Floppy Disk Shuriken", slot: ItemSlot::Weapon, power_range: (1, 4) },
-    LootEntry { name: "Paperclip of Poking", slot: ItemSlot::Weapon, power_range: (1, 2) },
-    LootEntry { name: "Sticky Note Dart", slot: ItemSlot::Weapon, power_range: (1, 3) },
-    LootEntry { name: "VGA Cable Lasso", slot: ItemSlot::Weapon, power_range: (2, 3) },
-    LootEntry { name: "CD-ROM Frisbee", slot: ItemSlot::Weapon, power_range: (1, 4) },
-    LootEntry { name: "Bent Antenna", slot: ItemSlot::Weapon, power_range: (1, 2) },
-    LootEntry { name: "Thermal Paste Spatula", slot: ItemSlot::Weapon, power_range: (1, 3) },
-    LootEntry { name: "Dead Battery Club", slot: ItemSlot::Weapon, power_range: (2, 4) },
-    LootEntry { name: "Tangled Earbuds Whip", slot: ItemSlot::Weapon, power_range: (1, 3) },
-    LootEntry { name: "HDMI Cable Nunchucks", slot: ItemSlot::Weapon, power_range: (2, 4) },
-    LootEntry { name: "Dust Bunny Launcher", slot: ItemSlot::Weapon, power_range: (1, 3) },
-    LootEntry { name: "404 Page Scroll", slot: ItemSlot::Weapon, power_range: (1, 2) },
-    LootEntry { name: "Cracked Screen Shard", slot: ItemSlot::Weapon, power_range: (2, 4) },
-    // Armor
-    LootEntry { name: "Hoodie of Comfort", slot: ItemSlot::Armor, power_range: (1, 3) },
-    LootEntry { name: "T-Shirt of Localhost", slot: ItemSlot::Armor, power_range: (1, 2) },
-    LootEntry { name: "Pajama Pants of WFH", slot: ItemSlot::Armor, power_range: (1, 3) },
-    LootEntry { name: "Flip-Flops of Friday Deploy", slot: ItemSlot::Armor, power_range: (1, 2) },
-    LootEntry { name: "Beanie of Bluetooth", slot: ItemSlot::Armor, power_range: (2, 3) },
-    LootEntry { name: "Lanyard of the Intern", slot: ItemSlot::Armor, power_range: (1, 2) },
-    LootEntry { name: "Cardigan of Code Review", slot: ItemSlot::Armor, power_range: (1, 3) },
-    LootEntry { name: "Socks of Static", slot: ItemSlot::Armor, power_range: (1, 2) },
-    LootEntry { name: "Conference Swag Tee", slot: ItemSlot::Armor, power_range: (1, 3) },
-    LootEntry { name: "Wrinkled Khakis of Standup", slot: ItemSlot::Armor, power_range: (2, 3) },
-    LootEntry { name: "Baseball Cap of Backwards Compat", slot: ItemSlot::Armor, power_range: (1, 3) },
-    LootEntry { name: "Crocs of Casual Friday", slot: ItemSlot::Armor, power_range: (1, 2) },
-    LootEntry { name: "Scarf of Spaghetti Code", slot: ItemSlot::Armor, power_range: (1, 3) },
-    LootEntry { name: "Wristband of Agile", slot: ItemSlot::Armor, power_range: (1, 2) },
-    LootEntry { name: "Sunglasses of Screen Glare", slot: ItemSlot::Armor, power_range: (1, 3) },
+    LootEntry { name: "Rusty Crowbar", slot: ItemSlot::Weapon, power_range: (1, 2) },
+    LootEntry { name: "Dull Letter Opener", slot: ItemSlot::Weapon, power_range: (1, 2) },
+    LootEntry { name: "Chipped Screwdriver", slot: ItemSlot::Weapon, power_range: (2, 3) },
+    LootEntry { name: "Bent Fork", slot: ItemSlot::Weapon, power_range: (2, 3) },
+    LootEntry { name: "Heavy Stapler", slot: ItemSlot::Weapon, power_range: (2, 3) },
+    LootEntry { name: "Wooden Ruler", slot: ItemSlot::Weapon, power_range: (2, 4) },
+    LootEntry { name: "Plastic Spork", slot: ItemSlot::Weapon, power_range: (3, 4) },
+    LootEntry { name: "Blunt Pencil", slot: ItemSlot::Weapon, power_range: (3, 4) },
+    // Armors
+    LootEntry { name: "Coffee-Stained Hoodie", slot: ItemSlot::Armor, power_range: (1, 2) },
+    LootEntry { name: "Tattered T-shirt", slot: ItemSlot::Armor, power_range: (1, 2) },
+    LootEntry { name: "Cardboard Box", slot: ItemSlot::Armor, power_range: (2, 3) },
+    LootEntry { name: "Plastic Poncho", slot: ItemSlot::Armor, power_range: (2, 3) },
+    LootEntry { name: "Thick Denim Jacket", slot: ItemSlot::Armor, power_range: (2, 3) },
+    LootEntry { name: "Old Sneakers", slot: ItemSlot::Armor, power_range: (2, 4) },
+    LootEntry { name: "Frayed Beanie", slot: ItemSlot::Armor, power_range: (3, 4) },
+    LootEntry { name: "Stained Apron", slot: ItemSlot::Armor, power_range: (3, 4) },
     // Rings
-    LootEntry { name: "Ring of Tab Completion", slot: ItemSlot::Ring, power_range: (1, 3) },
-    LootEntry { name: "Band of Backspace", slot: ItemSlot::Ring, power_range: (1, 2) },
-    LootEntry { name: "Loop of Localhost", slot: ItemSlot::Ring, power_range: (1, 3) },
-    LootEntry { name: "Rubber Band of Resilience", slot: ItemSlot::Ring, power_range: (1, 2) },
-    LootEntry { name: "Twist Tie of Binding", slot: ItemSlot::Ring, power_range: (1, 2) },
-    LootEntry { name: "Keyring of SSH", slot: ItemSlot::Ring, power_range: (1, 3) },
-    LootEntry { name: "Washer of the Machine Room", slot: ItemSlot::Ring, power_range: (1, 2) },
-    LootEntry { name: "Ring Pull of Red Bull", slot: ItemSlot::Ring, power_range: (1, 3) },
+    LootEntry { name: "Copper Washer", slot: ItemSlot::Ring, power_range: (1, 2) },
+    LootEntry { name: "Plastic Zip-tie", slot: ItemSlot::Ring, power_range: (1, 2) },
+    LootEntry { name: "Rubber Band", slot: ItemSlot::Ring, power_range: (2, 3) },
+    LootEntry { name: "String Loop", slot: ItemSlot::Ring, power_range: (2, 3) },
+    LootEntry { name: "Rusty Nut", slot: ItemSlot::Ring, power_range: (2, 3) },
+    LootEntry { name: "Glass Bead", slot: ItemSlot::Ring, power_range: (2, 4) },
+    LootEntry { name: "Paperclip Ring", slot: ItemSlot::Ring, power_range: (3, 4) },
+    LootEntry { name: "Soda Tab", slot: ItemSlot::Ring, power_range: (3, 4) },
     // Potions
-    LootEntry { name: "Potion of Coffee", slot: ItemSlot::Potion, power_range: (5, 10) },
-    LootEntry { name: "Vial of Green Tea", slot: ItemSlot::Potion, power_range: (3, 8) },
-    LootEntry { name: "Flask of Water (Stay Hydrated)", slot: ItemSlot::Potion, power_range: (4, 7) },
-    LootEntry { name: "Sip of Instant Noodle Broth", slot: ItemSlot::Potion, power_range: (3, 6) },
-    LootEntry { name: "Half a Granola Bar", slot: ItemSlot::Potion, power_range: (2, 5) },
-    LootEntry { name: "Stale Donut of the Breakroom", slot: ItemSlot::Potion, power_range: (3, 7) },
-    LootEntry { name: "Lukewarm La Croix", slot: ItemSlot::Potion, power_range: (2, 6) },
-    LootEntry { name: "Vending Machine Chips", slot: ItemSlot::Potion, power_range: (3, 6) },
-    LootEntry { name: "Day-Old Pizza Slice", slot: ItemSlot::Potion, power_range: (4, 8) },
-    LootEntry { name: "Mug of Decaf (Placebo)", slot: ItemSlot::Potion, power_range: (1, 4) },
+    LootEntry { name: "Lukewarm Water", slot: ItemSlot::Potion, power_range: (1, 2) },
+    LootEntry { name: "Stale Coffee", slot: ItemSlot::Potion, power_range: (1, 2) },
+    LootEntry { name: "Flat Soda", slot: ItemSlot::Potion, power_range: (2, 3) },
+    LootEntry { name: "Generic Energy Drink", slot: ItemSlot::Potion, power_range: (2, 3) },
+    LootEntry { name: "Tap Water", slot: ItemSlot::Potion, power_range: (2, 3) },
+    LootEntry { name: "Half-Empty Juice Box", slot: ItemSlot::Potion, power_range: (2, 4) },
+    LootEntry { name: "Cold Soup", slot: ItemSlot::Potion, power_range: (3, 4) },
+    LootEntry { name: "Expired Milk", slot: ItemSlot::Potion, power_range: (3, 4) },
 ];
 
-// ═══════════════════════════════════════════════════════════════
-//  UNCOMMON ITEMS — solid upgrades
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
+//  UNCOMMON ITEMS - solid upgrades (real tools and decent provisions)
+// ===============================================================
 
 const UNCOMMON: &[LootEntry] = &[
     // Weapons
-    LootEntry { name: "Sword of Regex", slot: ItemSlot::Weapon, power_range: (4, 7) },
-    LootEntry { name: "Axe of Grep", slot: ItemSlot::Weapon, power_range: (5, 8) },
-    LootEntry { name: "Dagger of Sed", slot: ItemSlot::Weapon, power_range: (3, 9) },
-    LootEntry { name: "Mace of Makefile", slot: ItemSlot::Weapon, power_range: (4, 8) },
-    LootEntry { name: "Bow of Bash", slot: ItemSlot::Weapon, power_range: (5, 7) },
-    LootEntry { name: "Halberd of HTTP", slot: ItemSlot::Weapon, power_range: (4, 9) },
-    LootEntry { name: "Spear of SQL", slot: ItemSlot::Weapon, power_range: (5, 8) },
-    LootEntry { name: "Crossbow of CORS", slot: ItemSlot::Weapon, power_range: (4, 8) },
-    LootEntry { name: "Flail of Flexbox", slot: ItemSlot::Weapon, power_range: (5, 7) },
-    LootEntry { name: "Pike of Ping", slot: ItemSlot::Weapon, power_range: (4, 7) },
-    LootEntry { name: "Morningstar of Middleware", slot: ItemSlot::Weapon, power_range: (5, 9) },
-    LootEntry { name: "Rapier of REST", slot: ItemSlot::Weapon, power_range: (5, 8) },
-    LootEntry { name: "Javelin of JSON", slot: ItemSlot::Weapon, power_range: (4, 8) },
-    LootEntry { name: "Sling of Svelte", slot: ItemSlot::Weapon, power_range: (4, 7) },
-    LootEntry { name: "Whip of Webpack", slot: ItemSlot::Weapon, power_range: (5, 9) },
-    // Armor
-    LootEntry { name: "Cloak of Stdout", slot: ItemSlot::Armor, power_range: (3, 6) },
-    LootEntry { name: "Vest of Version Control", slot: ItemSlot::Armor, power_range: (4, 7) },
-    LootEntry { name: "Gauntlets of Gzip", slot: ItemSlot::Armor, power_range: (3, 6) },
-    LootEntry { name: "Helmet of HTTPS", slot: ItemSlot::Armor, power_range: (4, 7) },
-    LootEntry { name: "Boots of Bootstrap", slot: ItemSlot::Armor, power_range: (3, 5) },
-    LootEntry { name: "Cape of CI/CD", slot: ItemSlot::Armor, power_range: (5, 7) },
-    LootEntry { name: "Pauldrons of PostgreSQL", slot: ItemSlot::Armor, power_range: (4, 7) },
-    LootEntry { name: "Bracers of Brotli", slot: ItemSlot::Armor, power_range: (3, 6) },
-    LootEntry { name: "Leggings of Linting", slot: ItemSlot::Armor, power_range: (4, 6) },
-    LootEntry { name: "Visor of Vim Motions", slot: ItemSlot::Armor, power_range: (4, 7) },
-    LootEntry { name: "Shoulderguards of Scrum", slot: ItemSlot::Armor, power_range: (3, 6) },
-    LootEntry { name: "Chaps of Caching", slot: ItemSlot::Armor, power_range: (4, 7) },
+    LootEntry { name: "Polished Wrench", slot: ItemSlot::Weapon, power_range: (3, 4) },
+    LootEntry { name: "Sharp Utility Knife", slot: ItemSlot::Weapon, power_range: (3, 4) },
+    LootEntry { name: "Weighted Hammer", slot: ItemSlot::Weapon, power_range: (3, 5) },
+    LootEntry { name: "Steel-Tipped Pen", slot: ItemSlot::Weapon, power_range: (4, 5) },
+    LootEntry { name: "Industrial Scissors", slot: ItemSlot::Weapon, power_range: (4, 5) },
+    LootEntry { name: "Brass Knuckles", slot: ItemSlot::Weapon, power_range: (4, 6) },
+    LootEntry { name: "Iron Pipe", slot: ItemSlot::Weapon, power_range: (5, 6) },
+    LootEntry { name: "Sharpened Spatula", slot: ItemSlot::Weapon, power_range: (5, 6) },
+    // Armors
+    LootEntry { name: "Reinforced Vest", slot: ItemSlot::Armor, power_range: (3, 4) },
+    LootEntry { name: "Padded Windbreaker", slot: ItemSlot::Armor, power_range: (3, 4) },
+    LootEntry { name: "Leather Apron", slot: ItemSlot::Armor, power_range: (3, 5) },
+    LootEntry { name: "Hard Hat", slot: ItemSlot::Armor, power_range: (4, 5) },
+    LootEntry { name: "Work Gloves", slot: ItemSlot::Armor, power_range: (4, 5) },
+    LootEntry { name: "Cargo Pants", slot: ItemSlot::Armor, power_range: (4, 6) },
+    LootEntry { name: "Steel-Toed Boots", slot: ItemSlot::Armor, power_range: (5, 6) },
+    LootEntry { name: "Safety Goggles", slot: ItemSlot::Armor, power_range: (5, 6) },
     // Rings
-    LootEntry { name: "Ring of Syntax Highlight", slot: ItemSlot::Ring, power_range: (2, 5) },
-    LootEntry { name: "Signet of SSH", slot: ItemSlot::Ring, power_range: (3, 6) },
-    LootEntry { name: "Circlet of Cron", slot: ItemSlot::Ring, power_range: (3, 5) },
-    LootEntry { name: "Band of Base64", slot: ItemSlot::Ring, power_range: (3, 6) },
-    LootEntry { name: "Ring of Rate Limiting", slot: ItemSlot::Ring, power_range: (2, 5) },
-    LootEntry { name: "Amulet of Async/Await", slot: ItemSlot::Ring, power_range: (3, 6) },
-    LootEntry { name: "Pendant of Package.json", slot: ItemSlot::Ring, power_range: (2, 5) },
+    LootEntry { name: "Silver Band", slot: ItemSlot::Ring, power_range: (3, 4) },
+    LootEntry { name: "Polished Brass Ring", slot: ItemSlot::Ring, power_range: (3, 4) },
+    LootEntry { name: "Iron Signet", slot: ItemSlot::Ring, power_range: (3, 5) },
+    LootEntry { name: "Braided Wire Loop", slot: ItemSlot::Ring, power_range: (4, 5) },
+    LootEntry { name: "Quartz Ring", slot: ItemSlot::Ring, power_range: (4, 5) },
+    LootEntry { name: "Steel Washer", slot: ItemSlot::Ring, power_range: (4, 6) },
+    LootEntry { name: "Polished Pebble", slot: ItemSlot::Ring, power_range: (5, 6) },
+    LootEntry { name: "Copper Coil", slot: ItemSlot::Ring, power_range: (5, 6) },
     // Potions
-    LootEntry { name: "Elixir of Energy Drink", slot: ItemSlot::Potion, power_range: (10, 20) },
-    LootEntry { name: "Brew of Debugging", slot: ItemSlot::Potion, power_range: (12, 18) },
-    LootEntry { name: "Tincture of Focus Mode", slot: ItemSlot::Potion, power_range: (8, 15) },
-    LootEntry { name: "Smoothie of Sprint Planning", slot: ItemSlot::Potion, power_range: (10, 16) },
-    LootEntry { name: "Espresso Shot of Urgency", slot: ItemSlot::Potion, power_range: (8, 14) },
-    LootEntry { name: "Matcha of Mindfulness", slot: ItemSlot::Potion, power_range: (10, 18) },
-    LootEntry { name: "Cold Brew of All-Nighter", slot: ItemSlot::Potion, power_range: (12, 20) },
+    LootEntry { name: "Fresh Espresso", slot: ItemSlot::Potion, power_range: (3, 4) },
+    LootEntry { name: "Cold Brew", slot: ItemSlot::Potion, power_range: (3, 4) },
+    LootEntry { name: "Vitamin Water", slot: ItemSlot::Potion, power_range: (3, 5) },
+    LootEntry { name: "Electrolyte Drink", slot: ItemSlot::Potion, power_range: (4, 5) },
+    LootEntry { name: "Herbal Tea", slot: ItemSlot::Potion, power_range: (4, 5) },
+    LootEntry { name: "Protein Shake", slot: ItemSlot::Potion, power_range: (4, 6) },
+    LootEntry { name: "Bottled Water", slot: ItemSlot::Potion, power_range: (5, 6) },
+    LootEntry { name: "Fruit Smoothie", slot: ItemSlot::Potion, power_range: (5, 6) },
 ];
 
-// ═══════════════════════════════════════════════════════════════
-//  RARE ITEMS — meaningful finds
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
+//  RARE ITEMS - named tools with single-word evocative concepts
+// ===============================================================
 
 const RARE: &[LootEntry] = &[
     // Weapons
-    LootEntry { name: "Blade of Sudo", slot: ItemSlot::Weapon, power_range: (8, 12) },
-    LootEntry { name: "Staff of Stack Overflow", slot: ItemSlot::Weapon, power_range: (7, 13) },
-    LootEntry { name: "Hammer of Compiler", slot: ItemSlot::Weapon, power_range: (9, 14) },
-    LootEntry { name: "Trident of TypeScript", slot: ItemSlot::Weapon, power_range: (8, 13) },
-    LootEntry { name: "Scythe of Segfault", slot: ItemSlot::Weapon, power_range: (10, 15) },
-    LootEntry { name: "Wand of WebSocket", slot: ItemSlot::Weapon, power_range: (7, 12) },
-    LootEntry { name: "Claymore of Concurrency", slot: ItemSlot::Weapon, power_range: (9, 14) },
-    LootEntry { name: "Katana of Kubernetes", slot: ItemSlot::Weapon, power_range: (10, 15) },
-    // Armor
-    LootEntry { name: "Chestplate of Chmod 777", slot: ItemSlot::Armor, power_range: (7, 11) },
-    LootEntry { name: "Plate of the Firewall", slot: ItemSlot::Armor, power_range: (8, 12) },
-    LootEntry { name: "Breastplate of Bcrypt", slot: ItemSlot::Armor, power_range: (9, 13) },
-    LootEntry { name: "Shield of CORS", slot: ItemSlot::Armor, power_range: (7, 11) },
-    LootEntry { name: "Greaves of GraphQL", slot: ItemSlot::Armor, power_range: (8, 12) },
-    LootEntry { name: "Crown of CloudFormation", slot: ItemSlot::Armor, power_range: (9, 14) },
+    LootEntry { name: "Bit-Blitzer", slot: ItemSlot::Weapon, power_range: (5, 6) },
+    LootEntry { name: "Logic-Lash", slot: ItemSlot::Weapon, power_range: (5, 7) },
+    LootEntry { name: "Syntax-Slicer", slot: ItemSlot::Weapon, power_range: (6, 7) },
+    LootEntry { name: "Code-Cracker", slot: ItemSlot::Weapon, power_range: (6, 8) },
+    LootEntry { name: "Data-Dagger", slot: ItemSlot::Weapon, power_range: (7, 8) },
+    LootEntry { name: "Thread-Thresher", slot: ItemSlot::Weapon, power_range: (7, 9) },
+    LootEntry { name: "Memory-Maul", slot: ItemSlot::Weapon, power_range: (8, 10) },
+    LootEntry { name: "Buffer-Blade", slot: ItemSlot::Weapon, power_range: (9, 10) },
+    // Armors
+    LootEntry { name: "Buffer-Bulwark", slot: ItemSlot::Armor, power_range: (5, 6) },
+    LootEntry { name: "Shell-Shield", slot: ItemSlot::Armor, power_range: (5, 7) },
+    LootEntry { name: "Script-Shroud", slot: ItemSlot::Armor, power_range: (6, 7) },
+    LootEntry { name: "Logic-Layer", slot: ItemSlot::Armor, power_range: (6, 8) },
+    LootEntry { name: "Data-Drape", slot: ItemSlot::Armor, power_range: (7, 8) },
+    LootEntry { name: "Thread-Tunic", slot: ItemSlot::Armor, power_range: (7, 9) },
+    LootEntry { name: "Memory-Mail", slot: ItemSlot::Armor, power_range: (8, 10) },
+    LootEntry { name: "Kernel-Cloak", slot: ItemSlot::Armor, power_range: (9, 10) },
     // Rings
-    LootEntry { name: "Ring of the Daemon", slot: ItemSlot::Ring, power_range: (4, 8) },
-    LootEntry { name: "Seal of Semaphore", slot: ItemSlot::Ring, power_range: (5, 9) },
-    LootEntry { name: "Band of the Borrow Checker", slot: ItemSlot::Ring, power_range: (6, 10) },
-    LootEntry { name: "Talisman of TLS", slot: ItemSlot::Ring, power_range: (5, 9) },
+    LootEntry { name: "Loop-Link", slot: ItemSlot::Ring, power_range: (5, 6) },
+    LootEntry { name: "Node-Nexus", slot: ItemSlot::Ring, power_range: (5, 7) },
+    LootEntry { name: "Bit-Bind", slot: ItemSlot::Ring, power_range: (6, 7) },
+    LootEntry { name: "Code-Coil", slot: ItemSlot::Ring, power_range: (6, 8) },
+    LootEntry { name: "Data-Dot", slot: ItemSlot::Ring, power_range: (7, 8) },
+    LootEntry { name: "Thread-Tie", slot: ItemSlot::Ring, power_range: (7, 9) },
+    LootEntry { name: "Memory-Mark", slot: ItemSlot::Ring, power_range: (8, 10) },
+    LootEntry { name: "Kernel-Key", slot: ItemSlot::Ring, power_range: (9, 10) },
     // Potions
-    LootEntry { name: "Flask of Liquid Nitrogen", slot: ItemSlot::Potion, power_range: (20, 35) },
-    LootEntry { name: "Draught of Deep Work", slot: ItemSlot::Potion, power_range: (18, 30) },
-    LootEntry { name: "Philter of Flow State", slot: ItemSlot::Potion, power_range: (22, 35) },
+    LootEntry { name: "Logic-Litre", slot: ItemSlot::Potion, power_range: (5, 6) },
+    LootEntry { name: "Syntax-Sip", slot: ItemSlot::Potion, power_range: (5, 7) },
+    LootEntry { name: "Code-Cordial", slot: ItemSlot::Potion, power_range: (6, 7) },
+    LootEntry { name: "Data-Draught", slot: ItemSlot::Potion, power_range: (6, 8) },
+    LootEntry { name: "Thread-Tonic", slot: ItemSlot::Potion, power_range: (7, 8) },
+    LootEntry { name: "Bit-Brew", slot: ItemSlot::Potion, power_range: (7, 9) },
+    LootEntry { name: "Memory-Mist", slot: ItemSlot::Potion, power_range: (8, 10) },
+    LootEntry { name: "Kernel-Keg", slot: ItemSlot::Potion, power_range: (9, 10) },
 ];
 
-// ═══════════════════════════════════════════════════════════════
-//  EPIC ITEMS — jaw-dropping finds (0.99%)
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
+//  EPIC ITEMS - darker fantasy, tier-specific multi-word artifacts
+// ===============================================================
 
 const EPIC: &[LootEntry] = &[
     // Weapons
-    LootEntry { name: "Excalibash", slot: ItemSlot::Weapon, power_range: (13, 18) },
-    LootEntry { name: "Vorpal Pointer", slot: ItemSlot::Weapon, power_range: (15, 22) },
-    LootEntry { name: "Mjolnir of Monorepo", slot: ItemSlot::Weapon, power_range: (16, 21) },
-    LootEntry { name: "Gungnir of Git Rebase", slot: ItemSlot::Weapon, power_range: (14, 23) },
-    LootEntry { name: "Naginata of Nginx", slot: ItemSlot::Weapon, power_range: (15, 20) },
-    // Armor
-    LootEntry { name: "Armor of the Container", slot: ItemSlot::Armor, power_range: (12, 17) },
-    LootEntry { name: "Aegis of the Load Balancer", slot: ItemSlot::Armor, power_range: (14, 19) },
-    LootEntry { name: "Warplate of Kubernetes", slot: ItemSlot::Armor, power_range: (13, 18) },
+    LootEntry { name: "Void-Pointer Voulge", slot: ItemSlot::Weapon, power_range: (8, 10) },
+    LootEntry { name: "Heap-Stalker Harpoon", slot: ItemSlot::Weapon, power_range: (8, 11) },
+    LootEntry { name: "Stack-Smasher Sledge", slot: ItemSlot::Weapon, power_range: (9, 11) },
+    LootEntry { name: "Mutex-Mangler Mace", slot: ItemSlot::Weapon, power_range: (10, 12) },
+    LootEntry { name: "Segfault Scythe", slot: ItemSlot::Weapon, power_range: (10, 13) },
+    LootEntry { name: "Kernel-Cutter Katana", slot: ItemSlot::Weapon, power_range: (11, 14) },
+    LootEntry { name: "Runtime-Ravager Rapier", slot: ItemSlot::Weapon, power_range: (12, 14) },
+    LootEntry { name: "Compiler-Crushing Claymore", slot: ItemSlot::Weapon, power_range: (13, 15) },
+    // Armors
+    LootEntry { name: "Mantle of the Mainframe", slot: ItemSlot::Armor, power_range: (8, 10) },
+    LootEntry { name: "Robes of the Root", slot: ItemSlot::Armor, power_range: (8, 11) },
+    LootEntry { name: "Plate of the Processor", slot: ItemSlot::Armor, power_range: (9, 11) },
+    LootEntry { name: "Vestments of the Virtual", slot: ItemSlot::Armor, power_range: (10, 12) },
+    LootEntry { name: "Cloak of the Compiler", slot: ItemSlot::Armor, power_range: (10, 13) },
+    LootEntry { name: "Armor of the Assembler", slot: ItemSlot::Armor, power_range: (11, 14) },
+    LootEntry { name: "Guard of the Garbage-Collector", slot: ItemSlot::Armor, power_range: (12, 14) },
+    LootEntry { name: "Suit of the Superuser", slot: ItemSlot::Armor, power_range: (13, 15) },
     // Rings
-    LootEntry { name: "Ring of Root Access", slot: ItemSlot::Ring, power_range: (8, 14) },
-    LootEntry { name: "Signet of Zero-Day", slot: ItemSlot::Ring, power_range: (10, 16) },
+    LootEntry { name: "Sigil of the Sysadmin", slot: ItemSlot::Ring, power_range: (8, 10) },
+    LootEntry { name: "Band of the Binary", slot: ItemSlot::Ring, power_range: (8, 11) },
+    LootEntry { name: "Loop of the Low-Level", slot: ItemSlot::Ring, power_range: (9, 11) },
+    LootEntry { name: "Amulet of the Architect", slot: ItemSlot::Ring, power_range: (10, 12) },
+    LootEntry { name: "Ring of the Runtime", slot: ItemSlot::Ring, power_range: (10, 13) },
+    LootEntry { name: "Coil of the Core", slot: ItemSlot::Ring, power_range: (11, 14) },
+    LootEntry { name: "Mark of the Mutex", slot: ItemSlot::Ring, power_range: (12, 14) },
+    LootEntry { name: "Signet of the Socket", slot: ItemSlot::Ring, power_range: (13, 15) },
     // Potions
-    LootEntry { name: "Phoenix Elixir of Hot Reload", slot: ItemSlot::Potion, power_range: (30, 50) },
+    LootEntry { name: "Essence of the Epoch", slot: ItemSlot::Potion, power_range: (8, 10) },
+    LootEntry { name: "Distillation of the Debugger", slot: ItemSlot::Potion, power_range: (8, 11) },
+    LootEntry { name: "Brew of the Binary", slot: ItemSlot::Potion, power_range: (9, 11) },
+    LootEntry { name: "Elixir of the Executable", slot: ItemSlot::Potion, power_range: (10, 12) },
+    LootEntry { name: "Vial of the Virtual", slot: ItemSlot::Potion, power_range: (10, 13) },
+    LootEntry { name: "Draught of the Daemon", slot: ItemSlot::Potion, power_range: (11, 14) },
+    LootEntry { name: "Tonic of the Terminal", slot: ItemSlot::Potion, power_range: (12, 14) },
+    LootEntry { name: "Sip of the System", slot: ItemSlot::Potion, power_range: (13, 15) },
 ];
 
-// ═══════════════════════════════════════════════════════════════
-//  LEGENDARY ITEMS — once in a lifetime (0.01%)
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
+//  LEGENDARY ITEMS - once in a lifetime - 'The X-of-Y' construction, eyeball-grabbing
+// ===============================================================
 
 const LEGENDARY: &[LootEntry] = &[
     // Weapons
-    LootEntry { name: "Mass Migration Sword of Chaos", slot: ItemSlot::Weapon, power_range: (20, 30) },
-    LootEntry { name: "Mass Migration Blade of the Kernel", slot: ItemSlot::Weapon, power_range: (25, 35) },
-    LootEntry { name: "The Mass Migration Fork Bomb", slot: ItemSlot::Weapon, power_range: (22, 32) },
-    // Armor
-    LootEntry { name: "Shell of Invulnerability", slot: ItemSlot::Armor, power_range: (18, 25) },
-    LootEntry { name: "Divine Armor of /dev/null", slot: ItemSlot::Armor, power_range: (20, 28) },
+    LootEntry { name: "The Final Commit of Fate", slot: ItemSlot::Weapon, power_range: (15, 17) },
+    LootEntry { name: "The Last Allocator's Wrath", slot: ItemSlot::Weapon, power_range: (16, 18) },
+    LootEntry { name: "The Blade of the Broken Build", slot: ItemSlot::Weapon, power_range: (17, 19) },
+    LootEntry { name: "The Hammer of the Hard Reset", slot: ItemSlot::Weapon, power_range: (18, 20) },
+    LootEntry { name: "The Spear of the Single Source", slot: ItemSlot::Weapon, power_range: (19, 21) },
+    LootEntry { name: "The Bow of the Binary Search", slot: ItemSlot::Weapon, power_range: (20, 22) },
+    LootEntry { name: "The Axe of the Absolute Zero", slot: ItemSlot::Weapon, power_range: (21, 23) },
+    LootEntry { name: "The Dagger of the Deep Copy", slot: ItemSlot::Weapon, power_range: (22, 25) },
+    // Armors
+    LootEntry { name: "The Shroud of the Silent Error", slot: ItemSlot::Armor, power_range: (15, 17) },
+    LootEntry { name: "The Aegis of the Absolute Path", slot: ItemSlot::Armor, power_range: (16, 18) },
+    LootEntry { name: "The Mantle of the Master Branch", slot: ItemSlot::Armor, power_range: (17, 19) },
+    LootEntry { name: "The Plate of the Persistent State", slot: ItemSlot::Armor, power_range: (18, 20) },
+    LootEntry { name: "The Robes of the Recursive Call", slot: ItemSlot::Armor, power_range: (19, 21) },
+    LootEntry { name: "The Vest of the Validated Input", slot: ItemSlot::Armor, power_range: (20, 22) },
+    LootEntry { name: "The Cloak of the Clean Code", slot: ItemSlot::Armor, power_range: (21, 23) },
+    LootEntry { name: "The Armor of the Atomic Operation", slot: ItemSlot::Armor, power_range: (22, 25) },
     // Rings
-    LootEntry { name: "The One Ring (of SSH Keys)", slot: ItemSlot::Ring, power_range: (14, 20) },
-    LootEntry { name: "Eternal Band of Uptime", slot: ItemSlot::Ring, power_range: (16, 22) },
+    LootEntry { name: "The Loop of the Lost Link", slot: ItemSlot::Ring, power_range: (15, 17) },
+    LootEntry { name: "The Sigil of the Sovereign System", slot: ItemSlot::Ring, power_range: (16, 18) },
+    LootEntry { name: "The Band of the Boundless Buffer", slot: ItemSlot::Ring, power_range: (17, 19) },
+    LootEntry { name: "The Ring of the Root Access", slot: ItemSlot::Ring, power_range: (18, 20) },
+    LootEntry { name: "The Amulet of the Async Await", slot: ItemSlot::Ring, power_range: (19, 21) },
+    LootEntry { name: "The Coil of the Constant Time", slot: ItemSlot::Ring, power_range: (20, 22) },
+    LootEntry { name: "The Signet of the Singleton", slot: ItemSlot::Ring, power_range: (21, 23) },
+    LootEntry { name: "The Mark of the Memory Map", slot: ItemSlot::Ring, power_range: (22, 25) },
     // Potions
-    LootEntry { name: "Elixir of Infinite Context", slot: ItemSlot::Potion, power_range: (50, 99) },
+    LootEntry { name: "The Tear of the Tired Tech-Lead", slot: ItemSlot::Potion, power_range: (15, 17) },
+    LootEntry { name: "The Blood of the Beta Tester", slot: ItemSlot::Potion, power_range: (16, 18) },
+    LootEntry { name: "The Sweat of the Senior Dev", slot: ItemSlot::Potion, power_range: (17, 19) },
+    LootEntry { name: "The Breath of the Backend", slot: ItemSlot::Potion, power_range: (18, 20) },
+    LootEntry { name: "The Soul of the Source Code", slot: ItemSlot::Potion, power_range: (19, 21) },
+    LootEntry { name: "The Heart of the Hardware", slot: ItemSlot::Potion, power_range: (20, 22) },
+    LootEntry { name: "The Essence of the End-User", slot: ItemSlot::Potion, power_range: (21, 23) },
+    LootEntry { name: "The Draught of the Deployment", slot: ItemSlot::Potion, power_range: (22, 25) },
 ];
+
 
 fn pick_from(rng: &mut impl Rng, table: &[LootEntry], rarity: Rarity) -> Item {
     let entry = &table[rng.gen_range(0..table.len())];

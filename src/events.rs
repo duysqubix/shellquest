@@ -800,16 +800,46 @@ pub struct MonsterEntry {
 }
 
 pub const MONSTER_POOL: &[MonsterEntry] = &[
-    MonsterEntry { name: "Syntax Error Snake",    tier: MonsterTier::Vermin,  hp: 2,  attack: 4,  xp: 6  },
-    MonsterEntry { name: "Race Condition Rat",    tier: MonsterTier::Bruiser, hp: 8,  attack: 5,  xp: 8  },
-    MonsterEntry { name: "Null Pointer Wraith",   tier: MonsterTier::Bruiser, hp: 10, attack: 6,  xp: 10 },
-    MonsterEntry { name: "Infinite Loop Imp",     tier: MonsterTier::Bruiser, hp: 10, attack: 6,  xp: 10 },
-    MonsterEntry { name: "Memory Leak Slime",     tier: MonsterTier::Bruiser, hp: 12, attack: 7,  xp: 12 },
-    MonsterEntry { name: "Segfault Specter",      tier: MonsterTier::Bruiser, hp: 14, attack: 8,  xp: 15 },
-    MonsterEntry { name: "Off-by-One Ogre",       tier: MonsterTier::Hunter,  hp: 25, attack: 10, xp: 20 },
-    MonsterEntry { name: "Dependency Hell Hound", tier: MonsterTier::Hunter,  hp: 28, attack: 11, xp: 22 },
-    MonsterEntry { name: "Deadlock Demon",        tier: MonsterTier::Hunter,  hp: 33, attack: 12, xp: 25 },
-    MonsterEntry { name: "Buffer Overflow Beast", tier: MonsterTier::Hunter,  hp: 38, attack: 14, xp: 30 },
+    MonsterEntry { name: "Symlink Slug",                tier: MonsterTier::Vermin,       hp: 1,   attack: 2,  xp: 4   },
+    MonsterEntry { name: "Dotfile Dust-Mite",           tier: MonsterTier::Vermin,       hp: 2,   attack: 2,  xp: 5   },
+    MonsterEntry { name: "Cache Cricket",               tier: MonsterTier::Vermin,       hp: 1,   attack: 3,  xp: 4   },
+    MonsterEntry { name: "Tempfile Tadpole",            tier: MonsterTier::Vermin,       hp: 2,   attack: 3,  xp: 6   },
+    MonsterEntry { name: "Log-File Larva",              tier: MonsterTier::Vermin,       hp: 3,   attack: 2,  xp: 7   },
+    MonsterEntry { name: "Socket Snail",                tier: MonsterTier::Vermin,       hp: 2,   attack: 4,  xp: 6   },
+    MonsterEntry { name: "Inode Inchworm",              tier: MonsterTier::Vermin,       hp: 1,   attack: 4,  xp: 5   },
+    MonsterEntry { name: "Permission Pupa",             tier: MonsterTier::Vermin,       hp: 3,   attack: 3,  xp: 8   },
+    MonsterEntry { name: "Zombie Process Zealot",       tier: MonsterTier::Bruiser,      hp: 10,  attack: 5,  xp: 14  },
+    MonsterEntry { name: "Background Job Brawler",      tier: MonsterTier::Bruiser,      hp: 8,   attack: 6,  xp: 12  },
+    MonsterEntry { name: "Daemon Duelist",              tier: MonsterTier::Bruiser,      hp: 12,  attack: 5,  xp: 16  },
+    MonsterEntry { name: "Shell-Script Shaman",         tier: MonsterTier::Bruiser,      hp: 9,   attack: 7,  xp: 15  },
+    MonsterEntry { name: "Pipe-Line Pugilist",          tier: MonsterTier::Bruiser,      hp: 11,  attack: 6,  xp: 17  },
+    MonsterEntry { name: "Env-Var Vandal",              tier: MonsterTier::Bruiser,      hp: 10,  attack: 8,  xp: 18  },
+    MonsterEntry { name: "Cron-Job Crusader",           tier: MonsterTier::Bruiser,      hp: 14,  attack: 5,  xp: 19  },
+    MonsterEntry { name: "Std-Error Specter",           tier: MonsterTier::Bruiser,      hp: 15,  attack: 7,  xp: 20  },
+    MonsterEntry { name: "Heap-Alloc Hound",            tier: MonsterTier::Hunter,       hp: 30,  attack: 9,  xp: 25  },
+    MonsterEntry { name: "Stack-Trace Stalker",         tier: MonsterTier::Hunter,       hp: 28,  attack: 10, xp: 24  },
+    MonsterEntry { name: "Pointer Panther",             tier: MonsterTier::Hunter,       hp: 32,  attack: 11, xp: 28  },
+    MonsterEntry { name: "Overflow Basilisk",           tier: MonsterTier::Hunter,       hp: 35,  attack: 12, xp: 30  },
+    MonsterEntry { name: "Garbage-Collector Gryphon",   tier: MonsterTier::Hunter,       hp: 40,  attack: 8,  xp: 32  },
+    MonsterEntry { name: "Memory-Leak Manticore",       tier: MonsterTier::Hunter,       hp: 38,  attack: 13, xp: 34  },
+    MonsterEntry { name: "Segfault Shark",              tier: MonsterTier::Hunter,       hp: 36,  attack: 14, xp: 33  },
+    MonsterEntry { name: "Dangling-Pointer Dingo",      tier: MonsterTier::Hunter,       hp: 25,  attack: 14, xp: 22  },
+    MonsterEntry { name: "Kernel-Panic Kraken",         tier: MonsterTier::Horror,       hp: 90,  attack: 18, xp: 60  },
+    MonsterEntry { name: "Interrupt-Handler Hydra",     tier: MonsterTier::Horror,       hp: 80,  attack: 20, xp: 55  },
+    MonsterEntry { name: "System-Call Siren",           tier: MonsterTier::Horror,       hp: 70,  attack: 22, xp: 50  },
+    MonsterEntry { name: "Page-Fault Phantom",          tier: MonsterTier::Horror,       hp: 65,  attack: 21, xp: 45  },
+    MonsterEntry { name: "Deadlock Dragon",             tier: MonsterTier::Horror,       hp: 100, attack: 14, xp: 65  },
+    MonsterEntry { name: "Race-Condition Reaper",       tier: MonsterTier::Horror,       hp: 60,  attack: 22, xp: 40  },
+    MonsterEntry { name: "Root-Kit Revenant",           tier: MonsterTier::Horror,       hp: 75,  attack: 19, xp: 52  },
+    MonsterEntry { name: "Scheduler-Shadow Stalker",    tier: MonsterTier::Horror,       hp: 85,  attack: 17, xp: 58  },
+    MonsterEntry { name: "The Monolith Manifestation",  tier: MonsterTier::BossAdjacent, hp: 200, attack: 25, xp: 110 },
+    MonsterEntry { name: "Architectural-Debt Archon",   tier: MonsterTier::BossAdjacent, hp: 180, attack: 28, xp: 100 },
+    MonsterEntry { name: "The Legacy-Code Lich",        tier: MonsterTier::BossAdjacent, hp: 220, attack: 22, xp: 120 },
+    MonsterEntry { name: "Distributed-System Djinn",    tier: MonsterTier::BossAdjacent, hp: 170, attack: 30, xp: 95  },
+    MonsterEntry { name: "The Microservice Medusa",     tier: MonsterTier::BossAdjacent, hp: 160, attack: 29, xp: 90  },
+    MonsterEntry { name: "Cloud-Native Chimera",        tier: MonsterTier::BossAdjacent, hp: 190, attack: 26, xp: 105 },
+    MonsterEntry { name: "The Immutable-State Idol",    tier: MonsterTier::BossAdjacent, hp: 210, attack: 24, xp: 115 },
+    MonsterEntry { name: "Entropy-Engine Elemental",    tier: MonsterTier::BossAdjacent, hp: 150, attack: 30, xp: 80  },
 ];
 
 pub fn tiers_for_danger(danger_level: u32) -> &'static [MonsterTier] {
@@ -1008,10 +1038,24 @@ mod tests {
     }
 
     #[test]
-    fn random_monster_in_tiers_unpopulated_returns_none() {
+    fn random_monster_in_tiers_empty_allow_list_returns_none() {
         let mut rng = rand::thread_rng();
-        let result = random_monster_in_tiers(&mut rng, &[MonsterTier::BossAdjacent]);
-        assert!(result.is_none(), "BossAdjacent has no entries yet — should return None for fallback");
+        let result = random_monster_in_tiers(&mut rng, &[]);
+        assert!(result.is_none(), "empty allow-list must produce None for the caller to fall back");
+    }
+
+    #[test]
+    fn monster_pool_populates_all_five_tiers() {
+        for tier in [
+            MonsterTier::Vermin,
+            MonsterTier::Bruiser,
+            MonsterTier::Hunter,
+            MonsterTier::Horror,
+            MonsterTier::BossAdjacent,
+        ] {
+            let count = MONSTER_POOL.iter().filter(|m| m.tier == tier).count();
+            assert!(count >= 1, "tier {:?} must have at least one entry (v1.22+ contract)", tier);
+        }
     }
 
     #[test]
