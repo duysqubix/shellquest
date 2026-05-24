@@ -38,10 +38,10 @@ enum Commands {
     /// Create a new character
     Init,
     /// View your character sheet (includes inventory)
-    #[clap(alias = "stat")]
+    #[clap(visible_alias = "stat")]
     Status,
     /// Check your inventory
-    #[clap(alias = "inv")]
+    #[clap(visible_alias = "inv")]
     Inventory,
     /// View your adventure journal
     Journal,
@@ -73,7 +73,7 @@ enum Commands {
         file: Option<String>,
     },
     /// Equip armor or ring from inventory
-    #[clap(alias = "wear")]
+    #[clap(visible_alias = "wear")]
     Equip {
         /// Item name (or partial match)
         name: Vec<String>,
@@ -84,7 +84,7 @@ enum Commands {
         name: Vec<String>,
     },
     /// Remove equipped weapon, armor, or ring (puts it back in inventory)
-    #[clap(alias = "unequip")]
+    #[clap(visible_alias = "unequip")]
     Remove {
         /// Item name, partial match, or slot keyword (weapon/armor/ring)
         name: Vec<String>,
