@@ -328,18 +328,14 @@ fn handle_forge(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::
 }
 
 fn handle_angry_spirit(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
-    let (name, atk, xp) = random_monster_for_zone(rng, zone);
+    let (name, atk, hp, xp) = random_monster_for_zone(rng, zone);
     let profile = if rng.gen_ratio(1, 8) {
-        apply_elite_pressure(&name, atk, xp, zone.danger_level)
+        apply_elite_pressure(&name, atk, hp, xp, zone.danger_level)
     } else {
-        EncounterProfile { name, attack: atk, xp, elite: false }
+        EncounterProfile { name, attack: atk, hp, xp, elite: false }
     };
 
-    if profile.elite {
-        combat_elite(state, rng, zone, cmd, &profile.name, profile.attack, profile.xp);
-    } else {
-        combat(state, rng, zone, cmd, &profile.name, profile.attack, profile.xp);
-    }
+    combat(state, rng, zone, cmd, &profile.name, profile.attack, profile.hp, profile.xp, profile.elite);
 }
 
 fn handle_familiar(state: &mut GameState, rng: &mut impl Rng) {
@@ -688,19 +684,13 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
 
     match roll {
         1..=40 => {
-            // Combat encounter
-            let (name, base_atk, base_xp) = random_monster_for_zone(rng, zone);
+            let (name, base_atk, base_hp, base_xp) = random_monster_for_zone(rng, zone);
             let profile = if rng.gen_ratio(1, 8) {
-                apply_elite_pressure(&name, base_atk, base_xp, zone.danger_level)
+                apply_elite_pressure(&name, base_atk, base_hp, base_xp, zone.danger_level)
             } else {
-                EncounterProfile { name, attack: base_atk, xp: base_xp, elite: false }
+                EncounterProfile { name, attack: base_atk, hp: base_hp, xp: base_xp, elite: false }
             };
-
-            if profile.elite {
-                combat_elite(state, rng, zone, cmd, &profile.name, profile.attack, profile.xp);
-            } else {
-                combat(state, rng, zone, cmd, &profile.name, profile.attack, profile.xp);
-            }
+            combat(state, rng, zone, cmd, &profile.name, profile.attack, profile.hp, profile.xp, profile.elite);
         }
         41..=65 => {
             // Find loot
@@ -771,21 +761,22 @@ fn encounter_scale_for_danger(danger: u32) -> f32 {
     }
 }
 
-// Used by Tasks 3 and 4 to represent normal and elite encounter profiles.
 struct EncounterProfile {
     name: String,
     attack: i32,
+    hp: i32,
     xp: u32,
     elite: bool,
 }
 
-// Used by Task 4 to create elite encounters.
-fn apply_elite_pressure(name: &str, base_attack: i32, base_xp: u32, danger: u32) -> EncounterProfile {
+fn apply_elite_pressure(name: &str, base_attack: i32, base_hp: i32, base_xp: u32, danger: u32) -> EncounterProfile {
     let attack_multiplier = 1.6 * (1.0 + (danger.saturating_sub(1) as f32) * 0.15);
+    let hp_multiplier = 1.5;
 
     EncounterProfile {
         name: format!("Enraged {}", name),
         attack: ((base_attack as f32) * attack_multiplier).round() as i32,
+        hp: ((base_hp as f32) * hp_multiplier).round() as i32,
         xp: ((base_xp as f32) * 2.0).round() as u32,
         elite: true,
     }
@@ -803,21 +794,22 @@ pub enum MonsterTier {
 pub struct MonsterEntry {
     pub name: &'static str,
     pub tier: MonsterTier,
+    pub hp: i32,
     pub attack: i32,
     pub xp: u32,
 }
 
 pub const MONSTER_POOL: &[MonsterEntry] = &[
-    MonsterEntry { name: "Syntax Error Snake",    tier: MonsterTier::Vermin,  attack: 4,  xp: 6  },
-    MonsterEntry { name: "Race Condition Rat",    tier: MonsterTier::Bruiser, attack: 5,  xp: 8  },
-    MonsterEntry { name: "Null Pointer Wraith",   tier: MonsterTier::Bruiser, attack: 6,  xp: 10 },
-    MonsterEntry { name: "Infinite Loop Imp",     tier: MonsterTier::Bruiser, attack: 6,  xp: 10 },
-    MonsterEntry { name: "Memory Leak Slime",     tier: MonsterTier::Bruiser, attack: 7,  xp: 12 },
-    MonsterEntry { name: "Segfault Specter",      tier: MonsterTier::Bruiser, attack: 8,  xp: 15 },
-    MonsterEntry { name: "Off-by-One Ogre",       tier: MonsterTier::Hunter,  attack: 10, xp: 20 },
-    MonsterEntry { name: "Dependency Hell Hound", tier: MonsterTier::Hunter,  attack: 11, xp: 22 },
-    MonsterEntry { name: "Deadlock Demon",        tier: MonsterTier::Hunter,  attack: 12, xp: 25 },
-    MonsterEntry { name: "Buffer Overflow Beast", tier: MonsterTier::Hunter,  attack: 14, xp: 30 },
+    MonsterEntry { name: "Syntax Error Snake",    tier: MonsterTier::Vermin,  hp: 2,  attack: 4,  xp: 6  },
+    MonsterEntry { name: "Race Condition Rat",    tier: MonsterTier::Bruiser, hp: 8,  attack: 5,  xp: 8  },
+    MonsterEntry { name: "Null Pointer Wraith",   tier: MonsterTier::Bruiser, hp: 10, attack: 6,  xp: 10 },
+    MonsterEntry { name: "Infinite Loop Imp",     tier: MonsterTier::Bruiser, hp: 10, attack: 6,  xp: 10 },
+    MonsterEntry { name: "Memory Leak Slime",     tier: MonsterTier::Bruiser, hp: 12, attack: 7,  xp: 12 },
+    MonsterEntry { name: "Segfault Specter",      tier: MonsterTier::Bruiser, hp: 14, attack: 8,  xp: 15 },
+    MonsterEntry { name: "Off-by-One Ogre",       tier: MonsterTier::Hunter,  hp: 25, attack: 10, xp: 20 },
+    MonsterEntry { name: "Dependency Hell Hound", tier: MonsterTier::Hunter,  hp: 28, attack: 11, xp: 22 },
+    MonsterEntry { name: "Deadlock Demon",        tier: MonsterTier::Hunter,  hp: 33, attack: 12, xp: 25 },
+    MonsterEntry { name: "Buffer Overflow Beast", tier: MonsterTier::Hunter,  hp: 38, attack: 14, xp: 30 },
 ];
 
 pub fn tiers_for_danger(danger_level: u32) -> &'static [MonsterTier] {
@@ -842,15 +834,17 @@ fn random_monster_in_tiers(rng: &mut impl Rng, allowed: &[MonsterTier]) -> Optio
     }
 }
 
-fn random_monster_for_zone(rng: &mut impl Rng, zone: &crate::zones::Zone) -> (String, i32, u32) {
+fn random_monster_for_zone(rng: &mut impl Rng, zone: &crate::zones::Zone) -> (String, i32, i32, u32) {
     let entry = random_monster_in_tiers(rng, tiers_for_danger(zone.danger_level))
         .or_else(|| random_monster_in_tiers(rng, &[MonsterTier::Hunter, MonsterTier::Bruiser, MonsterTier::Vermin]))
         .expect("MONSTER_POOL must contain at least one entry");
     let scale = encounter_scale_for_danger(zone.danger_level);
     let atk = ((entry.attack as f32 * scale).round() as i32).max(1);
     let xp = ((entry.xp as f32 * scale).round() as u32).max(5);
-    (entry.name.to_string(), atk, xp)
+    (entry.name.to_string(), atk, entry.hp, xp)
 }
+
+const COMBAT_MAX_TURNS: u32 = 30;
 
 fn combat(
     state: &mut GameState,
@@ -859,169 +853,104 @@ fn combat(
     cmd: &str,
     monster_name: &str,
     monster_atk: i32,
+    monster_hp_initial: i32,
     xp_reward: u32,
+    is_elite: bool,
 ) {
-    let player_power = state.character.attack_power();
-    let player_defense = state.character.defense();
-    let hit_roll: i32 = rng.gen_range(1..=20);
-    let dodge_roll: i32 = rng.gen_range(1..=20);
+    let mut monster_hp = monster_hp_initial.max(1);
+    let mut total_damage_taken: i32 = 0;
+    let mut first_strike = true;
     let final_reward = final_xp(xp_reward, zone.danger_level, &state.character.class, cmd);
+    let player_class = state.character.class.clone();
 
-    let player_hits = hit_roll + player_power > 10;
-    let monster_hits = dodge_roll > (8 + player_defense / 2);
+    for _turn in 1..=COMBAT_MAX_TURNS {
+        let player_power = state.character.attack_power();
+        let player_int = state.character.intelligence;
+        let player_str = state.character.strength;
+        let player_hp_now = state.character.hp;
+        let player_max_hp = state.character.max_hp;
 
-    if player_hits && !monster_hits {
-        register_kill(state);
-        let leveled = state.character.gain_xp(final_reward);
-        let (plain, colored) = crate::messages::combat_win(&state.character.class, monster_name, final_reward);
-        display::print_combat_win(&colored);
-        state.add_journal(JournalEntry::new(EventType::Combat, plain));
-        check_level_up(state, leveled);
-    } else if player_hits && monster_hits {
-        let damage = (monster_atk - player_defense / 3).max(1);
-        let gold_before = state.character.gold;
-        let died = state.character.take_damage(damage);
-        if !died {
-            register_kill(state);
-            let leveled = state.character.gain_xp(final_reward);
-            let (plain, colored) = crate::messages::combat_tough(&state.character.class, monster_name, damage, final_reward);
-            display::print_combat_tough(&colored, false);
-            state.add_journal(JournalEntry::new(EventType::Combat, plain));
-            check_level_up(state, leveled);
-        } else {
-            if state.permadeath {
-                crate::display::print_permadeath_eulogy(&state.character, monster_name);
-                let path = crate::state::save_path();
-                let _ = std::fs::remove_file(&path);
-                std::process::exit(0);
-            } else {
-                state.character.die();
-                let gold_loss = gold_before * 15 / 100;
-                let (plain, colored) = crate::messages::death_normal(
-                    &state.character.class,
-                    monster_name,
-                    gold_loss,
-                );
-                display::print_combat_lose(&colored, true);
-                state.add_journal(JournalEntry::new(EventType::Death, plain));
-            }
-        }
-    } else if !player_hits && monster_hits {
-        let damage = (monster_atk - player_defense / 4).max(1);
-        let gold_before = state.character.gold;
-        let died = state.character.take_damage(damage);
-        if died {
-            if state.permadeath {
-                crate::display::print_permadeath_eulogy(&state.character, monster_name);
-                let path = crate::state::save_path();
-                let _ = std::fs::remove_file(&path);
-                std::process::exit(0);
-            } else {
-                state.character.die();
-                let gold_loss = gold_before * 15 / 100;
-                let (plain, colored) = crate::messages::death_normal(
-                    &state.character.class,
-                    monster_name,
-                    gold_loss,
-                );
-                display::print_combat_lose(&colored, true);
-                state.add_journal(JournalEntry::new(EventType::Death, plain));
-            }
-        } else {
-            let (plain, colored) = crate::messages::combat_lose(&state.character.class, monster_name, damage);
-            display::print_combat_lose(&colored, false);
-            state.add_journal(JournalEntry::new(EventType::Combat, plain));
-        }
-    } else {
-        let (plain, colored) = crate::messages::combat_draw(&state.character.class, monster_name);
-        display::print_combat_draw(&colored);
-        state.add_journal(JournalEntry::new(EventType::Combat, plain));
-    }
-}
+        let hit_roll: i32 = rng.gen_range(1..=20);
+        let player_hits = match player_class {
+            crate::character::Class::Rogue => hit_roll + player_power > 10 || hit_roll == 1,
+            _ => hit_roll + player_power > 10,
+        };
 
-fn combat_elite(
-    state: &mut GameState,
-    rng: &mut impl Rng,
-    zone: &crate::zones::Zone,
-    cmd: &str,
-    monster_name: &str,
-    monster_atk: i32,
-    xp_reward: u32,
-) {
-    let player_power = state.character.attack_power();
-    let player_defense = state.character.defense();
-    let hit_roll: i32 = rng.gen_range(1..=20);
-    let dodge_roll: i32 = rng.gen_range(1..=20);
-    let final_reward = final_xp(xp_reward, zone.danger_level, &state.character.class, cmd);
-
-    let player_hits = hit_roll + player_power > 10;
-    let monster_hits = dodge_roll > (8 + player_defense / 2);
-
-    if player_hits && !monster_hits {
-        register_kill(state);
-        let leveled = state.character.gain_xp(final_reward);
-        let (plain, colored) = crate::messages::combat_elite_win(&state.character.class, monster_name, final_reward);
-        display::print_combat_win(&colored);
-        state.add_journal(JournalEntry::new(EventType::Combat, plain));
-        check_level_up(state, leveled);
-    } else if player_hits && monster_hits {
-        let damage = (monster_atk - player_defense / 3).max(1);
-        let gold_before = state.character.gold;
-        let died = state.character.take_damage(damage);
-        if !died {
-            register_kill(state);
-            let leveled = state.character.gain_xp(final_reward);
-            let (plain, colored) = crate::messages::combat_elite_tough(&state.character.class, monster_name, damage, final_reward);
-            display::print_combat_tough(&colored, false);
-            state.add_journal(JournalEntry::new(EventType::Combat, plain));
-            check_level_up(state, leveled);
-        } else if state.permadeath {
-            crate::display::print_permadeath_eulogy(&state.character, monster_name);
-            let path = crate::state::save_path();
-            let _ = std::fs::remove_file(&path);
-            std::process::exit(0);
-        } else {
-            state.character.die();
-            let gold_loss = gold_before * 15 / 100;
-            let (plain, colored) = crate::messages::death_normal(
-                &state.character.class,
-                monster_name,
-                gold_loss,
+        if player_hits {
+            let mut raw_dmg = rng.gen_range((player_power / 2).max(1)..=player_power.max(1));
+            let (sig_bonus, _sig_label) = crate::character::signature_bonus(
+                &player_class,
+                player_int,
+                player_str,
+                player_hp_now,
+                player_max_hp,
+                first_strike,
             );
-            display::print_combat_lose(&colored, true);
-            state.add_journal(JournalEntry::new(EventType::Death, plain));
+            raw_dmg += sig_bonus;
+            let crit_threshold = (20 - player_int / 4).max(15);
+            if hit_roll >= crit_threshold {
+                raw_dmg *= 2;
+            }
+            monster_hp -= raw_dmg;
+            first_strike = false;
+
+            if monster_hp <= 0 {
+                register_kill(state);
+                let leveled = state.character.gain_xp(final_reward);
+                state.character.signature_on_kill();
+                let (plain, colored) = if total_damage_taken > 0 {
+                    if is_elite {
+                        crate::messages::combat_elite_tough(&player_class, monster_name, total_damage_taken, final_reward)
+                    } else {
+                        crate::messages::combat_tough(&player_class, monster_name, total_damage_taken, final_reward)
+                    }
+                } else if is_elite {
+                    crate::messages::combat_elite_win(&player_class, monster_name, final_reward)
+                } else {
+                    crate::messages::combat_win(&player_class, monster_name, final_reward)
+                };
+                if total_damage_taken > 0 {
+                    display::print_combat_tough(&colored, false);
+                } else {
+                    display::print_combat_win(&colored);
+                }
+                state.add_journal(JournalEntry::new(EventType::Combat, plain));
+                check_level_up(state, leveled);
+                return;
+            }
         }
-    } else if !player_hits && monster_hits {
-        let damage = (monster_atk - player_defense / 4).max(1);
-        let gold_before = state.character.gold;
-        let died = state.character.take_damage(damage);
-        if died {
-            if state.permadeath {
-                crate::display::print_permadeath_eulogy(&state.character, monster_name);
-                let path = crate::state::save_path();
-                let _ = std::fs::remove_file(&path);
-                std::process::exit(0);
-            } else {
+
+        let player_defense = state.character.defense();
+        let dodge_roll: i32 = rng.gen_range(1..=20);
+        if dodge_roll > (8 + player_defense / 2) {
+            let damage = (monster_atk - player_defense / 3).max(1);
+            total_damage_taken += damage;
+            let gold_before = state.character.gold;
+            let died = state.character.take_damage(damage);
+            if died {
+                if state.permadeath {
+                    crate::display::print_permadeath_eulogy(&state.character, monster_name);
+                    let path = crate::state::save_path();
+                    let _ = std::fs::remove_file(&path);
+                    std::process::exit(0);
+                }
                 state.character.die();
                 let gold_loss = gold_before * 15 / 100;
                 let (plain, colored) = crate::messages::death_normal(
-                    &state.character.class,
+                    &player_class,
                     monster_name,
                     gold_loss,
                 );
                 display::print_combat_lose(&colored, true);
                 state.add_journal(JournalEntry::new(EventType::Death, plain));
+                return;
             }
-        } else {
-            let (plain, colored) = crate::messages::combat_elite_lose(&state.character.class, monster_name, damage);
-            display::print_combat_lose(&colored, false);
-            state.add_journal(JournalEntry::new(EventType::Combat, plain));
         }
-    } else {
-        let (plain, colored) = crate::messages::combat_draw(&state.character.class, monster_name);
-        display::print_combat_draw(&colored);
-        state.add_journal(JournalEntry::new(EventType::Combat, plain));
     }
+
+    let (plain, colored) = crate::messages::combat_draw(&state.character.class, monster_name);
+    display::print_combat_draw(&colored);
+    state.add_journal(JournalEntry::new(EventType::Combat, plain));
 }
 
 #[cfg(test)]
@@ -1100,7 +1029,7 @@ mod tests {
             .map(|m| ((m.attack as f32 * encounter_scale_for_danger(1)).round() as i32).max(1))
             .collect();
         for _ in 0..100 {
-            let (_name, atk, _xp) = random_monster_for_zone(&mut rng, &zone);
+            let (_name, atk, _hp, _xp) = random_monster_for_zone(&mut rng, &zone);
             assert!(
                 vermin_attacks.contains(&atk),
                 "danger-1 zone must only produce Vermin-tier monster ATK (got {})",
@@ -1119,8 +1048,9 @@ mod tests {
         };
         let mut rng = rand::thread_rng();
         for _ in 0..50 {
-            let (_name, atk, _xp) = random_monster_for_zone(&mut rng, &zone);
+            let (_name, atk, hp, _xp) = random_monster_for_zone(&mut rng, &zone);
             assert!(atk >= 1, "fallback must still produce a valid monster");
+            assert!(hp >= 1, "fallback monster must have positive HP");
         }
     }
 
@@ -1293,7 +1223,7 @@ mod tests {
 
     #[test]
     fn elite_modifier_raises_attack_and_reward() {
-        let elite = apply_elite_pressure("Deadlock Demon", 12, 25, 4);
+        let elite = apply_elite_pressure("Deadlock Demon", 12, 33, 25, 4);
         assert_eq!(elite.attack, 28);
         assert_eq!(elite.xp, 50);
         assert!(elite.elite);
@@ -1301,7 +1231,7 @@ mod tests {
 
     #[test]
     fn elite_modifier_prefixes_name() {
-        let elite = apply_elite_pressure("Segfault Specter", 8, 15, 3);
+        let elite = apply_elite_pressure("Segfault Specter", 8, 14, 15, 3);
         assert!(elite.name.starts_with("Enraged "),
             "Expected name to start with 'Enraged ', got: {}", elite.name);
         assert_eq!(elite.xp, 30);
@@ -1309,7 +1239,7 @@ mod tests {
 
     #[test]
     fn elite_profile_marks_name_and_reward() {
-        let elite = apply_elite_pressure("Segfault Specter", 8, 15, 3);
+        let elite = apply_elite_pressure("Segfault Specter", 8, 14, 15, 3);
         assert!(
             elite.name.starts_with("Enraged "),
             "Expected 'Enraged ' prefix, got: {}",
@@ -1317,6 +1247,66 @@ mod tests {
         );
         assert!(elite.xp > 15);
         assert!(elite.elite);
+    }
+
+    #[test]
+    fn elite_modifier_scales_hp() {
+        let elite = apply_elite_pressure("Buffer Overflow Beast", 14, 38, 30, 5);
+        assert_eq!(elite.hp, 57, "1.5x of 38 = 57");
+    }
+
+    #[test]
+    fn combat_multi_turn_against_high_hp_monster_increments_kill_and_grants_xp() {
+        let mut state = make_state();
+        state.character.hp = state.character.max_hp;
+        let kills_before = state.character.kills;
+        let xp_before = state.character.xp;
+        let level_before = state.character.level;
+        let zone = crate::zones::Zone {
+            name: "Test Wasteland",
+            description: "test",
+            danger_level: 3,
+            color: crate::zones::ZoneColor::Red,
+        };
+        let mut rng = rand::thread_rng();
+        combat(&mut state, &mut rng, &zone, "rm", "Test Hunter", 12, 100, 25, false);
+        let killed = state.character.kills > kills_before;
+        let leveled_or_died = state.character.level != level_before
+            || state.character.hp < state.character.max_hp / 2;
+        let gained_xp = state.character.xp > xp_before || state.character.level > level_before;
+        assert!(
+            killed || leveled_or_died,
+            "combat() must resolve in either a kill or a death/severe-damage state, not silently exit"
+        );
+        if killed {
+            assert!(gained_xp, "killing the monster must award XP (or have level-upped)");
+        }
+    }
+
+    #[test]
+    fn combat_against_vermin_one_hp_resolves_in_one_player_turn_no_damage() {
+        let mut state = make_state();
+        state.character.hp = state.character.max_hp;
+        let initial_hp = state.character.hp;
+        let zone = crate::zones::Zone {
+            name: "Test Home",
+            description: "test",
+            danger_level: 1,
+            color: crate::zones::ZoneColor::Green,
+        };
+        let mut rng = rand::thread_rng();
+        let mut hits_landing_no_damage = 0;
+        for _ in 0..20 {
+            state.character.hp = initial_hp;
+            combat(&mut state, &mut rng, &zone, "rm", "Test Vermin", 2, 1, 4, false);
+            if state.character.hp == initial_hp {
+                hits_landing_no_damage += 1;
+            }
+        }
+        assert!(
+            hits_landing_no_damage >= 1,
+            "vs 1-HP vermin a level-1 warrior should sometimes one-shot before the monster swings"
+        );
     }
 
     fn healer_state(hp_offset: i32) -> GameState {
