@@ -328,10 +328,7 @@ fn handle_forge(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::
 }
 
 fn handle_angry_spirit(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
-    let (name, base_atk, base_xp) = random_monster(rng);
-    let scale = encounter_scale_for_danger(zone.danger_level);
-    let atk = (base_atk as f32 * scale).round().max(1.0) as i32;
-    let xp = (base_xp as f32 * scale).max(5.0) as u32;
+    let (name, atk, xp) = random_monster_for_zone(rng, zone);
     let profile = if rng.gen_ratio(1, 8) {
         apply_elite_pressure(&name, atk, xp, zone.danger_level)
     } else {
@@ -794,29 +791,65 @@ fn apply_elite_pressure(name: &str, base_attack: i32, base_xp: u32, danger: u32)
     }
 }
 
-fn random_monster(rng: &mut impl Rng) -> (String, i32, u32) {
-    let monsters = [
-        ("Segfault Specter", 8, 15),
-        ("Null Pointer Wraith", 6, 10),
-        ("Off-by-One Ogre", 10, 20),
-        ("Race Condition Rat", 5, 8),
-        ("Deadlock Demon", 12, 25),
-        ("Memory Leak Slime", 7, 12),
-        ("Buffer Overflow Beast", 14, 30),
-        ("Syntax Error Snake", 4, 6),
-        ("Infinite Loop Imp", 6, 10),
-        ("Dependency Hell Hound", 11, 22),
-    ];
-    let m = monsters[rng.gen_range(0..monsters.len())];
-    (m.0.to_string(), m.1, m.2)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MonsterTier {
+    Vermin,
+    Bruiser,
+    Hunter,
+    Horror,
+    BossAdjacent,
+}
+
+pub struct MonsterEntry {
+    pub name: &'static str,
+    pub tier: MonsterTier,
+    pub attack: i32,
+    pub xp: u32,
+}
+
+pub const MONSTER_POOL: &[MonsterEntry] = &[
+    MonsterEntry { name: "Syntax Error Snake",    tier: MonsterTier::Vermin,  attack: 4,  xp: 6  },
+    MonsterEntry { name: "Race Condition Rat",    tier: MonsterTier::Bruiser, attack: 5,  xp: 8  },
+    MonsterEntry { name: "Null Pointer Wraith",   tier: MonsterTier::Bruiser, attack: 6,  xp: 10 },
+    MonsterEntry { name: "Infinite Loop Imp",     tier: MonsterTier::Bruiser, attack: 6,  xp: 10 },
+    MonsterEntry { name: "Memory Leak Slime",     tier: MonsterTier::Bruiser, attack: 7,  xp: 12 },
+    MonsterEntry { name: "Segfault Specter",      tier: MonsterTier::Bruiser, attack: 8,  xp: 15 },
+    MonsterEntry { name: "Off-by-One Ogre",       tier: MonsterTier::Hunter,  attack: 10, xp: 20 },
+    MonsterEntry { name: "Dependency Hell Hound", tier: MonsterTier::Hunter,  attack: 11, xp: 22 },
+    MonsterEntry { name: "Deadlock Demon",        tier: MonsterTier::Hunter,  attack: 12, xp: 25 },
+    MonsterEntry { name: "Buffer Overflow Beast", tier: MonsterTier::Hunter,  attack: 14, xp: 30 },
+];
+
+pub fn tiers_for_danger(danger_level: u32) -> &'static [MonsterTier] {
+    match danger_level {
+        1 => &[MonsterTier::Vermin],
+        2 => &[MonsterTier::Vermin, MonsterTier::Bruiser],
+        3 => &[MonsterTier::Bruiser, MonsterTier::Hunter],
+        4 => &[MonsterTier::Hunter, MonsterTier::Horror],
+        _ => &[MonsterTier::Horror, MonsterTier::BossAdjacent],
+    }
+}
+
+fn random_monster_in_tiers(rng: &mut impl Rng, allowed: &[MonsterTier]) -> Option<&'static MonsterEntry> {
+    let pool: Vec<&MonsterEntry> = MONSTER_POOL
+        .iter()
+        .filter(|m| allowed.contains(&m.tier))
+        .collect();
+    if pool.is_empty() {
+        None
+    } else {
+        Some(pool[rng.gen_range(0..pool.len())])
+    }
 }
 
 fn random_monster_for_zone(rng: &mut impl Rng, zone: &crate::zones::Zone) -> (String, i32, u32) {
-    let (name, base_atk, base_xp) = random_monster(rng);
+    let entry = random_monster_in_tiers(rng, tiers_for_danger(zone.danger_level))
+        .or_else(|| random_monster_in_tiers(rng, &[MonsterTier::Hunter, MonsterTier::Bruiser, MonsterTier::Vermin]))
+        .expect("MONSTER_POOL must contain at least one entry");
     let scale = encounter_scale_for_danger(zone.danger_level);
-    let atk = (base_atk as f32 * scale).round().max(1.0) as i32;
-    let xp = (base_xp as f32 * scale).max(5.0) as u32;
-    (name, atk, xp)
+    let atk = ((entry.attack as f32 * scale).round() as i32).max(1);
+    let xp = ((entry.xp as f32 * scale).round() as u32).max(5);
+    (entry.name.to_string(), atk, xp)
 }
 
 fn combat(
@@ -1003,6 +1036,92 @@ mod tests {
 
     fn make_item(name: &str, slot: ItemSlot, power: i32, rarity: Rarity) -> Item {
         Item { name: name.to_string(), slot, power, rarity, enchant_level: 0 }
+    }
+
+    #[test]
+    fn tiers_for_danger_one_is_vermin_only() {
+        assert_eq!(tiers_for_danger(1), &[MonsterTier::Vermin]);
+    }
+
+    #[test]
+    fn tiers_for_danger_three_includes_bruiser_and_hunter_not_vermin() {
+        let tiers = tiers_for_danger(3);
+        assert!(tiers.contains(&MonsterTier::Bruiser));
+        assert!(tiers.contains(&MonsterTier::Hunter));
+        assert!(!tiers.contains(&MonsterTier::Vermin));
+    }
+
+    #[test]
+    fn tiers_for_danger_five_targets_horror_and_boss_adjacent() {
+        let tiers = tiers_for_danger(5);
+        assert!(tiers.contains(&MonsterTier::Horror));
+        assert!(tiers.contains(&MonsterTier::BossAdjacent));
+    }
+
+    #[test]
+    fn monster_pool_has_all_three_currently_populated_tiers() {
+        let has_vermin = MONSTER_POOL.iter().any(|m| matches!(m.tier, MonsterTier::Vermin));
+        let has_bruiser = MONSTER_POOL.iter().any(|m| matches!(m.tier, MonsterTier::Bruiser));
+        let has_hunter = MONSTER_POOL.iter().any(|m| matches!(m.tier, MonsterTier::Hunter));
+        assert!(has_vermin, "MONSTER_POOL must contain at least one Vermin entry");
+        assert!(has_bruiser, "MONSTER_POOL must contain at least one Bruiser entry");
+        assert!(has_hunter, "MONSTER_POOL must contain at least one Hunter entry");
+    }
+
+    #[test]
+    fn random_monster_in_tiers_vermin_only_returns_vermin_entry() {
+        let mut rng = rand::thread_rng();
+        for _ in 0..50 {
+            let entry = random_monster_in_tiers(&mut rng, &[MonsterTier::Vermin])
+                .expect("Vermin pool must be non-empty");
+            assert_eq!(entry.tier, MonsterTier::Vermin);
+        }
+    }
+
+    #[test]
+    fn random_monster_in_tiers_unpopulated_returns_none() {
+        let mut rng = rand::thread_rng();
+        let result = random_monster_in_tiers(&mut rng, &[MonsterTier::BossAdjacent]);
+        assert!(result.is_none(), "BossAdjacent has no entries yet — should return None for fallback");
+    }
+
+    #[test]
+    fn random_monster_for_zone_danger_one_only_spawns_vermin() {
+        let zone = crate::zones::Zone {
+            name: "Test Home",
+            description: "test",
+            danger_level: 1,
+            color: crate::zones::ZoneColor::Green,
+        };
+        let mut rng = rand::thread_rng();
+        let vermin_attacks: Vec<i32> = MONSTER_POOL
+            .iter()
+            .filter(|m| matches!(m.tier, MonsterTier::Vermin))
+            .map(|m| ((m.attack as f32 * encounter_scale_for_danger(1)).round() as i32).max(1))
+            .collect();
+        for _ in 0..100 {
+            let (_name, atk, _xp) = random_monster_for_zone(&mut rng, &zone);
+            assert!(
+                vermin_attacks.contains(&atk),
+                "danger-1 zone must only produce Vermin-tier monster ATK (got {})",
+                atk
+            );
+        }
+    }
+
+    #[test]
+    fn random_monster_for_zone_danger_five_falls_back_when_no_horror_yet() {
+        let zone = crate::zones::Zone {
+            name: "Test Abyss",
+            description: "test",
+            danger_level: 5,
+            color: crate::zones::ZoneColor::Red,
+        };
+        let mut rng = rand::thread_rng();
+        for _ in 0..50 {
+            let (_name, atk, _xp) = random_monster_for_zone(&mut rng, &zone);
+            assert!(atk >= 1, "fallback must still produce a valid monster");
+        }
     }
 
     #[test]
