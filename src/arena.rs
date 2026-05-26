@@ -495,7 +495,6 @@ pub struct ArenaCombatTuning {
     pub player_dmg_power_divisor: i32,
     pub enemy_hit_threshold_base: i32,
     pub enemy_hit_defense_divisor: i32,
-    pub enemy_hit_threshold_cap: i32,
     pub enemy_hit_crit: i32,
     pub enemy_dmg_defense_divisor: i32,
     pub recovery_base: i32,
@@ -560,22 +559,58 @@ pub fn compute_player_hit(
 
 pub const ENEMY_DEX_DODGE_DIVISOR: i32 = 5;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ArenaWave {
+    pub hp_multiplier: f32,
+    pub hit_threshold_cap: i32,
+    pub enemy_crit_chance_pct: u32,
+}
+
+pub fn arena_wave(round: u32) -> ArenaWave {
+    match round {
+        1..=3 => ArenaWave { hp_multiplier: 1.0, hit_threshold_cap: 18, enemy_crit_chance_pct: 0 },
+        4..=6 => ArenaWave { hp_multiplier: 1.4, hit_threshold_cap: 17, enemy_crit_chance_pct: 3 },
+        7..=9 => ArenaWave { hp_multiplier: 2.0, hit_threshold_cap: 15, enemy_crit_chance_pct: 6 },
+        10..=15 => ArenaWave { hp_multiplier: 3.0, hit_threshold_cap: 14, enemy_crit_chance_pct: 8 },
+        16..=25 => ArenaWave { hp_multiplier: 4.5, hit_threshold_cap: 12, enemy_crit_chance_pct: 12 },
+        26..=40 => ArenaWave { hp_multiplier: 6.5, hit_threshold_cap: 10, enemy_crit_chance_pct: 18 },
+        _ => ArenaWave { hp_multiplier: 9.0, hit_threshold_cap: 8, enemy_crit_chance_pct: 22 },
+    }
+}
+
+pub fn should_enemy_crit(crit_roll: u32, round: u32) -> bool {
+    crit_roll < arena_wave(round).enemy_crit_chance_pct
+}
+
+pub fn compute_enemy_max_hp(round: u32, player_max_hp: i32, prestige: u32) -> i32 {
+    let t = &ARENA_TUNING;
+    let wave = arena_wave(round);
+    let scaled_round_bonus =
+        ((round as f32) * (t.enemy_hp_per_round as f32) * wave.hp_multiplier) as i32;
+    t.enemy_hp_base
+        + scaled_round_bonus
+        + player_max_hp / t.enemy_hp_max_hp_divisor
+        + (prestige as i32) * t.enemy_hp_per_prestige
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum EnemyHitOutcome {
     Hit,
     Miss,
 }
 
-pub fn compute_enemy_hit(
+pub fn compute_enemy_hit_at_round(
     dodge_roll: i32,
     defense: i32,
     dexterity: i32,
+    round: u32,
 ) -> EnemyHitOutcome {
     let t = &ARENA_TUNING;
+    let wave = arena_wave(round);
     let threshold = (t.enemy_hit_threshold_base
         + defense / t.enemy_hit_defense_divisor
         + dexterity / ENEMY_DEX_DODGE_DIVISOR)
-        .min(t.enemy_hit_threshold_cap);
+        .min(wave.hit_threshold_cap);
     if dodge_roll > threshold || dodge_roll == t.enemy_hit_crit {
         EnemyHitOutcome::Hit
     } else {
@@ -595,7 +630,6 @@ pub const ARENA_TUNING: ArenaCombatTuning = ArenaCombatTuning {
     player_dmg_power_divisor: 2,
     enemy_hit_threshold_base: 8,
     enemy_hit_defense_divisor: 2,
-    enemy_hit_threshold_cap: 18,
     enemy_hit_crit: 20,
     enemy_dmg_defense_divisor: 3,
     recovery_base: 4,
@@ -642,10 +676,7 @@ struct ArenaEnemy {
 fn generate_enemy(round: u32, entry: &ArenaEntrySnapshot, rng: &mut impl Rng) -> ArenaEnemy {
     let name = ENEMY_NAMES[rng.gen_range(0..ENEMY_NAMES.len())].to_string();
     let t = &ARENA_TUNING;
-    let max_hp = t.enemy_hp_base
-        + (round as i32) * t.enemy_hp_per_round
-        + entry.max_hp / t.enemy_hp_max_hp_divisor
-        + (entry.prestige as i32) * t.enemy_hp_per_prestige;
+    let max_hp = compute_enemy_max_hp(round, entry.max_hp, entry.prestige);
     let attack = t.enemy_attack_base
         + (round as i32) * t.enemy_attack_per_round
         + entry.attack_power / t.enemy_attack_power_divisor
@@ -677,6 +708,7 @@ fn run_compact_combat(
     current_hp: i32,
     enemy: &mut ArenaEnemy,
     class: &crate::character::Class,
+    round: u32,
     rng: &mut impl Rng,
 ) -> CombatResult {
     let mut player_hp = current_hp;
@@ -791,17 +823,30 @@ fn run_compact_combat(
 
         let player_defense = entry.defense;
         let dodge_roll: i32 = rng.gen_range(1..=20);
-        match compute_enemy_hit(dodge_roll, player_defense, entry.dexterity) {
+        match compute_enemy_hit_at_round(dodge_roll, player_defense, entry.dexterity, round) {
             EnemyHitOutcome::Hit => {
-                let dmg = (enemy.attack - player_defense / t.enemy_dmg_defense_divisor).max(1);
+                let base_dmg = (enemy.attack - player_defense / t.enemy_dmg_defense_divisor).max(1);
+                let crit_roll: u32 = rng.gen_range(0..100);
+                let is_crit = should_enemy_crit(crit_roll, round);
+                let dmg = if is_crit { base_dmg * 2 } else { base_dmg };
                 player_hp -= dmg;
-                let (_plain, colored) = crate::messages::tournament_enemy_hit(
-                    &enemy.name,
-                    dmg,
-                    player_hp.max(0),
-                    entry.max_hp,
-                    total_turns,
-                );
+                let (_plain, colored) = if is_crit {
+                    crate::messages::tournament_enemy_crit(
+                        &enemy.name,
+                        dmg,
+                        player_hp.max(0),
+                        entry.max_hp,
+                        total_turns,
+                    )
+                } else {
+                    crate::messages::tournament_enemy_hit(
+                        &enemy.name,
+                        dmg,
+                        player_hp.max(0),
+                        entry.max_hp,
+                        total_turns,
+                    )
+                };
                 turn_lines.push(CombatExchange { colored });
             }
             EnemyHitOutcome::Miss => {
@@ -1057,7 +1102,7 @@ pub fn run_arena_session(
         eprintln!("{} {}", "⚔️".bold(), colored);
         eprintln!("{}", "─".repeat(40).dimmed());
 
-        let combat = run_compact_combat(&entry, run.current_hp, &mut enemy, &class, &mut rng);
+        let combat = run_compact_combat(&entry, run.current_hp, &mut enemy, &class, round, &mut rng);
         run.current_hp = combat.final_player_hp;
 
         for ex in &combat.exchanges {
@@ -1599,25 +1644,25 @@ mod tests {
 
     #[test]
     fn enemy_misses_against_low_defense_low_dex_low_roll() {
-        assert_eq!(compute_enemy_hit(5, 10, 0), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit_at_round(5, 10, 0, 1), EnemyHitOutcome::Miss);
     }
 
     #[test]
     fn enemy_hits_against_low_defense_low_dex_high_roll() {
-        assert_eq!(compute_enemy_hit(17, 10, 0), EnemyHitOutcome::Hit);
+        assert_eq!(compute_enemy_hit_at_round(17, 10, 0, 1), EnemyHitOutcome::Hit);
     }
 
     #[test]
     fn high_player_dex_makes_enemy_miss_mid_roll() {
-        let with_low_dex = compute_enemy_hit(15, 10, 0);
-        let with_high_dex = compute_enemy_hit(15, 10, 25);
+        let with_low_dex = compute_enemy_hit_at_round(15, 10, 0, 1);
+        let with_high_dex = compute_enemy_hit_at_round(15, 10, 25, 1);
         assert_eq!(with_low_dex, EnemyHitOutcome::Hit);
         assert_eq!(with_high_dex, EnemyHitOutcome::Miss);
     }
 
     #[test]
     fn nat_twenty_always_hits_through_dex_and_defense() {
-        assert_eq!(compute_enemy_hit(20, 200, 200), EnemyHitOutcome::Hit);
+        assert_eq!(compute_enemy_hit_at_round(20, 200, 200, 1), EnemyHitOutcome::Hit);
     }
 
     #[test]
@@ -1626,15 +1671,15 @@ mod tests {
             + 10 / ARENA_TUNING.enemy_hit_defense_divisor
             + 0 / ENEMY_DEX_DODGE_DIVISOR;
         assert_eq!(threshold, 13);
-        assert_eq!(compute_enemy_hit(13, 10, 0), EnemyHitOutcome::Miss);
-        assert_eq!(compute_enemy_hit(14, 10, 0), EnemyHitOutcome::Hit);
+        assert_eq!(compute_enemy_hit_at_round(13, 10, 0, 1), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit_at_round(14, 10, 0, 1), EnemyHitOutcome::Hit);
     }
 
     #[test]
     fn enemy_hit_threshold_caps_at_eighteen_for_high_defense() {
-        assert_eq!(compute_enemy_hit(18, 200, 200), EnemyHitOutcome::Miss);
-        assert_eq!(compute_enemy_hit(19, 200, 200), EnemyHitOutcome::Hit);
-        assert_eq!(compute_enemy_hit(20, 200, 200), EnemyHitOutcome::Hit);
+        assert_eq!(compute_enemy_hit_at_round(18, 200, 200, 1), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit_at_round(19, 200, 200, 1), EnemyHitOutcome::Hit);
+        assert_eq!(compute_enemy_hit_at_round(20, 200, 200, 1), EnemyHitOutcome::Hit);
     }
 
     #[test]
@@ -1643,9 +1688,9 @@ mod tests {
             + 4 / ARENA_TUNING.enemy_hit_defense_divisor
             + 10 / ENEMY_DEX_DODGE_DIVISOR;
         assert_eq!(low_def_threshold, 12);
-        assert!(low_def_threshold < ARENA_TUNING.enemy_hit_threshold_cap);
-        assert_eq!(compute_enemy_hit(12, 4, 10), EnemyHitOutcome::Miss);
-        assert_eq!(compute_enemy_hit(13, 4, 10), EnemyHitOutcome::Hit);
+        assert!(low_def_threshold < arena_wave(1).hit_threshold_cap);
+        assert_eq!(compute_enemy_hit_at_round(12, 4, 10, 1), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit_at_round(13, 4, 10, 1), EnemyHitOutcome::Hit);
     }
 
     #[test]
@@ -1665,6 +1710,99 @@ mod tests {
         assert_eq!(ARENA_TUNING.enemy_hp_per_round, 20);
         assert_eq!(ARENA_TUNING.enemy_hp_max_hp_divisor, 2);
         assert_eq!(ARENA_TUNING.enemy_hp_per_prestige, 50);
+    }
+
+    #[test]
+    fn enemy_hp_at_round_ten_is_meaningfully_harder_than_round_one() {
+        let r1 = compute_enemy_max_hp(1, 200, 0);
+        let r10 = compute_enemy_max_hp(10, 200, 0);
+        assert!(
+            r10 >= r1 * 4,
+            "round 10 enemy HP should be at least 4x round 1; got R1={} R10={}",
+            r1, r10
+        );
+    }
+
+    #[test]
+    fn enemy_hp_curve_is_monotonic_non_decreasing_through_round_fifty() {
+        let mut prev = 0;
+        for round in 1u32..=50 {
+            let hp = compute_enemy_max_hp(round, 200, 0);
+            assert!(
+                hp >= prev,
+                "enemy HP regressed at round {}: prev={} curr={}",
+                round, prev, hp
+            );
+            prev = hp;
+        }
+    }
+
+    #[test]
+    fn enemy_hit_cap_grows_stricter_in_later_waves() {
+        let early = arena_wave(1).hit_threshold_cap;
+        let mid = arena_wave(10).hit_threshold_cap;
+        let late = arena_wave(25).hit_threshold_cap;
+        let endgame = arena_wave(50).hit_threshold_cap;
+        assert!(mid < early, "round 10 cap {} should be < round 1 cap {}", mid, early);
+        assert!(late < mid, "round 25 cap {} should be < round 10 cap {}", late, mid);
+        assert!(endgame < late, "round 50 cap {} should be < round 25 cap {}", endgame, late);
+    }
+
+    #[test]
+    fn enemy_crit_message_contains_critical_marker_and_doubled_damage() {
+        let (plain, _colored) =
+            crate::messages::tournament_enemy_crit("Goblin", 50, 100, 150, 0);
+        assert!(plain.contains("CRITICAL"), "expected CRITICAL marker: {}", plain);
+        assert!(plain.contains("50"), "expected damage value: {}", plain);
+        assert!(plain.contains("Goblin"), "expected enemy name: {}", plain);
+    }
+
+    #[test]
+    fn enemy_does_not_crit_in_warmup_waves() {
+        for round in 1u32..=3 {
+            for roll in 0u32..100 {
+                assert!(
+                    !should_enemy_crit(roll, round),
+                    "round {} should never crit; roll={} produced crit",
+                    round, roll
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn enemy_can_crit_in_late_waves_but_not_always() {
+        let crits_at_fifty: usize = (0u32..100)
+            .filter(|&roll| should_enemy_crit(roll, 50))
+            .count();
+        assert!(crits_at_fifty > 0, "round 50 should have at least one crit-producing roll");
+        assert!(
+            crits_at_fifty < 100,
+            "round 50 must not crit on every roll; got {}/100",
+            crits_at_fifty
+        );
+    }
+
+    #[test]
+    fn high_defense_player_takes_more_hits_in_late_rounds_than_early() {
+        let high_def = 200;
+        let dex = 0;
+        let early_landing_rolls: i32 = (2..=20)
+            .filter(|&roll| {
+                compute_enemy_hit_at_round(roll, high_def, dex, 1) == EnemyHitOutcome::Hit
+            })
+            .count() as i32;
+        let late_landing_rolls: i32 = (2..=20)
+            .filter(|&roll| {
+                compute_enemy_hit_at_round(roll, high_def, dex, 25) == EnemyHitOutcome::Hit
+            })
+            .count() as i32;
+        assert!(
+            late_landing_rolls > early_landing_rolls,
+            "round 25 should land more often than round 1 against high-defense; \
+             early={} late={}",
+            early_landing_rolls, late_landing_rolls
+        );
     }
 
     #[test]
@@ -2243,7 +2381,7 @@ mod tests {
             attack: 7,
         };
 
-        let result = run_compact_combat(&entry, entry.hp, &mut enemy, &Class::Warrior, &mut rng);
+        let result = run_compact_combat(&entry, entry.hp, &mut enemy, &Class::Warrior, 1, &mut rng);
 
         assert!(
             result.total_turns >= 10,
@@ -2286,7 +2424,7 @@ mod tests {
             hp: 1_000_000, max_hp: 1_000_000, attack: 1,
         };
 
-        let result = run_compact_combat(&entry, 1_000_000, &mut enemy, &Class::Warrior, &mut rng);
+        let result = run_compact_combat(&entry, 1_000_000, &mut enemy, &Class::Warrior, 1, &mut rng);
 
         assert!(!result.player_won, "Expected forced defeat on turn-cap, got victory");
         assert!(

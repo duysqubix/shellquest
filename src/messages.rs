@@ -843,6 +843,31 @@ pub fn tournament_enemy_miss(enemy_name: &str, variant: u32) -> Msg {
     }
 }
 
+pub fn tournament_enemy_crit(enemy_name: &str, damage: i32, player_hp: i32, player_max_hp: i32, variant: u32) -> Msg {
+    let m = color_monster(enemy_name);
+    let d = color_damage(damage);
+    let hp_str = crate::display::color_hp(player_hp, player_max_hp);
+    let tag_plain = "CRITICAL!";
+    let tag = "CRITICAL!".red().bold();
+    match variant % 3 {
+        0 => {
+            let plain = format!("{} The {} crushes your guard for {} damage! HP: {}/{}", tag_plain, enemy_name, damage, player_hp, player_max_hp);
+            let colored = format!("{} The {} crushes your guard for {} damage! {}", tag, m, d, hp_str);
+            (plain, colored)
+        }
+        1 => {
+            let plain = format!("{} The {} lands a devastating blow! {} damage! HP: {}/{}", tag_plain, enemy_name, damage, player_hp, player_max_hp);
+            let colored = format!("{} The {} lands a {}! {} damage! {}", tag, m, "devastating blow".red().bold(), d, hp_str);
+            (plain, colored)
+        }
+        _ => {
+            let plain = format!("{} The {} eviscerates you for {} damage! HP: {}/{}", tag_plain, enemy_name, damage, player_hp, player_max_hp);
+            let colored = format!("{} The {} {} you for {} damage! {}", tag, m, "eviscerates".red().bold(), d, hp_str);
+            (plain, colored)
+        }
+    }
+}
+
 pub fn tournament_ko(rounds_cleared: u32, total_gold: u32, total_xp: u32) -> Msg {
     let plain = format!("You were knocked out after {} rounds. Earned: {} gold, {} XP.", rounds_cleared, total_gold, total_xp);
     let colored = format!("You were {} after {} rounds. Earned: {} gold, {} XP.", "knocked out".red().bold(), format!("{}", rounds_cleared).cyan().bold(), format!("{}", total_gold).yellow().bold(), format!("{}", total_xp).cyan().bold());

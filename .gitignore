@@ -5,3 +5,8 @@ target/
 docs/plans/
 .opencode/
 
+dev-tools/balance-sim/runs.db
+dev-tools/balance-sim/runs.db-*
+dev-tools/balance-sim/reports/
+dev-tools/balance-sim/__pycache__/
+dev-tools/balance-sim/simulator/__pycache__/
