@@ -33,14 +33,37 @@ Then the reporter queries SQLite to produce comparative reports:
 
 ```bash
 # Run a single character lifetime (smoke test)
-python3 runner.py --runs 1 --class Warrior --strategy greedy
+python3 runner.py --runs 1 --classes Warrior --strategies greedy --tuning-label smoke
 
 # Full Black Mirror sweep: 100 lives per (class × strategy) combo
 python3 runner.py --runs 100 --tuning-label v1.24-soft
 
-# Generate report from the database
+# Generate markdown report from the database
 python3 report.py --tuning-label v1.24-soft --output reports/v1.24-soft.md
+
+# Generate interactive HTML dashboard (open file:// in browser)
+python3 dashboard.py
+python3 dashboard.py --primary v1.24-soft         # pick a specific tuning_label
 ```
+
+## Dashboard
+
+`python3 dashboard.py` generates a single self-contained `dashboard.html`
+file next to `runs.db`. Open it locally in any browser (`file:///.../dashboard.html`).
+
+The dashboard pulls every `tuning_label` from the database and gives you
+four tabs:
+
+- **Summary** — overview tiles + lifetime stats table (class × strategy)
+- **Progression** — line charts of level / attack / defense / gold over tick number
+- **Arena** — survival rate, average rounds reached, damage taken, enemy crit
+  rate, all bucketed by tier × class
+- **A/B Compare** — pick a second `tuning_label` in the header dropdown to
+  diff two tuning configs side-by-side (the "did v1.25 actually improve
+  over v1.24?" view)
+
+Charts use Chart.js loaded from CDN — no other JS deps. Refresh the dashboard
+after new sims by re-running `python3 dashboard.py`.
 
 ## Layout
 
