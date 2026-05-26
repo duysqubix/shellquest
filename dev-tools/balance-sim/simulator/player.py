@@ -68,10 +68,13 @@ class SimPlayer:
         tuning_label: str, db_path: Path,
         target_level: int = 100, max_ticks: int = 8000,
         snapshot_every: int = 50,
+        min_arena_tier_index: int = 1,
     ):
         self.cls = cls
         self.race = race
-        self.strategy = strategies.STRATEGIES[strategy_name]()
+        self.strategy = strategies.STRATEGIES[strategy_name](
+            min_arena_tier_index=min_arena_tier_index,
+        )
         self.seed = seed
         self.tuning_label = tuning_label
         self.rng = random.Random(seed)
@@ -240,3 +243,12 @@ def simulate_one(
         return p.run()
     finally:
         p.cleanup()
+
+
+def auto_max_ticks(target_level: int) -> int:
+    if target_level <= 25:  return 1500
+    if target_level <= 40:  return 3000
+    if target_level <= 60:  return 6000
+    if target_level <= 100: return 18000
+    if target_level <= 130: return 45000
+    return 90000

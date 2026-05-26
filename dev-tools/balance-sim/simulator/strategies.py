@@ -19,9 +19,11 @@ def tier_unlocked(level: int, prestige: int, tier: dict) -> bool:
     return (level_ok or prestige_ok) if tier["or_unlock"] else (level_ok and prestige_ok)
 
 
-def best_unlocked_tier(level: int, prestige: int) -> dict | None:
+def best_unlocked_tier(level: int, prestige: int, min_index: int = 1) -> dict | None:
     best = None
     for tier in TIER_REQUIREMENTS:
+        if tier["index"] < min_index:
+            continue
         if tier_unlocked(level, prestige, tier):
             best = tier
     return best
@@ -47,6 +49,10 @@ class Decision:
 
 class Strategy:
     name: str = "base"
+    min_arena_tier_index: int = 1
+
+    def __init__(self, min_arena_tier_index: int = 1):
+        self.min_arena_tier_index = min_arena_tier_index
 
     def decide(self, state: dict, save: dict, rng: random.Random) -> Decision:
         raise NotImplementedError
@@ -77,7 +83,7 @@ class GreedyStrategy(Strategy):
             if gold >= enchant_cost * 2 and item["enchant_level"] < 5:
                 return Decision("enchant", {"slot": slot_name, "item": item, "cost": enchant_cost})
 
-        tier = best_unlocked_tier(level, prestige)
+        tier = best_unlocked_tier(level, prestige, min_index=self.min_arena_tier_index)
         if tier and state["hp"] >= state["max_hp"] * 0.9:
             fee = estimate_arena_fee(level, prestige, gold, tier["index"])
             if gold >= fee * 2:
@@ -111,7 +117,7 @@ class BalancedStrategy(Strategy):
             if gold >= enchant_cost * 4 and item["enchant_level"] < 3:
                 return Decision("enchant", {"slot": slot_name, "item": item, "cost": enchant_cost})
 
-        tier = best_unlocked_tier(level, prestige)
+        tier = best_unlocked_tier(level, prestige, min_index=self.min_arena_tier_index)
         if tier and state["hp"] >= state["max_hp"] * 0.95:
             fee = estimate_arena_fee(level, prestige, gold, tier["index"])
             if gold >= fee * 3 and tier["index"] >= 1:
@@ -137,7 +143,7 @@ class ConservativeStrategy(Strategy):
             if new_total > cur_total + 2:
                 return Decision("equip", {"index": idx + 1, "item": item})
 
-        tier = best_unlocked_tier(level, prestige)
+        tier = best_unlocked_tier(level, prestige, min_index=self.min_arena_tier_index)
         if tier and state["hp"] >= state["max_hp"] * 0.98:
             fee = estimate_arena_fee(level, prestige, gold, tier["index"])
             if gold >= fee * 5:
