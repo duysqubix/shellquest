@@ -495,6 +495,7 @@ pub struct ArenaCombatTuning {
     pub player_dmg_power_divisor: i32,
     pub enemy_hit_threshold_base: i32,
     pub enemy_hit_defense_divisor: i32,
+    pub enemy_hit_threshold_cap: i32,
     pub enemy_hit_crit: i32,
     pub enemy_dmg_defense_divisor: i32,
     pub recovery_base: i32,
@@ -571,9 +572,10 @@ pub fn compute_enemy_hit(
     dexterity: i32,
 ) -> EnemyHitOutcome {
     let t = &ARENA_TUNING;
-    let threshold = t.enemy_hit_threshold_base
+    let threshold = (t.enemy_hit_threshold_base
         + defense / t.enemy_hit_defense_divisor
-        + dexterity / ENEMY_DEX_DODGE_DIVISOR;
+        + dexterity / ENEMY_DEX_DODGE_DIVISOR)
+        .min(t.enemy_hit_threshold_cap);
     if dodge_roll > threshold || dodge_roll == t.enemy_hit_crit {
         EnemyHitOutcome::Hit
     } else {
@@ -583,9 +585,9 @@ pub fn compute_enemy_hit(
 
 pub const ARENA_TUNING: ArenaCombatTuning = ArenaCombatTuning {
     enemy_hp_base: 20,
-    enemy_hp_per_round: 10,
-    enemy_hp_max_hp_divisor: 4,
-    enemy_hp_per_prestige: 20,
+    enemy_hp_per_round: 20,
+    enemy_hp_max_hp_divisor: 2,
+    enemy_hp_per_prestige: 50,
     enemy_attack_base: 4,
     enemy_attack_per_round: 3,
     enemy_attack_power_divisor: 2,
@@ -593,6 +595,7 @@ pub const ARENA_TUNING: ArenaCombatTuning = ArenaCombatTuning {
     player_dmg_power_divisor: 2,
     enemy_hit_threshold_base: 8,
     enemy_hit_defense_divisor: 2,
+    enemy_hit_threshold_cap: 18,
     enemy_hit_crit: 20,
     enemy_dmg_defense_divisor: 3,
     recovery_base: 4,
@@ -729,7 +732,7 @@ fn run_compact_combat(
                     signature_label = sig_label;
                 }
             }
-            let crit_threshold = (20 - entry.intelligence / 4).max(15);
+            let crit_threshold = (20 - entry.intelligence / 8).max(13);
             let is_crit = hit_roll >= crit_threshold;
             let dmg = if is_crit { raw_dmg * 2 } else { raw_dmg };
             enemy.hp -= dmg;
@@ -1625,6 +1628,43 @@ mod tests {
         assert_eq!(threshold, 13);
         assert_eq!(compute_enemy_hit(13, 10, 0), EnemyHitOutcome::Miss);
         assert_eq!(compute_enemy_hit(14, 10, 0), EnemyHitOutcome::Hit);
+    }
+
+    #[test]
+    fn enemy_hit_threshold_caps_at_eighteen_for_high_defense() {
+        assert_eq!(compute_enemy_hit(18, 200, 200), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit(19, 200, 200), EnemyHitOutcome::Hit);
+        assert_eq!(compute_enemy_hit(20, 200, 200), EnemyHitOutcome::Hit);
+    }
+
+    #[test]
+    fn enemy_hit_threshold_cap_preserves_low_defense_dynamic_range() {
+        let low_def_threshold = ARENA_TUNING.enemy_hit_threshold_base
+            + 4 / ARENA_TUNING.enemy_hit_defense_divisor
+            + 10 / ENEMY_DEX_DODGE_DIVISOR;
+        assert_eq!(low_def_threshold, 12);
+        assert!(low_def_threshold < ARENA_TUNING.enemy_hit_threshold_cap);
+        assert_eq!(compute_enemy_hit(12, 4, 10), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit(13, 4, 10), EnemyHitOutcome::Hit);
+    }
+
+    #[test]
+    fn crit_threshold_ramps_with_intelligence_and_caps_at_thirteen() {
+        fn crit_thresh(int_: i32) -> i32 {
+            (20 - int_ / 8).max(13)
+        }
+        assert_eq!(crit_thresh(8), 19);
+        assert_eq!(crit_thresh(24), 17);
+        assert_eq!(crit_thresh(48), 14);
+        assert_eq!(crit_thresh(56), 13);
+        assert_eq!(crit_thresh(200), 13);
+    }
+
+    #[test]
+    fn enemy_hp_scales_with_new_tuning_constants() {
+        assert_eq!(ARENA_TUNING.enemy_hp_per_round, 20);
+        assert_eq!(ARENA_TUNING.enemy_hp_max_hp_divisor, 2);
+        assert_eq!(ARENA_TUNING.enemy_hp_per_prestige, 50);
     }
 
     #[test]

@@ -89,7 +89,7 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     let boss_at_full_hp = state.active_boss.as_ref().is_some_and(|b| b.hp == b.max_hp);
 
     let hit_roll: i32 = rng.gen_range(1..=20);
-    let crit_threshold = (20 - player_int / 4).max(15);
+    let crit_threshold = (20 - player_int / 8).max(13);
     let mut signature_label: Option<&'static str> = None;
     let player_dmg: Option<(i32, bool)> = {
         let boss = state.active_boss.as_mut().unwrap();

@@ -917,7 +917,7 @@ fn combat(
                 first_strike,
             );
             raw_dmg += sig_bonus;
-            let crit_threshold = (20 - player_int / 4).max(15);
+            let crit_threshold = (20 - player_int / 8).max(13);
             if hit_roll >= crit_threshold {
                 raw_dmg *= 2;
             }
