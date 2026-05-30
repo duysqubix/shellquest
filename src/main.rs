@@ -110,6 +110,11 @@ enum Commands {
     },
     /// Browse the shop (must be in home directory)
     Shop,
+    /// Meet the daily quest-giver in your home directory
+    Quest {
+        #[command(subcommand)]
+        action: Option<QuestAction>,
+    },
     /// Buy an item from the shop by number (see `sq shop` for numbered list)
     Buy {
         /// Item number from the shop list
@@ -148,6 +153,15 @@ enum Commands {
     Tournament,
 }
 
+#[derive(Subcommand)]
+enum QuestAction {
+    /// Speak the hidden scroll phrase back to the quest-giver
+    Answer {
+        /// Phrase found in the Void scroll
+        phrase: Vec<String>,
+    },
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -171,6 +185,7 @@ fn main() {
             file,
         } => cmd_hook(&shell, install || file.is_some(), file),
         Commands::Shop => cmd_shop(),
+        Commands::Quest { action } => cmd_quest(action),
         Commands::Buy { number } => cmd_buy(number),
         Commands::Sell { item } => cmd_sell(&item.join(" ")),
         Commands::Enchant { name } => cmd_enchant(&name.join(" ")),
@@ -775,6 +790,329 @@ fn refresh_shop_if_needed(game: &mut state::GameState) {
             game.shop_items.push(loot::roll_shop_loot());
         }
         game.shop_refreshed = Some(now);
+    }
+}
+
+const QUEST_PHRASE_WORDS: &[&str] = &[
+    "ashen", "root", "sigil", "hollow", "prompt", "ember", "null", "rune", "echo", "vault",
+    "cursor", "shadow", "inode", "glyph", "midnight", "pipe", "shell", "cipher", "kernel",
+    "static", "oracle", "thread", "daemon", "cache",
+];
+
+const QUEST_BASE_XP: u32 = 75;
+const QUEST_XP_PER_LEVEL: u32 = 10;
+const QUEST_BASE_GOLD: u32 = 40;
+const QUEST_GOLD_PER_LEVEL: u32 = 5;
+
+#[derive(Debug, PartialEq, Eq)]
+enum QuestAnswerStatus {
+    Correct,
+    Wrong,
+    AlreadyCompleted,
+    NoActiveQuest,
+}
+
+#[derive(Debug)]
+struct QuestAnswerResult {
+    status: QuestAnswerStatus,
+    xp: u32,
+    gold: u32,
+    item_name: Option<String>,
+    item_rarity: Option<character::Rarity>,
+}
+
+fn normalize_quest_answer(answer: &str) -> String {
+    answer
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn quest_is_current(game: &state::GameState, now: chrono::DateTime<chrono::Utc>) -> bool {
+    matches!(game.quest_refreshed, Some(last) if last.date_naive() == now.date_naive())
+}
+
+fn quest_needs_refresh(game: &state::GameState, now: chrono::DateTime<chrono::Utc>) -> bool {
+    !quest_is_current(game, now) || game.quest_phrase.is_none()
+}
+
+fn refresh_quest_state_if_needed(
+    game: &mut state::GameState,
+    now: chrono::DateTime<chrono::Utc>,
+    phrase: String,
+    scroll_path: Option<std::path::PathBuf>,
+) -> bool {
+    if !quest_needs_refresh(game, now) {
+        return false;
+    }
+
+    game.quest_refreshed = Some(now);
+    game.quest_phrase = Some(phrase);
+    game.quest_scroll_path = scroll_path;
+    game.quest_completed_today = false;
+    true
+}
+
+fn quest_seed(game: &state::GameState, now: chrono::DateTime<chrono::Utc>) -> u64 {
+    use chrono::Datelike;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    now.date_naive().year().hash(&mut hasher);
+    now.date_naive().ordinal().hash(&mut hasher);
+    game.character.name.hash(&mut hasher);
+    game.created_at.timestamp().hash(&mut hasher);
+    hasher.finish()
+}
+
+fn quest_phrase_for_day(game: &state::GameState, now: chrono::DateTime<chrono::Utc>) -> String {
+    use rand::{Rng, SeedableRng};
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(quest_seed(game, now));
+    let mut words = Vec::new();
+    while words.len() < 3 {
+        let word = QUEST_PHRASE_WORDS[rng.gen_range(0..QUEST_PHRASE_WORDS.len())];
+        if !words.contains(&word) {
+            words.push(word);
+        }
+    }
+    words.join(" ")
+}
+
+fn quest_scroll_contents(phrase: &str) -> String {
+    format!(
+        "A vellum curl hums with terminal-static.\n\nSpeak this phrase back to the quest-giver:\n{}\n",
+        phrase
+    )
+}
+
+fn refresh_quest_if_needed_at(
+    game: &mut state::GameState,
+    now: chrono::DateTime<chrono::Utc>,
+    rng: &mut impl rand::Rng,
+) -> Result<bool, String> {
+    if !quest_needs_refresh(game, now) {
+        return Ok(false);
+    }
+
+    let phrase = quest_phrase_for_day(game, now);
+    let contents = quest_scroll_contents(&phrase);
+    let root = void::generate_void(rng).map_err(|e| format!("Failed to shape the Void: {}", e))?;
+    let scroll_path = void::hide_file_in_void(&root, &contents, rng)
+        .map_err(|e| format!("Failed to hide the quest scroll: {}", e))?;
+    Ok(refresh_quest_state_if_needed(
+        game,
+        now,
+        phrase,
+        Some(scroll_path),
+    ))
+}
+
+fn cleanup_quest_scroll(game: &mut state::GameState) {
+    let Some(path) = game.quest_scroll_path.take() else {
+        return;
+    };
+
+    match std::fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => eprintln!(
+            "{} Could not clean up quest scroll {}: {}",
+            "⚠️".yellow(),
+            path.display(),
+            e.to_string().red()
+        ),
+    }
+}
+
+fn quest_reward_amounts(game: &state::GameState) -> (u32, u32) {
+    let level = game.character.level;
+    (
+        QUEST_BASE_XP + level * QUEST_XP_PER_LEVEL,
+        QUEST_BASE_GOLD + level * QUEST_GOLD_PER_LEVEL,
+    )
+}
+
+fn apply_quest_answer(
+    game: &mut state::GameState,
+    answer: &str,
+    now: chrono::DateTime<chrono::Utc>,
+    reward_item: character::Item,
+) -> QuestAnswerResult {
+    if game.quest_completed_today && quest_is_current(game, now) {
+        return QuestAnswerResult {
+            status: QuestAnswerStatus::AlreadyCompleted,
+            xp: 0,
+            gold: 0,
+            item_name: None,
+            item_rarity: None,
+        };
+    }
+
+    let Some(expected) = game.quest_phrase.clone() else {
+        return QuestAnswerResult {
+            status: QuestAnswerStatus::NoActiveQuest,
+            xp: 0,
+            gold: 0,
+            item_name: None,
+            item_rarity: None,
+        };
+    };
+
+    if !quest_is_current(game, now) {
+        return QuestAnswerResult {
+            status: QuestAnswerStatus::NoActiveQuest,
+            xp: 0,
+            gold: 0,
+            item_name: None,
+            item_rarity: None,
+        };
+    }
+
+    if normalize_quest_answer(answer) != normalize_quest_answer(&expected) {
+        return QuestAnswerResult {
+            status: QuestAnswerStatus::Wrong,
+            xp: 0,
+            gold: 0,
+            item_name: None,
+            item_rarity: None,
+        };
+    }
+
+    let (xp, gold) = quest_reward_amounts(game);
+    let item_name = reward_item.name.clone();
+    let item_rarity = reward_item.rarity;
+    let leveled = game.character.gain_xp(xp);
+    game.character.gold += gold;
+    events::add_to_inventory_pub(game, reward_item);
+    game.quest_completed_today = true;
+    cleanup_quest_scroll(game);
+
+    let (plain, _) = messages::quest_reward(&game.character.class, &item_name, xp, gold);
+    game.add_journal(journal::JournalEntry::new(journal::EventType::Quest, plain));
+    if leveled {
+        events::emit_level_up(game);
+    }
+
+    QuestAnswerResult {
+        status: QuestAnswerStatus::Correct,
+        xp,
+        gold,
+        item_name: Some(item_name),
+        item_rarity: Some(item_rarity),
+    }
+}
+
+fn ensure_quest_home() -> bool {
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    if cwd != home {
+        eprintln!(
+            "{} The quest-giver only receives visitors in your {}. You are in {}",
+            "🏠".bold(),
+            "home directory".cyan().bold(),
+            cwd.dimmed()
+        );
+        eprintln!("  Run {} to return home first.", "cd ~".cyan());
+        return false;
+    }
+
+    true
+}
+
+fn cmd_quest(action: Option<QuestAction>) {
+    if !ensure_quest_home() {
+        return;
+    }
+
+    if let Some(QuestAction::Answer { phrase }) = &action {
+        if phrase.is_empty() {
+            eprintln!(
+                "{} Usage: {}",
+                "❌".bold(),
+                "sq quest answer \"<phrase>\"".cyan()
+            );
+            return;
+        }
+    }
+
+    let mut game = match state::load() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            return;
+        }
+    };
+
+    let now = chrono::Utc::now();
+    let mut rng = rand::thread_rng();
+    if let Err(e) = refresh_quest_if_needed_at(&mut game, now, &mut rng) {
+        eprintln!("{} {}", "❌".bold(), e.red());
+        return;
+    }
+
+    match action {
+        None => {
+            if game.quest_completed_today && quest_is_current(&game, now) {
+                display::print_quest(
+                    "You've already claimed today's boon. Return after midnight UTC.",
+                );
+            } else {
+                let (_, colored) = messages::quest_giver(&game.character.class);
+                display::print_quest(&colored);
+                eprintln!(
+                    "  Bring it back with {}.",
+                    "sq quest answer \"<phrase>\"".cyan()
+                );
+            }
+        }
+        Some(QuestAction::Answer { phrase }) => {
+            let answer = phrase.join(" ");
+            let reward = loot::roll_loot_with_min_rarity(character::Rarity::Rare);
+            let result = apply_quest_answer(&mut game, &answer, now, reward);
+            match result.status {
+                QuestAnswerStatus::Correct => {
+                    if let (Some(item_name), Some(item_rarity)) =
+                        (&result.item_name, result.item_rarity)
+                    {
+                        let (_, colored) = messages::quest_reward(
+                            &game.character.class,
+                            item_name,
+                            result.xp,
+                            result.gold,
+                        );
+                        display::print_quest(&colored);
+                        display::print_loot(&format!("Quest boon: {}", item_name), &item_rarity);
+                    }
+                }
+                QuestAnswerStatus::Wrong => {
+                    display::print_quest(
+                        "The quest-giver shakes their head. That is not the phrase.",
+                    );
+                }
+                QuestAnswerStatus::AlreadyCompleted => {
+                    display::print_quest(
+                        "You've already claimed today's boon. Return after midnight UTC.",
+                    );
+                }
+                QuestAnswerStatus::NoActiveQuest => {
+                    display::print_quest(
+                        "No active scroll is waiting. Ask for today's quest first.",
+                    );
+                }
+            }
+        }
+    }
+
+    if let Err(e) = state::save(&game) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
 
@@ -1893,6 +2231,115 @@ mod tests {
             }
             _ => panic!("expected Commands::Identify via alias"),
         }
+    }
+
+    #[test]
+    fn parser_quest_answer_routes_phrase_to_quest_subcommand() {
+        let cli = Cli::try_parse_from(["sq", "quest", "answer", "ashen", "root", "sigil"])
+            .expect("'sq quest answer <phrase>' must parse");
+        match cli.command {
+            Commands::Quest {
+                action: Some(QuestAction::Answer { phrase }),
+            } => assert_eq!(phrase, vec!["ashen", "root", "sigil"]),
+            _ => panic!("expected quest answer variant"),
+        }
+    }
+
+    #[test]
+    fn quest_answer_normalization_is_case_insensitive_and_whitespace_insensitive() {
+        assert_eq!(
+            normalize_quest_answer("  Ashen   Root\nSigil "),
+            "ashen root sigil"
+        );
+    }
+
+    #[test]
+    fn quest_correct_answer_awards_once() {
+        let mut state = make_state_with_items(vec![]);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-05-30T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        state.quest_refreshed = Some(now);
+        state.quest_phrase = Some("ashen root sigil".to_string());
+        state.quest_completed_today = false;
+        state.character.gold = 10;
+        let reward = item_full("Rare Quest Blade", 12, Rarity::Rare);
+
+        let first = apply_quest_answer(&mut state, " ASHEN   root sigil ", now, reward.clone());
+        assert_eq!(first.status, QuestAnswerStatus::Correct);
+        assert!(state.quest_completed_today);
+        assert!(state.character.gold > 10);
+        assert!(state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == reward.name));
+
+        let gold_after_first = state.character.gold;
+        let inventory_after_first = state.character.inventory.len();
+        let second = apply_quest_answer(&mut state, "ashen root sigil", now, reward);
+        assert_eq!(second.status, QuestAnswerStatus::AlreadyCompleted);
+        assert_eq!(state.character.gold, gold_after_first);
+        assert_eq!(state.character.inventory.len(), inventory_after_first);
+    }
+
+    #[test]
+    fn quest_wrong_answer_does_not_penalize_or_complete() {
+        let mut state = make_state_with_items(vec![]);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-05-30T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        state.quest_refreshed = Some(now);
+        state.quest_phrase = Some("ashen root sigil".to_string());
+        state.character.gold = 25;
+        let reward = item_full("Rare Quest Blade", 12, Rarity::Rare);
+
+        let result = apply_quest_answer(&mut state, "wrong words", now, reward);
+        assert_eq!(result.status, QuestAnswerStatus::Wrong);
+        assert!(!state.quest_completed_today);
+        assert_eq!(state.character.gold, 25);
+        assert!(state.character.inventory.is_empty());
+    }
+
+    #[test]
+    fn quest_refresh_keeps_same_day_and_replaces_after_utc_midnight() {
+        let mut state = make_state_with_items(vec![]);
+        let day_one = chrono::DateTime::parse_from_rfc3339("2026-05-30T23:59:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let same_day = chrono::DateTime::parse_from_rfc3339("2026-05-30T23:59:59Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let day_two = chrono::DateTime::parse_from_rfc3339("2026-05-31T00:00:01Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+
+        assert!(refresh_quest_state_if_needed(
+            &mut state,
+            day_one,
+            "first phrase".to_string(),
+            None,
+        ));
+        assert_eq!(state.quest_phrase.as_deref(), Some("first phrase"));
+        state.quest_completed_today = true;
+
+        assert!(!refresh_quest_state_if_needed(
+            &mut state,
+            same_day,
+            "same-day phrase".to_string(),
+            None,
+        ));
+        assert_eq!(state.quest_phrase.as_deref(), Some("first phrase"));
+        assert!(state.quest_completed_today);
+
+        assert!(refresh_quest_state_if_needed(
+            &mut state,
+            day_two,
+            "second phrase".to_string(),
+            None,
+        ));
+        assert_eq!(state.quest_phrase.as_deref(), Some("second phrase"));
+        assert!(!state.quest_completed_today);
     }
 
     #[test]

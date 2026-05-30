@@ -2065,3 +2065,120 @@ pub fn tournament_ko(rounds_cleared: u32, total_gold: u32, total_xp: u32) -> Msg
     );
     (plain, colored)
 }
+
+pub fn quest_giver(class: &Class) -> Msg {
+    match class {
+        Class::Wizard => (
+            "The quest-giver opens a starless grimoire: a scroll bearing a phrase is hidden deep in the Void; find it and speak it back.".to_string(),
+            format!(
+                "The quest-giver opens a {}: a scroll bearing a phrase is hidden deep in the {}; find it and speak it back.",
+                "starless grimoire".blue().bold(),
+                "Void".magenta().bold()
+            ),
+        ),
+        Class::Warrior => (
+            "The quest-giver points with a scarred gauntlet: a scroll bearing a phrase is hidden deep in the Void; find it and speak it back.".to_string(),
+            format!(
+                "The quest-giver points with a {}: a scroll bearing a phrase is hidden deep in the {}; find it and speak it back.",
+                "scarred gauntlet".red().bold(),
+                "Void".magenta().bold()
+            ),
+        ),
+        Class::Rogue => (
+            "The quest-giver slips you a silent nod: a scroll bearing a phrase is hidden deep in the Void; find it and speak it back.".to_string(),
+            format!(
+                "The quest-giver slips you a {}: a scroll bearing a phrase is hidden deep in the {}; find it and speak it back.",
+                "silent nod".yellow().bold(),
+                "Void".magenta().bold()
+            ),
+        ),
+        Class::Ranger => (
+            "The quest-giver marks no trail: a scroll bearing a phrase is hidden deep in the Void; find it and speak it back.".to_string(),
+            format!(
+                "The quest-giver marks {}: a scroll bearing a phrase is hidden deep in the {}; find it and speak it back.",
+                "no trail".green().bold(),
+                "Void".magenta().bold()
+            ),
+        ),
+        Class::Necromancer => (
+            "The quest-giver whispers through a dead shell: a scroll bearing a phrase is hidden deep in the Void; find it and speak it back.".to_string(),
+            format!(
+                "The quest-giver whispers through a {}: a scroll bearing a phrase is hidden deep in the {}; find it and speak it back.",
+                "dead shell".magenta().bold(),
+                "Void".magenta().bold()
+            ),
+        ),
+    }
+}
+
+pub fn quest_reward(class: &Class, item_name: &str, xp: u32, gold: u32) -> Msg {
+    let x = color_xp(xp);
+    let g = color_gold(gold);
+    match class {
+        Class::Wizard => (
+            format!(
+                "The phrase unlocks the Void's ward. Reward: {}, +{} XP, +{} gold",
+                item_name, xp, gold
+            ),
+            format!(
+                "The phrase unlocks the Void's {}. Reward: {}, {} {}",
+                "ward".blue().bold(),
+                item_name.white().bold(),
+                x,
+                g
+            ),
+        ),
+        Class::Warrior => (
+            format!(
+                "The quest-giver salutes your search. Reward: {}, +{} XP, +{} gold",
+                item_name, xp, gold
+            ),
+            format!(
+                "The quest-giver {} your search. Reward: {}, {} {}",
+                "salutes".red().bold(),
+                item_name.white().bold(),
+                x,
+                g
+            ),
+        ),
+        Class::Rogue => (
+            format!(
+                "The found phrase pays out cleanly. Reward: {}, +{} XP, +{} gold",
+                item_name, xp, gold
+            ),
+            format!(
+                "The found phrase pays out {}. Reward: {}, {} {}",
+                "cleanly".yellow().bold(),
+                item_name.white().bold(),
+                x,
+                g
+            ),
+        ),
+        Class::Ranger => (
+            format!(
+                "The trail through the Void is honored. Reward: {}, +{} XP, +{} gold",
+                item_name, xp, gold
+            ),
+            format!(
+                "The trail through the Void is {}. Reward: {}, {} {}",
+                "honored".green().bold(),
+                item_name.white().bold(),
+                x,
+                g
+            ),
+        ),
+        Class::Necromancer => (
+            format!(
+                "The dead letters answer. Reward: {}, +{} XP, +{} gold",
+                item_name, xp, gold
+            ),
+            format!(
+                "The {} answer. Reward: {}, {} {}",
+                "dead letters".magenta().bold(),
+                item_name.white().bold(),
+                x,
+                g
+            ),
+        ),
+    }
+}

@@ -1016,6 +1016,27 @@ fn roll_item_of_rarity(rarity: Rarity, _danger_level: u32) -> Item {
     }
 }
 
+fn rarity_rank(rarity: Rarity) -> u8 {
+    match rarity {
+        Rarity::Common => 0,
+        Rarity::Uncommon => 1,
+        Rarity::Rare => 2,
+        Rarity::Epic => 3,
+        Rarity::Legendary => 4,
+    }
+}
+
+pub fn roll_loot_with_min_rarity(min_rarity: Rarity) -> Item {
+    let mut rng = rand::thread_rng();
+    let rarity = roll_rarity(&mut rng);
+    let rarity = if rarity_rank(rarity) < rarity_rank(min_rarity) {
+        min_rarity
+    } else {
+        rarity
+    };
+    roll_item_of_rarity(rarity, 3)
+}
+
 /// Roll boss loot — no Commons, weighted toward Rare/Epic/Legendary.
 /// Uncommon 40%, Rare ~47%, Epic ~10%, Legendary ~3%
 pub fn roll_boss_loot() -> Item {
@@ -1503,6 +1524,18 @@ mod tests {
             assert!(
                 !matches!(item.rarity, crate::character::Rarity::Common),
                 "boss loot rolled Common"
+            );
+        }
+    }
+
+    #[test]
+    fn roll_loot_with_min_rarity_forces_rare_or_better() {
+        for _ in 0..200 {
+            let item = roll_loot_with_min_rarity(Rarity::Rare);
+            assert!(
+                matches!(item.rarity, Rarity::Rare | Rarity::Epic | Rarity::Legendary),
+                "quest reward rolled below Rare: {:?}",
+                item.rarity
             );
         }
     }

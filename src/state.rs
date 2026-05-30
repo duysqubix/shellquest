@@ -30,6 +30,14 @@ pub struct GameState {
     /// Date the shop was last refreshed (UTC midnight)
     #[serde(default)]
     pub shop_refreshed: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub quest_refreshed: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub quest_phrase: Option<String>,
+    #[serde(default)]
+    pub quest_scroll_path: Option<PathBuf>,
+    #[serde(default)]
+    pub quest_completed_today: bool,
     /// Last time the magical healer credited HP (UTC). Drives time-based passive heal.
     #[serde(default)]
     pub last_heal_at: Option<DateTime<Utc>>,
@@ -53,6 +61,10 @@ impl GameState {
             last_announced_version: None,
             shop_items: Vec::new(),
             shop_refreshed: None,
+            quest_refreshed: None,
+            quest_phrase: None,
+            quest_scroll_path: None,
+            quest_completed_today: false,
             last_heal_at: None,
             active_boss: None,
             permadeath: false,
@@ -190,6 +202,15 @@ mod tests {
     }
 
     #[test]
+    fn game_state_new_has_no_active_quest() {
+        let state = GameState::new(make_character());
+        assert!(state.quest_refreshed.is_none());
+        assert!(state.quest_phrase.is_none());
+        assert!(state.quest_scroll_path.is_none());
+        assert!(!state.quest_completed_today);
+    }
+
+    #[test]
     fn game_state_serializes_and_deserializes_boss() {
         use crate::boss::spawn_boss;
         let mut state = GameState::new(make_character());
@@ -208,5 +229,48 @@ mod tests {
         let restored: GameState = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.character.tournament_wins, 7);
         assert_eq!(restored.character.best_tournament_round, 42);
+    }
+
+    #[test]
+    fn game_state_round_trips_quest_fields() {
+        let mut state = GameState::new(make_character());
+        let now = chrono::DateTime::parse_from_rfc3339("2026-05-30T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        state.quest_refreshed = Some(now);
+        state.quest_phrase = Some("ashen root sigil".to_string());
+        state.quest_scroll_path = Some(PathBuf::from("/tmp/sq-test/the_void/lost_scroll_0001.txt"));
+        state.quest_completed_today = true;
+
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: GameState = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.quest_refreshed, Some(now));
+        assert_eq!(restored.quest_phrase.as_deref(), Some("ashen root sigil"));
+        assert_eq!(
+            restored.quest_scroll_path.as_deref(),
+            Some(std::path::Path::new(
+                "/tmp/sq-test/the_void/lost_scroll_0001.txt"
+            ))
+        );
+        assert!(restored.quest_completed_today);
+    }
+
+    #[test]
+    fn game_state_loads_old_save_without_quest_fields() {
+        let state = GameState::new(make_character());
+        let mut value = serde_json::to_value(&state).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("quest_refreshed");
+        object.remove("quest_phrase");
+        object.remove("quest_scroll_path");
+        object.remove("quest_completed_today");
+
+        let restored: GameState = serde_json::from_value(value).unwrap();
+
+        assert!(restored.quest_refreshed.is_none());
+        assert!(restored.quest_phrase.is_none());
+        assert!(restored.quest_scroll_path.is_none());
+        assert!(!restored.quest_completed_today);
     }
 }
