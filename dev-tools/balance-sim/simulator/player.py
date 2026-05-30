@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import shutil
 import sqlite3
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 from . import db
 from . import driver
@@ -28,7 +30,14 @@ RACE_BONUS = {
 }
 
 
-def starter_save(cls: str, race: str, seed: int) -> dict:
+def _home_parent() -> str | None:
+    candidate = Path(os.environ.get("SQ_SIM_HOME_PARENT", "/sim-home"))
+    if candidate.is_dir():
+        return str(candidate)
+    return None
+
+
+def starter_save(cls: str, race: str, seed: int) -> dict[str, Any]:
     bs, bd, bi = CLASS_BASE[cls]
     rs, rd, ri = RACE_BONUS[race]
     strength = bs + rs
@@ -81,7 +90,7 @@ class SimPlayer:
         self.target_level = target_level
         self.max_ticks = max_ticks
         self.snapshot_every = snapshot_every
-        self.home = Path(tempfile.mkdtemp(prefix=f"sq-bench-{seed}-"))
+        self.home = Path(tempfile.mkdtemp(prefix=f"sq-bench-{seed}-", dir=_home_parent()))
         self.conn = db.open_db(db_path)
         db.init_schema(self.conn)
         self.run_id = db.insert_run(
@@ -90,29 +99,41 @@ class SimPlayer:
             target_level=target_level, max_ticks=max_ticks,
         )
         self.tick_no = 0
+        self._enchant_failure_count = 0
+        driver.set_invocation_recorder(self._record_sq_invocation)
         driver.init_save(self.home, starter_save(cls, race, seed))
 
     def cleanup(self) -> None:
+        driver.set_invocation_recorder(None)
         try:
             db.close(self.conn)
         finally:
             shutil.rmtree(self.home, ignore_errors=True)
 
-    def _read(self) -> tuple[dict, dict]:
+    def _record_sq_invocation(self, argv: list[str], cwd: str, exit_code: int,
+                              stdout: str, stderr: str, duration_ms: int) -> None:
+        db.insert_sq_invocation(
+            self.conn, self.run_id, self.tick_no,
+            argv=" ".join(argv), cwd=cwd, exit_code=exit_code,
+            stdout=stdout, stderr=stderr, duration_ms=duration_ms,
+        )
+
+    def _read(self) -> tuple[dict[str, Any], dict[str, Any]]:
         save = driver.read_save(self.home)
         return save, driver.derive_state(save)
 
-    def _snapshot(self, state: dict) -> None:
+    def _snapshot(self, state: dict[str, Any]) -> None:
         db.insert_tick_snapshot(self.conn, self.run_id, self.tick_no, state)
 
-    def _log(self, action: str, details: dict | None = None, outcome: str | None = None) -> None:
+    def _log(self, action: str, details: dict[str, Any] | None = None,
+             outcome: str | None = None) -> None:
         db.insert_action(self.conn, self.run_id, self.tick_no, action,
                          details=details, outcome=outcome)
 
     def _execute_tick(self, decision: strategies.Decision) -> None:
         kind = decision.payload.get("cmd_kind", "craft")
         danger = decision.payload.get("danger", 2)
-        cwd = driver.has_segment_zone(danger)
+        cwd = driver.cwd_for_danger(danger, self.home)
         if kind == "craft":
             cmd = self.rng.choice(driver.CRAFT_CMDS)
             exit_code = 0
@@ -122,7 +143,18 @@ class SimPlayer:
         else:
             cmd = self.rng.choice(driver.BENIGN_CMDS)
             exit_code = 0
-        driver.cmd_tick(self.home, cmd, cwd, exit_code)
+        rc, stderr = driver.cmd_tick(self.home, cmd, cwd, exit_code)
+        if rc != 0:
+            stderr_summary = stderr.strip() or "<empty stderr>"
+            raise RuntimeError(
+                f"sq tick failed rc={rc} cmd={cmd!r} cwd={cwd!r}: {stderr_summary}"
+            )
+        encounters = driver.parse_encounter_lines(stderr)
+        if encounters:
+            level = driver.read_save(self.home)["character"]["level"]
+            for enc in encounters:
+                enc["character_level"] = level
+                db.insert_overworld_encounter(self.conn, self.run_id, self.tick_no, enc)
         self._log("tick", {"cmd": cmd, "cwd": cwd, "danger": danger,
                             "exit_code": exit_code})
 
@@ -194,7 +226,7 @@ class SimPlayer:
                              "rounds_won": attempt["rounds_won"]},
                   outcome=attempt["outcome"])
 
-    def run(self) -> dict:
+    def run(self) -> dict[str, Any]:
         ended_reason = "max_ticks"
         try:
             while self.tick_no < self.max_ticks:
@@ -236,8 +268,8 @@ class SimPlayer:
 
 def simulate_one(
     cls: str, race: str, strategy_name: str, seed: int,
-    tuning_label: str, db_path: Path, **kwargs,
-) -> dict:
+    tuning_label: str, db_path: Path, **kwargs: Any,
+) -> dict[str, Any]:
     p = SimPlayer(cls, race, strategy_name, seed, tuning_label, db_path, **kwargs)
     try:
         return p.run()

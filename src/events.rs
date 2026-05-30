@@ -2,9 +2,10 @@ use crate::display;
 use crate::journal::{EventType, JournalEntry};
 use crate::loot::roll_loot;
 use crate::state::GameState;
-use crate::zones::{zone_from_path, travel_message};
+use crate::zones::{travel_message, zone_from_path};
 use colored::*;
 use rand::Rng;
+use serde::Serialize;
 
 /// Scales base XP by zone danger level.
 /// danger 1 = 1.0×, danger 2 = 1.25×, danger 3 = 1.5×, danger 4 = 1.75×, danger 5 = 2.0×
@@ -17,13 +18,31 @@ fn scaled_xp(base: u32, danger: u32) -> u32 {
 fn affinity_multiplier(class: &crate::character::Class, cmd: &str) -> f32 {
     use crate::character::Class;
     let affinities: &[&str] = match class {
-        Class::Wizard      => &["python", "python3", "node", "ruby", "vim", "nvim", "emacs", "man", "tldr", "jupyter"],
-        Class::Warrior     => &["cargo", "make", "cmake", "gcc", "g++", "ninja", "meson", "mvn", "gradle"],
-        Class::Rogue       => &["grep", "rg", "ag", "ssh", "find", "fd", "ls", "eza", "locate"],
-        Class::Ranger      => &["curl", "wget", "http", "docker", "kubectl", "ansible", "terraform", "helm"],
+        Class::Wizard => &[
+            "python", "python3", "node", "ruby", "vim", "nvim", "emacs", "man", "tldr", "jupyter",
+        ],
+        Class::Warrior => &[
+            "cargo", "make", "cmake", "gcc", "g++", "ninja", "meson", "mvn", "gradle",
+        ],
+        Class::Rogue => &[
+            "grep", "rg", "ag", "ssh", "find", "fd", "ls", "eza", "locate",
+        ],
+        Class::Ranger => &[
+            "curl",
+            "wget",
+            "http",
+            "docker",
+            "kubectl",
+            "ansible",
+            "terraform",
+            "helm",
+        ],
         Class::Necromancer => &["kill", "pkill", "killall", "rm", "del", "git", "shred"],
     };
-    if affinities.iter().any(|&a| cmd == a || cmd.starts_with(&format!("{} ", a))) {
+    if affinities
+        .iter()
+        .any(|&a| cmd == a || cmd.starts_with(&format!("{} ", a)))
+    {
         1.5
     } else {
         1.0
@@ -118,7 +137,10 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
                 if rng.gen_ratio(1, 4) {
                     handle_docker_pull(state, &mut rng);
                 }
-            } else if cmd_lower.contains("stop") || cmd_lower.contains("kill") || cmd_lower.contains("rm") {
+            } else if cmd_lower.contains("stop")
+                || cmd_lower.contains("kill")
+                || cmd_lower.contains("rm")
+            {
                 if rng.gen_ratio(1, 3) {
                     handle_docker_banish(state, &mut rng);
                 }
@@ -247,9 +269,11 @@ fn handle_trap(state: &mut GameState, rng: &mut impl Rng) {
 fn handle_travel(state: &mut GameState, cwd: &str) {
     let zone = zone_from_path(cwd);
     let plain = travel_message(&zone);
-    let colored = format!("You enter {}... {}",
+    let colored = format!(
+        "You enter {}... {}",
         display::color_zone(zone.name, &zone),
-        zone.description.italic().dimmed());
+        zone.description.italic().dimmed()
+    );
     display::print_travel(&colored, &zone);
     state.add_journal(JournalEntry::new(EventType::Travel, plain));
 }
@@ -271,11 +295,16 @@ pub(crate) fn emit_level_up(state: &mut GameState) {
         &state.character.title,
     );
     display::print_level_up(&colored);
-    state.add_journal(crate::journal::JournalEntry::new(crate::journal::EventType::LevelUp, plain));
+    state.add_journal(crate::journal::JournalEntry::new(
+        crate::journal::EventType::LevelUp,
+        plain,
+    ));
 }
 
 fn check_level_up(state: &mut GameState, leveled: bool) {
-    if leveled { emit_level_up(state); }
+    if leveled {
+        emit_level_up(state);
+    }
 }
 
 fn handle_quest(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
@@ -290,7 +319,12 @@ fn handle_quest(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::
     check_level_up(state, leveled);
 }
 
-fn handle_discovery(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+fn handle_discovery(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
     let base_xp = rng.gen_range(8..=20);
     let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
@@ -312,7 +346,8 @@ fn handle_forge(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::
     if rng.gen_ratio(1, 3) {
         let item = roll_loot(zone.danger_level);
         let xp = 0;
-        let (plain, colored) = crate::messages::forge_loot(&state.character.class, &item.name, item.power, xp);
+        let (plain, colored) =
+            crate::messages::forge_loot(&state.character.class, &item.name, item.power, xp);
         display::print_loot(&colored, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Craft, plain));
         add_to_inventory(state, item, false);
@@ -327,20 +362,48 @@ fn handle_forge(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::
     }
 }
 
-fn handle_angry_spirit(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+fn handle_angry_spirit(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
     let (name, atk, hp, xp, tier) = random_monster_for_zone(rng, zone);
     let enemy_dex_mod = tier_dex_mod(tier) + state.character.total_prestiges as i32;
     let profile = if rng.gen_ratio(1, 8) {
         apply_elite_pressure(&name, atk, hp, xp, zone.danger_level)
     } else {
-        EncounterProfile { name, attack: atk, hp, xp, elite: false }
+        EncounterProfile {
+            name,
+            attack: atk,
+            hp,
+            xp,
+            elite: false,
+        }
     };
 
-    combat(state, rng, zone, cmd, &profile.name, profile.attack, profile.hp, profile.xp, profile.elite, enemy_dex_mod);
+    combat(
+        state,
+        rng,
+        zone,
+        cmd,
+        &profile.name,
+        profile.attack,
+        profile.hp,
+        profile.xp,
+        profile.elite,
+        enemy_dex_mod,
+    );
 }
 
 fn handle_familiar(state: &mut GameState, rng: &mut impl Rng) {
-    let familiars = ["curious cat", "friendly daemon", "pixel sprite", "tame penguin", "binary beetle"];
+    let familiars = [
+        "curious cat",
+        "friendly daemon",
+        "pixel sprite",
+        "tame penguin",
+        "binary beetle",
+    ];
     let heal = rng.gen_range(2..=4);
     state.character.heal(heal);
     let creature = familiars[rng.gen_range(0..familiars.len())];
@@ -355,11 +418,7 @@ fn handle_familiar(state: &mut GameState, rng: &mut impl Rng) {
     state.add_journal(JournalEntry::new(EventType::Discovery, plain));
 }
 
-fn handle_passive_healer(
-    state: &mut GameState,
-    cwd: &str,
-    now: chrono::DateTime<chrono::Utc>,
-) {
+fn handle_passive_healer(state: &mut GameState, cwd: &str, now: chrono::DateTime<chrono::Utc>) {
     if state.active_boss.is_some() {
         return;
     }
@@ -425,8 +484,12 @@ fn handle_search_loot(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
     let gold = rng.gen_range(1..=5) * zone.danger_level;
     state.character.gold += gold;
     let plain = format!("You search the area and find {} gold coins!", gold);
-    let colored = format!("You {} the area and find {} {}!",
-        "search".cyan(), format!("{}", gold).yellow().bold(), "gold coins".yellow());
+    let colored = format!(
+        "You {} the area and find {} {}!",
+        "search".cyan(),
+        format!("{}", gold).yellow().bold(),
+        "gold coins".yellow()
+    );
     display::print_gold(&colored);
     state.add_journal(JournalEntry::new(EventType::Loot, plain));
 }
@@ -441,7 +504,12 @@ fn handle_portal(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones:
     check_level_up(state, leveled);
 }
 
-fn handle_power_surge(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+fn handle_power_surge(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
     let base_xp = rng.gen_range(15..=30);
     let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
@@ -454,13 +522,21 @@ fn handle_power_surge(state: &mut GameState, rng: &mut impl Rng, zone: &crate::z
 fn handle_summon(state: &mut GameState, rng: &mut impl Rng, creature: &str) {
     let xp = rng.gen_range(10..=20);
     let leveled = state.character.gain_xp(xp);
-    let msg = format!("You summon a {}! It fights by your side briefly. +{} XP", creature, xp);
+    let msg = format!(
+        "You summon a {}! It fights by your side briefly. +{} XP",
+        creature, xp
+    );
     display::print_portal(&msg);
     state.add_journal(JournalEntry::new(EventType::Discovery, msg));
     check_level_up(state, leveled);
 }
 
-fn handle_incantation(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+fn handle_incantation(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
     let base_xp = rng.gen_range(8..=18);
     let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
@@ -474,21 +550,32 @@ fn handle_incantation(state: &mut GameState, rng: &mut impl Rng, zone: &crate::z
 fn handle_alchemy(state: &mut GameState, rng: &mut impl Rng) {
     if rng.gen_ratio(1, 3) {
         let item = roll_loot(2);
-        let msg = format!("Your package install transmutes into: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
+        let msg = format!(
+            "Your package install transmutes into: {} (+{} {}) [{}]",
+            item.name, item.power, item.slot, item.rarity
+        );
         display::print_loot(&msg, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Loot, msg));
         add_to_inventory(state, item, false);
     } else {
         let xp = rng.gen_range(5..=15);
         let leveled = state.character.gain_xp(xp);
-        let msg = format!("The alchemist's cauldron bubbles! Dependencies resolve into power! +{} XP", xp);
+        let msg = format!(
+            "The alchemist's cauldron bubbles! Dependencies resolve into power! +{} XP",
+            xp
+        );
         display::print_craft(&msg);
         state.add_journal(JournalEntry::new(EventType::Craft, msg));
         check_level_up(state, leveled);
     }
 }
 
-fn handle_meditation(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+fn handle_meditation(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
     let heal = rng.gen_range(3..=7);
     let base_xp = rng.gen_range(5..=10);
     state.character.heal(heal);
@@ -512,14 +599,20 @@ fn handle_scrying(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
     let zone = zone_from_path(cwd);
     if rng.gen_ratio(1, 3) {
         let item = roll_loot(zone.danger_level);
-        let msg = format!("Your search reveals a hidden treasure: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
+        let msg = format!(
+            "Your search reveals a hidden treasure: {} (+{} {}) [{}]",
+            item.name, item.power, item.slot, item.rarity
+        );
         display::print_loot(&msg, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Loot, msg));
         add_to_inventory(state, item, false);
     } else {
         let xp = rng.gen_range(8..=16);
         let leveled = state.character.gain_xp(xp);
-        let msg = format!("Your scrying reveals hidden patterns in the codebase! +{} XP", xp);
+        let msg = format!(
+            "Your scrying reveals hidden patterns in the codebase! +{} XP",
+            xp
+        );
         display::print_discovery(&msg);
         state.add_journal(JournalEntry::new(EventType::Discovery, msg));
         check_level_up(state, leveled);
@@ -566,7 +659,10 @@ fn handle_enchant(state: &mut GameState, rng: &mut impl Rng) {
 fn handle_omniscience(state: &mut GameState, rng: &mut impl Rng) {
     let xp = rng.gen_range(5..=10);
     let leveled = state.character.gain_xp(xp);
-    let msg = format!("You peer into the process table... all running spirits are revealed to you! +{} XP", xp);
+    let msg = format!(
+        "You peer into the process table... all running spirits are revealed to you! +{} XP",
+        xp
+    );
     display::print_discovery(&msg);
     state.add_journal(JournalEntry::new(EventType::Discovery, msg));
     check_level_up(state, leveled);
@@ -579,11 +675,7 @@ fn handle_banish(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones:
     let leveled = state.character.gain_xp(xp);
     state.character.gold += gold;
     register_kill(state);
-    let targets = [
-        "rogue process",
-        "runaway daemon",
-        "zombie worker",
-    ];
+    let targets = ["rogue process", "runaway daemon", "zombie worker"];
     let target = targets[rng.gen_range(0..targets.len())];
     let (plain, colored) = crate::messages::banish(&state.character.class, target, xp, gold);
     display::print_combat_win(&colored);
@@ -594,7 +686,10 @@ fn handle_banish(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones:
 fn handle_treasure_chest(state: &mut GameState, _rng: &mut impl Rng, cwd: &str) {
     let zone = zone_from_path(cwd);
     let item = roll_loot(zone.danger_level + 1);
-    let msg = format!("You crack open an archive! Inside you find: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
+    let msg = format!(
+        "You crack open an archive! Inside you find: {} (+{} {}) [{}]",
+        item.name, item.power, item.slot, item.rarity
+    );
     display::print_loot(&msg, &item.rarity);
     state.add_journal(JournalEntry::new(EventType::Loot, msg));
     add_to_inventory(state, item, false);
@@ -603,12 +698,20 @@ fn handle_treasure_chest(state: &mut GameState, _rng: &mut impl Rng, cwd: &str) 
 fn handle_echo_spell(state: &mut GameState, rng: &mut impl Rng) {
     let heal = rng.gen_range(1..=3);
     state.character.heal(heal);
-    let msg = format!("Your words echo through the terminal void... the resonance heals you! +{} HP", heal);
+    let msg = format!(
+        "Your words echo through the terminal void... the resonance heals you! +{} HP",
+        heal
+    );
     display::print_familiar(&msg);
     state.add_journal(JournalEntry::new(EventType::Discovery, msg));
 }
 
-fn handle_ancient_tome(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+fn handle_ancient_tome(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
     let base_xp = rng.gen_range(10..=22);
     let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
@@ -623,14 +726,20 @@ fn handle_container_forge(state: &mut GameState, rng: &mut impl Rng, cwd: &str) 
     let zone = zone_from_path(cwd);
     if rng.gen_ratio(1, 2) {
         let item = roll_loot(zone.danger_level + 1);
-        let msg = format!("The container forge blazes! Layers fuse into: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
+        let msg = format!(
+            "The container forge blazes! Layers fuse into: {} (+{} {}) [{}]",
+            item.name, item.power, item.slot, item.rarity
+        );
         display::print_loot(&msg, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Craft, msg));
         add_to_inventory(state, item, false);
     } else {
         let xp = rng.gen_range(12..=25);
         let leveled = state.character.gain_xp(xp);
-        let msg = format!("The image builds layer by layer! Each instruction tempers your resolve! +{} XP", xp);
+        let msg = format!(
+            "The image builds layer by layer! Each instruction tempers your resolve! +{} XP",
+            xp
+        );
         display::print_craft(&msg);
         state.add_journal(JournalEntry::new(EventType::Craft, msg));
         check_level_up(state, leveled);
@@ -662,13 +771,23 @@ fn handle_docker_banish(state: &mut GameState, rng: &mut impl Rng) {
         "SIGTERM! The container dissolves into freed memory!",
         "You prune the fallen container! Its ephemeral storage scatters!",
     ];
-    let msg = format!("{} +{} XP, +{} gold", msgs[rng.gen_range(0..msgs.len())], xp, gold);
+    let msg = format!(
+        "{} +{} XP, +{} gold",
+        msgs[rng.gen_range(0..msgs.len())],
+        xp,
+        gold
+    );
     display::print_combat_win(&msg);
     state.add_journal(JournalEntry::new(EventType::Combat, msg));
     check_level_up(state, leveled);
 }
 
-fn handle_docker_orchestra(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+fn handle_docker_orchestra(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
     let base_xp = rng.gen_range(15..=30);
     let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let gold = rng.gen_range(5..=15);
@@ -680,7 +799,12 @@ fn handle_docker_orchestra(state: &mut GameState, rng: &mut impl Rng, zone: &cra
     check_level_up(state, leveled);
 }
 
-fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+fn handle_random_encounter(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
     let roll: u32 = rng.gen_range(1..=100);
 
     match roll {
@@ -690,14 +814,34 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
             let profile = if rng.gen_ratio(1, 8) {
                 apply_elite_pressure(&name, base_atk, base_hp, base_xp, zone.danger_level)
             } else {
-                EncounterProfile { name, attack: base_atk, hp: base_hp, xp: base_xp, elite: false }
+                EncounterProfile {
+                    name,
+                    attack: base_atk,
+                    hp: base_hp,
+                    xp: base_xp,
+                    elite: false,
+                }
             };
-            combat(state, rng, zone, cmd, &profile.name, profile.attack, profile.hp, profile.xp, profile.elite, enemy_dex_mod);
+            combat(
+                state,
+                rng,
+                zone,
+                cmd,
+                &profile.name,
+                profile.attack,
+                profile.hp,
+                profile.xp,
+                profile.elite,
+                enemy_dex_mod,
+            );
         }
         41..=65 => {
             // Find loot
             let item = roll_loot(zone.danger_level);
-            let msg = format!("You found: {} (+{} {}) [{}]", item.name, item.power, item.slot, item.rarity);
+            let msg = format!(
+                "You found: {} (+{} {}) [{}]",
+                item.name, item.power, item.slot, item.rarity
+            );
             display::print_loot(&msg, &item.rarity);
             state.add_journal(JournalEntry::new(EventType::Loot, msg));
             add_to_inventory(state, item, false);
@@ -723,7 +867,10 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
             // Heal
             let heal = rng.gen_range(2..=6);
             state.character.heal(heal);
-            let msg = format!("You find a quiet spot to rest. +{} HP. HP: {}/{}", heal, state.character.hp, state.character.max_hp);
+            let msg = format!(
+                "You find a quiet spot to rest. +{} HP. HP: {}/{}",
+                heal, state.character.hp, state.character.max_hp
+            );
             display::print_familiar(&msg);
             state.add_journal(JournalEntry::new(EventType::Discovery, msg));
         }
@@ -771,20 +918,48 @@ struct EncounterProfile {
     elite: bool,
 }
 
-fn apply_elite_pressure(name: &str, base_attack: i32, base_hp: i32, base_xp: u32, danger: u32) -> EncounterProfile {
-    let attack_multiplier = 1.6 * (1.0 + (danger.saturating_sub(1) as f32) * 0.15);
-    let hp_multiplier = 1.5;
+pub const ELITE_ATTACK_BASE_MULT: f64 = 1.6;
+pub const ELITE_ATTACK_PER_DANGER: f64 = 0.15;
+pub const ELITE_HP_MULT: f64 = 1.5;
+pub const ELITE_XP_MULT: f64 = 2.0;
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct EliteModifiers {
+    pub attack_base_mult: f64,
+    pub attack_per_danger: f64,
+    pub hp_mult: f64,
+    pub xp_mult: f64,
+}
+
+pub fn elite_modifiers() -> EliteModifiers {
+    EliteModifiers {
+        attack_base_mult: ELITE_ATTACK_BASE_MULT,
+        attack_per_danger: ELITE_ATTACK_PER_DANGER,
+        hp_mult: ELITE_HP_MULT,
+        xp_mult: ELITE_XP_MULT,
+    }
+}
+
+fn apply_elite_pressure(
+    name: &str,
+    base_attack: i32,
+    base_hp: i32,
+    base_xp: u32,
+    danger: u32,
+) -> EncounterProfile {
+    let attack_multiplier = (ELITE_ATTACK_BASE_MULT as f32)
+        * (1.0 + (danger.saturating_sub(1) as f32) * (ELITE_ATTACK_PER_DANGER as f32));
 
     EncounterProfile {
         name: format!("Enraged {}", name),
         attack: ((base_attack as f32) * attack_multiplier).round() as i32,
-        hp: ((base_hp as f32) * hp_multiplier).round() as i32,
-        xp: ((base_xp as f32) * 2.0).round() as u32,
+        hp: ((base_hp as f32) * (ELITE_HP_MULT as f32)).round() as i32,
+        xp: ((base_xp as f32) * (ELITE_XP_MULT as f32)).round() as u32,
         elite: true,
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum MonsterTier {
     Vermin,
     Bruiser,
@@ -793,6 +968,19 @@ pub enum MonsterTier {
     BossAdjacent,
 }
 
+impl MonsterTier {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MonsterTier::Vermin => "Vermin",
+            MonsterTier::Bruiser => "Bruiser",
+            MonsterTier::Hunter => "Hunter",
+            MonsterTier::Horror => "Horror",
+            MonsterTier::BossAdjacent => "BossAdjacent",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct MonsterEntry {
     pub name: &'static str,
     pub tier: MonsterTier,
@@ -801,47 +989,296 @@ pub struct MonsterEntry {
     pub xp: u32,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct MonsterInfo {
+    pub name: String,
+    pub tier: String,
+    pub hp: i32,
+    pub attack: i32,
+    pub xp: u32,
+}
+
 pub const MONSTER_POOL: &[MonsterEntry] = &[
-    MonsterEntry { name: "Symlink Slug",                tier: MonsterTier::Vermin,       hp: 1,   attack: 2,  xp: 4   },
-    MonsterEntry { name: "Dotfile Dust-Mite",           tier: MonsterTier::Vermin,       hp: 2,   attack: 2,  xp: 5   },
-    MonsterEntry { name: "Cache Cricket",               tier: MonsterTier::Vermin,       hp: 1,   attack: 3,  xp: 4   },
-    MonsterEntry { name: "Tempfile Tadpole",            tier: MonsterTier::Vermin,       hp: 2,   attack: 3,  xp: 6   },
-    MonsterEntry { name: "Log-File Larva",              tier: MonsterTier::Vermin,       hp: 3,   attack: 2,  xp: 7   },
-    MonsterEntry { name: "Socket Snail",                tier: MonsterTier::Vermin,       hp: 2,   attack: 4,  xp: 6   },
-    MonsterEntry { name: "Inode Inchworm",              tier: MonsterTier::Vermin,       hp: 1,   attack: 4,  xp: 5   },
-    MonsterEntry { name: "Permission Pupa",             tier: MonsterTier::Vermin,       hp: 3,   attack: 3,  xp: 8   },
-    MonsterEntry { name: "Zombie Process Zealot",       tier: MonsterTier::Bruiser,      hp: 10,  attack: 5,  xp: 14  },
-    MonsterEntry { name: "Background Job Brawler",      tier: MonsterTier::Bruiser,      hp: 8,   attack: 6,  xp: 12  },
-    MonsterEntry { name: "Daemon Duelist",              tier: MonsterTier::Bruiser,      hp: 12,  attack: 5,  xp: 16  },
-    MonsterEntry { name: "Shell-Script Shaman",         tier: MonsterTier::Bruiser,      hp: 9,   attack: 7,  xp: 15  },
-    MonsterEntry { name: "Pipe-Line Pugilist",          tier: MonsterTier::Bruiser,      hp: 11,  attack: 6,  xp: 17  },
-    MonsterEntry { name: "Env-Var Vandal",              tier: MonsterTier::Bruiser,      hp: 10,  attack: 8,  xp: 18  },
-    MonsterEntry { name: "Cron-Job Crusader",           tier: MonsterTier::Bruiser,      hp: 14,  attack: 5,  xp: 19  },
-    MonsterEntry { name: "Std-Error Specter",           tier: MonsterTier::Bruiser,      hp: 15,  attack: 7,  xp: 20  },
-    MonsterEntry { name: "Heap-Alloc Hound",            tier: MonsterTier::Hunter,       hp: 30,  attack: 9,  xp: 25  },
-    MonsterEntry { name: "Stack-Trace Stalker",         tier: MonsterTier::Hunter,       hp: 28,  attack: 10, xp: 24  },
-    MonsterEntry { name: "Pointer Panther",             tier: MonsterTier::Hunter,       hp: 32,  attack: 11, xp: 28  },
-    MonsterEntry { name: "Overflow Basilisk",           tier: MonsterTier::Hunter,       hp: 35,  attack: 12, xp: 30  },
-    MonsterEntry { name: "Garbage-Collector Gryphon",   tier: MonsterTier::Hunter,       hp: 40,  attack: 8,  xp: 32  },
-    MonsterEntry { name: "Memory-Leak Manticore",       tier: MonsterTier::Hunter,       hp: 38,  attack: 13, xp: 34  },
-    MonsterEntry { name: "Segfault Shark",              tier: MonsterTier::Hunter,       hp: 36,  attack: 14, xp: 33  },
-    MonsterEntry { name: "Dangling-Pointer Dingo",      tier: MonsterTier::Hunter,       hp: 25,  attack: 14, xp: 22  },
-    MonsterEntry { name: "Kernel-Panic Kraken",         tier: MonsterTier::Horror,       hp: 90,  attack: 18, xp: 60  },
-    MonsterEntry { name: "Interrupt-Handler Hydra",     tier: MonsterTier::Horror,       hp: 80,  attack: 20, xp: 55  },
-    MonsterEntry { name: "System-Call Siren",           tier: MonsterTier::Horror,       hp: 70,  attack: 22, xp: 50  },
-    MonsterEntry { name: "Page-Fault Phantom",          tier: MonsterTier::Horror,       hp: 65,  attack: 21, xp: 45  },
-    MonsterEntry { name: "Deadlock Dragon",             tier: MonsterTier::Horror,       hp: 100, attack: 14, xp: 65  },
-    MonsterEntry { name: "Race-Condition Reaper",       tier: MonsterTier::Horror,       hp: 60,  attack: 22, xp: 40  },
-    MonsterEntry { name: "Root-Kit Revenant",           tier: MonsterTier::Horror,       hp: 75,  attack: 19, xp: 52  },
-    MonsterEntry { name: "Scheduler-Shadow Stalker",    tier: MonsterTier::Horror,       hp: 85,  attack: 17, xp: 58  },
-    MonsterEntry { name: "The Monolith Manifestation",  tier: MonsterTier::BossAdjacent, hp: 200, attack: 25, xp: 110 },
-    MonsterEntry { name: "Architectural-Debt Archon",   tier: MonsterTier::BossAdjacent, hp: 180, attack: 28, xp: 100 },
-    MonsterEntry { name: "The Legacy-Code Lich",        tier: MonsterTier::BossAdjacent, hp: 220, attack: 22, xp: 120 },
-    MonsterEntry { name: "Distributed-System Djinn",    tier: MonsterTier::BossAdjacent, hp: 170, attack: 30, xp: 95  },
-    MonsterEntry { name: "The Microservice Medusa",     tier: MonsterTier::BossAdjacent, hp: 160, attack: 29, xp: 90  },
-    MonsterEntry { name: "Cloud-Native Chimera",        tier: MonsterTier::BossAdjacent, hp: 190, attack: 26, xp: 105 },
-    MonsterEntry { name: "The Immutable-State Idol",    tier: MonsterTier::BossAdjacent, hp: 210, attack: 24, xp: 115 },
-    MonsterEntry { name: "Entropy-Engine Elemental",    tier: MonsterTier::BossAdjacent, hp: 150, attack: 30, xp: 80  },
+    MonsterEntry {
+        name: "Symlink Slug",
+        tier: MonsterTier::Vermin,
+        hp: 1,
+        attack: 2,
+        xp: 4,
+    },
+    MonsterEntry {
+        name: "Dotfile Dust-Mite",
+        tier: MonsterTier::Vermin,
+        hp: 2,
+        attack: 2,
+        xp: 5,
+    },
+    MonsterEntry {
+        name: "Cache Cricket",
+        tier: MonsterTier::Vermin,
+        hp: 1,
+        attack: 3,
+        xp: 4,
+    },
+    MonsterEntry {
+        name: "Tempfile Tadpole",
+        tier: MonsterTier::Vermin,
+        hp: 2,
+        attack: 3,
+        xp: 6,
+    },
+    MonsterEntry {
+        name: "Log-File Larva",
+        tier: MonsterTier::Vermin,
+        hp: 3,
+        attack: 2,
+        xp: 7,
+    },
+    MonsterEntry {
+        name: "Socket Snail",
+        tier: MonsterTier::Vermin,
+        hp: 2,
+        attack: 4,
+        xp: 6,
+    },
+    MonsterEntry {
+        name: "Inode Inchworm",
+        tier: MonsterTier::Vermin,
+        hp: 1,
+        attack: 4,
+        xp: 5,
+    },
+    MonsterEntry {
+        name: "Permission Pupa",
+        tier: MonsterTier::Vermin,
+        hp: 3,
+        attack: 3,
+        xp: 8,
+    },
+    MonsterEntry {
+        name: "Zombie Process Zealot",
+        tier: MonsterTier::Bruiser,
+        hp: 10,
+        attack: 5,
+        xp: 14,
+    },
+    MonsterEntry {
+        name: "Background Job Brawler",
+        tier: MonsterTier::Bruiser,
+        hp: 8,
+        attack: 6,
+        xp: 12,
+    },
+    MonsterEntry {
+        name: "Daemon Duelist",
+        tier: MonsterTier::Bruiser,
+        hp: 12,
+        attack: 5,
+        xp: 16,
+    },
+    MonsterEntry {
+        name: "Shell-Script Shaman",
+        tier: MonsterTier::Bruiser,
+        hp: 9,
+        attack: 7,
+        xp: 15,
+    },
+    MonsterEntry {
+        name: "Pipe-Line Pugilist",
+        tier: MonsterTier::Bruiser,
+        hp: 11,
+        attack: 6,
+        xp: 17,
+    },
+    MonsterEntry {
+        name: "Env-Var Vandal",
+        tier: MonsterTier::Bruiser,
+        hp: 10,
+        attack: 8,
+        xp: 18,
+    },
+    MonsterEntry {
+        name: "Cron-Job Crusader",
+        tier: MonsterTier::Bruiser,
+        hp: 14,
+        attack: 5,
+        xp: 19,
+    },
+    MonsterEntry {
+        name: "Std-Error Specter",
+        tier: MonsterTier::Bruiser,
+        hp: 15,
+        attack: 7,
+        xp: 20,
+    },
+    MonsterEntry {
+        name: "Heap-Alloc Hound",
+        tier: MonsterTier::Hunter,
+        hp: 30,
+        attack: 9,
+        xp: 25,
+    },
+    MonsterEntry {
+        name: "Stack-Trace Stalker",
+        tier: MonsterTier::Hunter,
+        hp: 28,
+        attack: 10,
+        xp: 24,
+    },
+    MonsterEntry {
+        name: "Pointer Panther",
+        tier: MonsterTier::Hunter,
+        hp: 32,
+        attack: 11,
+        xp: 28,
+    },
+    MonsterEntry {
+        name: "Overflow Basilisk",
+        tier: MonsterTier::Hunter,
+        hp: 35,
+        attack: 12,
+        xp: 30,
+    },
+    MonsterEntry {
+        name: "Garbage-Collector Gryphon",
+        tier: MonsterTier::Hunter,
+        hp: 40,
+        attack: 8,
+        xp: 32,
+    },
+    MonsterEntry {
+        name: "Memory-Leak Manticore",
+        tier: MonsterTier::Hunter,
+        hp: 38,
+        attack: 13,
+        xp: 34,
+    },
+    MonsterEntry {
+        name: "Segfault Shark",
+        tier: MonsterTier::Hunter,
+        hp: 36,
+        attack: 14,
+        xp: 33,
+    },
+    MonsterEntry {
+        name: "Dangling-Pointer Dingo",
+        tier: MonsterTier::Hunter,
+        hp: 25,
+        attack: 14,
+        xp: 22,
+    },
+    MonsterEntry {
+        name: "Kernel-Panic Kraken",
+        tier: MonsterTier::Horror,
+        hp: 90,
+        attack: 18,
+        xp: 60,
+    },
+    MonsterEntry {
+        name: "Interrupt-Handler Hydra",
+        tier: MonsterTier::Horror,
+        hp: 80,
+        attack: 20,
+        xp: 55,
+    },
+    MonsterEntry {
+        name: "System-Call Siren",
+        tier: MonsterTier::Horror,
+        hp: 70,
+        attack: 22,
+        xp: 50,
+    },
+    MonsterEntry {
+        name: "Page-Fault Phantom",
+        tier: MonsterTier::Horror,
+        hp: 65,
+        attack: 21,
+        xp: 45,
+    },
+    MonsterEntry {
+        name: "Deadlock Dragon",
+        tier: MonsterTier::Horror,
+        hp: 100,
+        attack: 14,
+        xp: 65,
+    },
+    MonsterEntry {
+        name: "Race-Condition Reaper",
+        tier: MonsterTier::Horror,
+        hp: 60,
+        attack: 22,
+        xp: 40,
+    },
+    MonsterEntry {
+        name: "Root-Kit Revenant",
+        tier: MonsterTier::Horror,
+        hp: 75,
+        attack: 19,
+        xp: 52,
+    },
+    MonsterEntry {
+        name: "Scheduler-Shadow Stalker",
+        tier: MonsterTier::Horror,
+        hp: 85,
+        attack: 17,
+        xp: 58,
+    },
+    MonsterEntry {
+        name: "The Monolith Manifestation",
+        tier: MonsterTier::BossAdjacent,
+        hp: 200,
+        attack: 25,
+        xp: 110,
+    },
+    MonsterEntry {
+        name: "Architectural-Debt Archon",
+        tier: MonsterTier::BossAdjacent,
+        hp: 180,
+        attack: 28,
+        xp: 100,
+    },
+    MonsterEntry {
+        name: "The Legacy-Code Lich",
+        tier: MonsterTier::BossAdjacent,
+        hp: 220,
+        attack: 22,
+        xp: 120,
+    },
+    MonsterEntry {
+        name: "Distributed-System Djinn",
+        tier: MonsterTier::BossAdjacent,
+        hp: 170,
+        attack: 30,
+        xp: 95,
+    },
+    MonsterEntry {
+        name: "The Microservice Medusa",
+        tier: MonsterTier::BossAdjacent,
+        hp: 160,
+        attack: 29,
+        xp: 90,
+    },
+    MonsterEntry {
+        name: "Cloud-Native Chimera",
+        tier: MonsterTier::BossAdjacent,
+        hp: 190,
+        attack: 26,
+        xp: 105,
+    },
+    MonsterEntry {
+        name: "The Immutable-State Idol",
+        tier: MonsterTier::BossAdjacent,
+        hp: 210,
+        attack: 24,
+        xp: 115,
+    },
+    MonsterEntry {
+        name: "Entropy-Engine Elemental",
+        tier: MonsterTier::BossAdjacent,
+        hp: 150,
+        attack: 30,
+        xp: 80,
+    },
 ];
 
 pub fn tiers_for_danger(danger_level: u32) -> &'static [MonsterTier] {
@@ -854,6 +1291,41 @@ pub fn tiers_for_danger(danger_level: u32) -> &'static [MonsterTier] {
     }
 }
 
+pub fn monster_bestiary() -> Vec<MonsterInfo> {
+    MONSTER_POOL
+        .iter()
+        .map(|monster| MonsterInfo {
+            name: monster.name.to_string(),
+            tier: monster.tier.as_str().to_string(),
+            hp: monster.hp,
+            attack: monster.attack,
+            xp: monster.xp,
+        })
+        .collect()
+}
+
+pub fn monster_tier_order() -> Vec<&'static str> {
+    vec![
+        MonsterTier::Vermin.as_str(),
+        MonsterTier::Bruiser.as_str(),
+        MonsterTier::Hunter.as_str(),
+        MonsterTier::Horror.as_str(),
+        MonsterTier::BossAdjacent.as_str(),
+    ]
+}
+
+pub fn tier_danger() -> Vec<(u32, Vec<&'static str>)> {
+    (1..=5)
+        .map(|danger| {
+            let tiers = tiers_for_danger(danger)
+                .iter()
+                .map(|tier| tier.as_str())
+                .collect();
+            (danger, tiers)
+        })
+        .collect()
+}
+
 pub fn tier_dex_mod(tier: MonsterTier) -> i32 {
     match tier {
         MonsterTier::Vermin => 0,
@@ -864,7 +1336,10 @@ pub fn tier_dex_mod(tier: MonsterTier) -> i32 {
     }
 }
 
-fn random_monster_in_tiers(rng: &mut impl Rng, allowed: &[MonsterTier]) -> Option<&'static MonsterEntry> {
+fn random_monster_in_tiers(
+    rng: &mut impl Rng,
+    allowed: &[MonsterTier],
+) -> Option<&'static MonsterEntry> {
     let pool: Vec<&MonsterEntry> = MONSTER_POOL
         .iter()
         .filter(|m| allowed.contains(&m.tier))
@@ -876,9 +1351,21 @@ fn random_monster_in_tiers(rng: &mut impl Rng, allowed: &[MonsterTier]) -> Optio
     }
 }
 
-fn random_monster_for_zone(rng: &mut impl Rng, zone: &crate::zones::Zone) -> (String, i32, i32, u32, MonsterTier) {
+fn random_monster_for_zone(
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+) -> (String, i32, i32, u32, MonsterTier) {
     let entry = random_monster_in_tiers(rng, tiers_for_danger(zone.danger_level))
-        .or_else(|| random_monster_in_tiers(rng, &[MonsterTier::Hunter, MonsterTier::Bruiser, MonsterTier::Vermin]))
+        .or_else(|| {
+            random_monster_in_tiers(
+                rng,
+                &[
+                    MonsterTier::Hunter,
+                    MonsterTier::Bruiser,
+                    MonsterTier::Vermin,
+                ],
+            )
+        })
         .expect("MONSTER_POOL must contain at least one entry");
     let scale = encounter_scale_for_danger(zone.danger_level);
     let atk = ((entry.attack as f32 * scale).round() as i32).max(1);
@@ -902,6 +1389,7 @@ fn combat(
 ) {
     let mut monster_hp = monster_hp_initial.max(1);
     let mut total_damage_taken: i32 = 0;
+    let mut total_damage_dealt: i32 = 0;
     let mut first_strike = true;
     let final_reward = final_xp(xp_reward, zone.danger_level, &state.character.class, cmd);
     let player_class = state.character.class.clone();
@@ -935,6 +1423,7 @@ fn combat(
                 raw_dmg *= 2;
             }
             monster_hp -= raw_dmg;
+            total_damage_dealt += raw_dmg;
             first_strike = false;
 
             if monster_hp <= 0 {
@@ -943,9 +1432,19 @@ fn combat(
                 state.character.signature_on_kill();
                 let (plain, colored) = if total_damage_taken > 0 {
                     if is_elite {
-                        crate::messages::combat_elite_tough(&player_class, monster_name, total_damage_taken, final_reward)
+                        crate::messages::combat_elite_tough(
+                            &player_class,
+                            monster_name,
+                            total_damage_taken,
+                            final_reward,
+                        )
                     } else {
-                        crate::messages::combat_tough(&player_class, monster_name, total_damage_taken, final_reward)
+                        crate::messages::combat_tough(
+                            &player_class,
+                            monster_name,
+                            total_damage_taken,
+                            final_reward,
+                        )
                     }
                 } else if is_elite {
                     crate::messages::combat_elite_win(&player_class, monster_name, final_reward)
@@ -959,6 +1458,16 @@ fn combat(
                 }
                 state.add_journal(JournalEntry::new(EventType::Combat, plain));
                 check_level_up(state, leveled);
+                crate::telemetry::emit_encounter(
+                    "mob",
+                    monster_name,
+                    is_elite,
+                    total_damage_dealt,
+                    total_damage_taken,
+                    "kill",
+                    final_reward,
+                    0,
+                );
                 return;
             }
         }
@@ -973,19 +1482,36 @@ fn combat(
             if died {
                 if state.permadeath {
                     crate::display::print_permadeath_eulogy(&state.character, monster_name);
+                    crate::telemetry::emit_encounter(
+                        "mob",
+                        monster_name,
+                        is_elite,
+                        total_damage_dealt,
+                        total_damage_taken,
+                        "death",
+                        0,
+                        0,
+                    );
                     let path = crate::state::save_path();
                     let _ = std::fs::remove_file(&path);
                     std::process::exit(0);
                 }
                 state.character.die();
                 let gold_loss = gold_before * 15 / 100;
-                let (plain, colored) = crate::messages::death_normal(
-                    &player_class,
-                    monster_name,
-                    gold_loss,
-                );
+                let (plain, colored) =
+                    crate::messages::death_normal(&player_class, monster_name, gold_loss);
                 display::print_combat_lose(&colored, true);
                 state.add_journal(JournalEntry::new(EventType::Death, plain));
+                crate::telemetry::emit_encounter(
+                    "mob",
+                    monster_name,
+                    is_elite,
+                    total_damage_dealt,
+                    total_damage_taken,
+                    "death",
+                    0,
+                    0,
+                );
                 return;
             }
         }
@@ -994,6 +1520,16 @@ fn combat(
     let (plain, colored) = crate::messages::combat_draw(&state.character.class, monster_name);
     display::print_combat_draw(&colored);
     state.add_journal(JournalEntry::new(EventType::Combat, plain));
+    crate::telemetry::emit_encounter(
+        "mob",
+        monster_name,
+        is_elite,
+        total_damage_dealt,
+        total_damage_taken,
+        "draw",
+        0,
+        0,
+    );
 }
 
 #[cfg(test)]
@@ -1003,11 +1539,21 @@ mod tests {
     use crate::state::GameState;
 
     fn make_state() -> GameState {
-        GameState::new(Character::new("Test".to_string(), Class::Warrior, Race::Human))
+        GameState::new(Character::new(
+            "Test".to_string(),
+            Class::Warrior,
+            Race::Human,
+        ))
     }
 
     fn make_item(name: &str, slot: ItemSlot, power: i32, rarity: Rarity) -> Item {
-        Item { name: name.to_string(), slot, power, rarity, enchant_level: 0 }
+        Item {
+            name: name.to_string(),
+            slot,
+            power,
+            rarity,
+            enchant_level: 0,
+        }
     }
 
     #[test]
@@ -1032,12 +1578,27 @@ mod tests {
 
     #[test]
     fn monster_pool_has_all_three_currently_populated_tiers() {
-        let has_vermin = MONSTER_POOL.iter().any(|m| matches!(m.tier, MonsterTier::Vermin));
-        let has_bruiser = MONSTER_POOL.iter().any(|m| matches!(m.tier, MonsterTier::Bruiser));
-        let has_hunter = MONSTER_POOL.iter().any(|m| matches!(m.tier, MonsterTier::Hunter));
-        assert!(has_vermin, "MONSTER_POOL must contain at least one Vermin entry");
-        assert!(has_bruiser, "MONSTER_POOL must contain at least one Bruiser entry");
-        assert!(has_hunter, "MONSTER_POOL must contain at least one Hunter entry");
+        let has_vermin = MONSTER_POOL
+            .iter()
+            .any(|m| matches!(m.tier, MonsterTier::Vermin));
+        let has_bruiser = MONSTER_POOL
+            .iter()
+            .any(|m| matches!(m.tier, MonsterTier::Bruiser));
+        let has_hunter = MONSTER_POOL
+            .iter()
+            .any(|m| matches!(m.tier, MonsterTier::Hunter));
+        assert!(
+            has_vermin,
+            "MONSTER_POOL must contain at least one Vermin entry"
+        );
+        assert!(
+            has_bruiser,
+            "MONSTER_POOL must contain at least one Bruiser entry"
+        );
+        assert!(
+            has_hunter,
+            "MONSTER_POOL must contain at least one Hunter entry"
+        );
     }
 
     #[test]
@@ -1054,7 +1615,10 @@ mod tests {
     fn random_monster_in_tiers_empty_allow_list_returns_none() {
         let mut rng = rand::thread_rng();
         let result = random_monster_in_tiers(&mut rng, &[]);
-        assert!(result.is_none(), "empty allow-list must produce None for the caller to fall back");
+        assert!(
+            result.is_none(),
+            "empty allow-list must produce None for the caller to fall back"
+        );
     }
 
     #[test]
@@ -1067,7 +1631,32 @@ mod tests {
             MonsterTier::BossAdjacent,
         ] {
             let count = MONSTER_POOL.iter().filter(|m| m.tier == tier).count();
-            assert!(count >= 1, "tier {:?} must have at least one entry (v1.22+ contract)", tier);
+            assert!(
+                count >= 1,
+                "tier {:?} must have at least one entry (v1.22+ contract)",
+                tier
+            );
+        }
+    }
+
+    #[test]
+    fn monster_bestiary_has_forty_positive_entries_and_eight_per_tier() {
+        let monsters = monster_bestiary();
+
+        assert_eq!(monsters.len(), 40);
+        for monster in &monsters {
+            assert!(!monster.name.is_empty());
+            assert!(monster.hp > 0);
+            assert!(monster.attack > 0);
+            assert!(monster.xp > 0);
+        }
+
+        for tier in ["Vermin", "Bruiser", "Hunter", "Horror", "BossAdjacent"] {
+            let count = monsters
+                .iter()
+                .filter(|monster| monster.tier == tier)
+                .count();
+            assert_eq!(count, 8, "expected 8 {tier} monsters");
         }
     }
 
@@ -1143,7 +1732,11 @@ mod tests {
     #[test]
     fn add_to_inventory_adds_item_when_space_available() {
         let mut state = make_state();
-        add_to_inventory(&mut state, make_item("Sword", ItemSlot::Weapon, 5, Rarity::Common), false);
+        add_to_inventory(
+            &mut state,
+            make_item("Sword", ItemSlot::Weapon, 5, Rarity::Common),
+            false,
+        );
         assert_eq!(state.character.inventory.len(), 1);
         assert_eq!(state.character.inventory[0].name, "Sword");
     }
@@ -1152,66 +1745,185 @@ mod tests {
     fn add_to_inventory_drops_weakest_droppable_when_full() {
         let mut state = make_state();
         for i in 0..20 {
-            state.character.inventory.push(make_item(&format!("Common {}", i), ItemSlot::Weapon, i as i32 + 1, Rarity::Common));
+            state.character.inventory.push(make_item(
+                &format!("Common {}", i),
+                ItemSlot::Weapon,
+                i as i32 + 1,
+                Rarity::Common,
+            ));
         }
-        add_to_inventory(&mut state, make_item("New Sword", ItemSlot::Weapon, 99, Rarity::Rare), false);
+        add_to_inventory(
+            &mut state,
+            make_item("New Sword", ItemSlot::Weapon, 99, Rarity::Rare),
+            false,
+        );
         assert_eq!(state.character.inventory.len(), 20);
-        assert!(state.character.inventory.iter().any(|i| i.name == "New Sword"));
-        assert!(!state.character.inventory.iter().any(|i| i.name == "Common 0"));
+        assert!(state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == "New Sword"));
+        assert!(!state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == "Common 0"));
     }
 
     #[test]
     fn add_to_inventory_does_not_drop_epics_when_full() {
         let mut state = make_state();
         for i in 0..20 {
-            state.character.inventory.push(make_item(&format!("Epic {}", i), ItemSlot::Weapon, i as i32 + 1, Rarity::Epic));
+            state.character.inventory.push(make_item(
+                &format!("Epic {}", i),
+                ItemSlot::Weapon,
+                i as i32 + 1,
+                Rarity::Epic,
+            ));
         }
-        add_to_inventory(&mut state, make_item("New Sword", ItemSlot::Weapon, 5, Rarity::Common), false);
+        add_to_inventory(
+            &mut state,
+            make_item("New Sword", ItemSlot::Weapon, 5, Rarity::Common),
+            false,
+        );
         assert_eq!(state.character.inventory.len(), 20);
-        assert!(!state.character.inventory.iter().any(|i| i.name == "New Sword"));
-        assert_eq!(state.character.inventory.iter().filter(|i| matches!(i.rarity, Rarity::Epic)).count(), 20);
+        assert!(!state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == "New Sword"));
+        assert_eq!(
+            state
+                .character
+                .inventory
+                .iter()
+                .filter(|i| matches!(i.rarity, Rarity::Epic))
+                .count(),
+            20
+        );
     }
 
     #[test]
     fn add_to_inventory_does_not_drop_legendaries_when_full() {
         let mut state = make_state();
         for i in 0..20 {
-            state.character.inventory.push(make_item(&format!("Legendary {}", i), ItemSlot::Weapon, i as i32 + 1, Rarity::Legendary));
+            state.character.inventory.push(make_item(
+                &format!("Legendary {}", i),
+                ItemSlot::Weapon,
+                i as i32 + 1,
+                Rarity::Legendary,
+            ));
         }
-        add_to_inventory(&mut state, make_item("Common Sword", ItemSlot::Weapon, 5, Rarity::Common), false);
+        add_to_inventory(
+            &mut state,
+            make_item("Common Sword", ItemSlot::Weapon, 5, Rarity::Common),
+            false,
+        );
         assert_eq!(state.character.inventory.len(), 20);
-        assert!(!state.character.inventory.iter().any(|i| i.name == "Common Sword"));
-        assert_eq!(state.character.inventory.iter().filter(|i| matches!(i.rarity, Rarity::Legendary)).count(), 20);
+        assert!(!state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == "Common Sword"));
+        assert_eq!(
+            state
+                .character
+                .inventory
+                .iter()
+                .filter(|i| matches!(i.rarity, Rarity::Legendary))
+                .count(),
+            20
+        );
     }
 
     #[test]
     fn add_to_inventory_drops_weakest_droppable_from_mixed_inventory() {
         let mut state = make_state();
         for i in 0..18 {
-            state.character.inventory.push(make_item(&format!("Epic {}", i), ItemSlot::Weapon, 50 + i as i32, Rarity::Epic));
+            state.character.inventory.push(make_item(
+                &format!("Epic {}", i),
+                ItemSlot::Weapon,
+                50 + i as i32,
+                Rarity::Epic,
+            ));
         }
-        state.character.inventory.push(make_item("Weak Common", ItemSlot::Weapon, 1, Rarity::Common));
-        state.character.inventory.push(make_item("Medium Rare", ItemSlot::Weapon, 10, Rarity::Rare));
-        add_to_inventory(&mut state, make_item("New Epic", ItemSlot::Weapon, 99, Rarity::Epic), false);
+        state.character.inventory.push(make_item(
+            "Weak Common",
+            ItemSlot::Weapon,
+            1,
+            Rarity::Common,
+        ));
+        state.character.inventory.push(make_item(
+            "Medium Rare",
+            ItemSlot::Weapon,
+            10,
+            Rarity::Rare,
+        ));
+        add_to_inventory(
+            &mut state,
+            make_item("New Epic", ItemSlot::Weapon, 99, Rarity::Epic),
+            false,
+        );
         assert_eq!(state.character.inventory.len(), 20);
-        assert!(state.character.inventory.iter().any(|i| i.name == "New Epic"));
-        assert!(!state.character.inventory.iter().any(|i| i.name == "Weak Common"));
-        assert!(state.character.inventory.iter().any(|i| i.name == "Medium Rare"));
+        assert!(state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == "New Epic"));
+        assert!(!state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == "Weak Common"));
+        assert!(state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == "Medium Rare"));
     }
 
     #[test]
     fn add_to_inventory_drops_rare_before_uncommon_if_rare_is_weaker() {
         let mut state = make_state();
         for i in 0..18 {
-            state.character.inventory.push(make_item(&format!("Epic {}", i), ItemSlot::Weapon, 50 + i as i32, Rarity::Epic));
+            state.character.inventory.push(make_item(
+                &format!("Epic {}", i),
+                ItemSlot::Weapon,
+                50 + i as i32,
+                Rarity::Epic,
+            ));
         }
-        state.character.inventory.push(make_item("Strong Uncommon", ItemSlot::Weapon, 20, Rarity::Uncommon));
-        state.character.inventory.push(make_item("Weak Rare", ItemSlot::Weapon, 5, Rarity::Rare));
-        add_to_inventory(&mut state, make_item("New Weapon", ItemSlot::Weapon, 99, Rarity::Legendary), false);
+        state.character.inventory.push(make_item(
+            "Strong Uncommon",
+            ItemSlot::Weapon,
+            20,
+            Rarity::Uncommon,
+        ));
+        state
+            .character
+            .inventory
+            .push(make_item("Weak Rare", ItemSlot::Weapon, 5, Rarity::Rare));
+        add_to_inventory(
+            &mut state,
+            make_item("New Weapon", ItemSlot::Weapon, 99, Rarity::Legendary),
+            false,
+        );
         assert_eq!(state.character.inventory.len(), 20);
-        assert!(state.character.inventory.iter().any(|i| i.name == "New Weapon"));
-        assert!(!state.character.inventory.iter().any(|i| i.name == "Weak Rare"));
-        assert!(state.character.inventory.iter().any(|i| i.name == "Strong Uncommon"));
+        assert!(state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == "New Weapon"));
+        assert!(!state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == "Weak Rare"));
+        assert!(state
+            .character
+            .inventory
+            .iter()
+            .any(|i| i.name == "Strong Uncommon"));
     }
 
     #[test]
@@ -1289,8 +2001,11 @@ mod tests {
     #[test]
     fn elite_modifier_prefixes_name() {
         let elite = apply_elite_pressure("Segfault Specter", 8, 14, 15, 3);
-        assert!(elite.name.starts_with("Enraged "),
-            "Expected name to start with 'Enraged ', got: {}", elite.name);
+        assert!(
+            elite.name.starts_with("Enraged "),
+            "Expected name to start with 'Enraged ', got: {}",
+            elite.name
+        );
         assert_eq!(elite.xp, 30);
     }
 
@@ -1335,7 +2050,18 @@ mod tests {
             color: crate::zones::ZoneColor::Red,
         };
         let mut rng = rand::thread_rng();
-        combat(&mut state, &mut rng, &zone, "rm", "Test Hunter", 12, 100, 25, false, 4);
+        combat(
+            &mut state,
+            &mut rng,
+            &zone,
+            "rm",
+            "Test Hunter",
+            12,
+            100,
+            25,
+            false,
+            4,
+        );
         let killed = state.character.kills > kills_before;
         let leveled_or_died = state.character.level != level_before
             || state.character.hp < state.character.max_hp / 2;
@@ -1345,7 +2071,10 @@ mod tests {
             "combat() must resolve in either a kill or a death/severe-damage state, not silently exit"
         );
         if killed {
-            assert!(gained_xp, "killing the monster must award XP (or have level-upped)");
+            assert!(
+                gained_xp,
+                "killing the monster must award XP (or have level-upped)"
+            );
         }
     }
 
@@ -1364,7 +2093,18 @@ mod tests {
         let mut hits_landing_no_damage = 0;
         for _ in 0..20 {
             state.character.hp = initial_hp;
-            combat(&mut state, &mut rng, &zone, "rm", "Test Vermin", 2, 1, 4, false, 0);
+            combat(
+                &mut state,
+                &mut rng,
+                &zone,
+                "rm",
+                "Test Vermin",
+                2,
+                1,
+                4,
+                false,
+                0,
+            );
             if state.character.hp == initial_hp {
                 hits_landing_no_damage += 1;
             }
@@ -1397,7 +2137,18 @@ mod tests {
             color: crate::zones::ZoneColor::Red,
         };
         let mut rng = StdRng::seed_from_u64(7);
-        combat(&mut state, &mut rng, &zone, "rm", "Test Hunter", 12, 500, 25, false, 6);
+        combat(
+            &mut state,
+            &mut rng,
+            &zone,
+            "rm",
+            "Test Hunter",
+            12,
+            500,
+            25,
+            false,
+            6,
+        );
         assert!(
             state.character.hp < 1000,
             "high-armor low-dex player must still take hits under the dex-vs-dex dodge model (was un-hittable before)"
@@ -1420,10 +2171,16 @@ mod tests {
             gold_reward: 50,
             spawned_at: chrono::Utc::now(),
             dex_mod: 6,
+            dmg_dealt_total: 0,
+            dmg_taken_total: 0,
         }
     }
 
-    fn within(actual: chrono::DateTime<chrono::Utc>, target: chrono::DateTime<chrono::Utc>, tolerance_secs: i64) -> bool {
+    fn within(
+        actual: chrono::DateTime<chrono::Utc>,
+        target: chrono::DateTime<chrono::Utc>,
+        tolerance_secs: i64,
+    ) -> bool {
         (actual - target).num_seconds().abs() <= tolerance_secs
     }
 
@@ -1452,9 +2209,11 @@ mod tests {
 
         assert_eq!(state.character.hp, expected_hp);
         let new_last = state.last_heal_at.expect("timer must be set");
-        assert!(within(new_last, last + chrono::Duration::seconds(30), 1),
+        assert!(
+            within(new_last, last + chrono::Duration::seconds(30), 1),
             "expected last_heal_at within 1s of last+30s, got delta {}",
-            (new_last - (last + chrono::Duration::seconds(30))).num_seconds());
+            (new_last - (last + chrono::Duration::seconds(30))).num_seconds()
+        );
     }
 
     #[test]
@@ -1469,9 +2228,11 @@ mod tests {
 
         assert_eq!(state.character.hp, expected_hp);
         let new_last = state.last_heal_at.expect("timer must be set");
-        assert!(within(new_last, last + chrono::Duration::seconds(90), 1),
+        assert!(
+            within(new_last, last + chrono::Duration::seconds(90), 1),
             "expected last_heal_at within 1s of last+90s, got delta {}",
-            (new_last - (last + chrono::Duration::seconds(90))).num_seconds());
+            (new_last - (last + chrono::Duration::seconds(90))).num_seconds()
+        );
     }
 
     #[test]
@@ -1486,8 +2247,10 @@ mod tests {
 
         assert_eq!(state.character.hp, 160);
         let new_last = state.last_heal_at.expect("timer must be set");
-        assert!((now - new_last).num_seconds().abs() <= 30 * 60,
-            "expected last_heal_at within 30min of now");
+        assert!(
+            (now - new_last).num_seconds().abs() <= 30 * 60,
+            "expected last_heal_at within 30min of now"
+        );
     }
 
     #[test]
@@ -1501,9 +2264,11 @@ mod tests {
 
         assert_eq!(state.character.hp, max_hp);
         let new_last = state.last_heal_at.expect("timer must be set");
-        assert!(within(new_last, now, 1),
+        assert!(
+            within(new_last, now, 1),
             "expected last_heal_at snapped to ~now, got delta {}",
-            (new_last - now).num_seconds());
+            (new_last - now).num_seconds()
+        );
     }
 
     #[test]
@@ -1554,9 +2319,11 @@ mod tests {
         assert_eq!(state.journal.len(), before + 1);
         let entry = state.journal.last().expect("journal entry expected");
         assert!(matches!(entry.event_type, EventType::Discovery));
-        assert!(entry.message.contains("+2 HP"),
+        assert!(
+            entry.message.contains("+2 HP"),
             "expected '+2 HP' substring in journal message, got: {}",
-            entry.message);
+            entry.message
+        );
     }
 
     #[test]
@@ -1593,8 +2360,10 @@ mod tests {
 
         assert_eq!(state.character.hp, max_hp);
         let new_last = state.last_heal_at.expect("timer must be set");
-        assert!(within(new_last, now, 1),
-            "expected last_heal_at snapped to ~now");
+        assert!(
+            within(new_last, now, 1),
+            "expected last_heal_at snapped to ~now"
+        );
         assert_eq!(state.journal.len(), before);
     }
 
@@ -1608,9 +2377,11 @@ mod tests {
         handle_passive_healer(&mut state, "/tmp/anywhere", now);
 
         let new_last = state.last_heal_at.expect("timer must be set");
-        assert!(new_last <= now,
+        assert!(
+            new_last <= now,
             "expected future timestamp to be reset to ≤ now, got delta {}",
-            (new_last - now).num_seconds());
+            (new_last - now).num_seconds()
+        );
         assert_eq!(state.character.hp, starting_hp);
     }
 }
@@ -1645,7 +2416,11 @@ pub(crate) fn full_inventory_message(item: &crate::character::Item) -> String {
     msgs[idx].replace("{}", n)
 }
 
-fn add_to_inventory(state: &mut GameState, item: crate::character::Item, quiet_rejection: bool) -> bool {
+fn add_to_inventory(
+    state: &mut GameState,
+    item: crate::character::Item,
+    quiet_rejection: bool,
+) -> bool {
     const MAX_INVENTORY: usize = 20;
     if state.character.inventory.len() < MAX_INVENTORY {
         state.character.inventory.push(item);
@@ -1696,4 +2471,3 @@ fn add_to_inventory(state: &mut GameState, item: crate::character::Item, quiet_r
 pub(crate) fn add_to_inventory_pub(state: &mut GameState, item: crate::character::Item) -> bool {
     add_to_inventory(state, item, false)
 }
-

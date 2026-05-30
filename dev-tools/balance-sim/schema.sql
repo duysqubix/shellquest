@@ -91,6 +91,33 @@ CREATE TABLE IF NOT EXISTS item_event (
     was_equipped INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sq_invocation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+    tick_no INTEGER NOT NULL,
+    argv TEXT NOT NULL,
+    cwd TEXT,
+    exit_code INTEGER,
+    stdout TEXT,
+    stderr TEXT,
+    duration_ms INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS overworld_encounter (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+    tick_no INTEGER NOT NULL,
+    character_level INTEGER NOT NULL,
+    kind TEXT NOT NULL,            -- 'mob' | 'boss'
+    enemy_name TEXT NOT NULL,
+    elite INTEGER NOT NULL,        -- 0 | 1
+    dmg_dealt INTEGER NOT NULL,
+    dmg_taken INTEGER NOT NULL,
+    outcome TEXT NOT NULL,         -- kill|death|draw|win|loss|flee
+    xp_earned INTEGER NOT NULL,
+    gold_earned INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_run_class_strategy
     ON run(class, strategy, tuning_label);
 CREATE INDEX IF NOT EXISTS idx_run_tuning
@@ -103,3 +130,7 @@ CREATE INDEX IF NOT EXISTS idx_action_log_run
     ON action_log(run_id, action);
 CREATE INDEX IF NOT EXISTS idx_item_event_run
     ON item_event(run_id, event_type);
+CREATE INDEX IF NOT EXISTS idx_sq_invocation_run
+    ON sq_invocation(run_id, tick_no);
+CREATE INDEX IF NOT EXISTS idx_overworld_encounter_run
+    ON overworld_encounter(run_id, kind);

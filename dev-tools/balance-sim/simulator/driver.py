@@ -5,56 +5,119 @@ import os
 import pty
 import re
 import select
+import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-SQ_BIN = "/home/duys/.repos/shellquest/target/debug/sq"
+SQ_BIN = os.environ.get("SQ_BIN", "/opt/sq")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHJ]")
+SQ_TIMEOUT_S = 20
+TIMEOUT_EXIT_CODE = 124
 
 DANGER_CWDS = {
-    1: "/home/duys",
-    2: "/home/duys/.repos/shellquest/src",
+    2: "/zones/src",
     3: "/tmp",
     4: "/dev",
-    5: "/home/duys/.repos/shellquest/node_modules-fake",
+    5: "/zones/node_modules",
 }
+
+_InvocationRecorder = Callable[[list[str], str, int, str, str, int], None]
+_recorder: _InvocationRecorder | None = None
 
 CRAFT_CMDS = ["git commit", "git push", "cargo build", "npm install", "make"]
 BENIGN_CMDS = ["ls", "cd", "pwd", "echo hi"]
 FAIL_CMDS = ["bad_command_xyz", "ls /nonexistent", "git pull"]
 
 
+def set_invocation_recorder(fn: _InvocationRecorder | None) -> None:
+    global _recorder
+    _recorder = fn
+
+
+def _record_invocation(argv: list[str], cwd: str, exit_code: int,
+                       stdout: str, stderr: str, duration_ms: int) -> None:
+    if _recorder is None:
+        return
+    try:
+        _recorder(argv, cwd, exit_code, stdout, stderr, duration_ms)
+    except Exception as e:
+        print(f"[balance-sim] sq invocation recorder failed: {type(e).__name__}: {e}",
+              file=sys.stderr)
+
+
+def _output_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def _status_exit_code(status: int | None) -> int:
+    if status is None:
+        return TIMEOUT_EXIT_CODE
+    if os.WIFEXITED(status):
+        return os.WEXITSTATUS(status)
+    if os.WIFSIGNALED(status):
+        return -os.WTERMSIG(status)
+    return TIMEOUT_EXIT_CODE
+
+
+def _wait_for_child(pid: int) -> int | None:
+    try:
+        _, status = os.waitpid(pid, 0)
+    except OSError:
+        return None
+    return status
+
+
 def _run_sq(home: Path, args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
     env = os.environ.copy()
     env["HOME"] = str(home)
     env["SQ_NO_PACING"] = "1"
-    proc = subprocess.run(
-        [SQ_BIN, *args],
-        env=env, cwd=cwd or str(home),
-        capture_output=True, text=True, check=False, timeout=20,
-    )
+    env.setdefault("SQ_DEBUG", "1")
+    env.setdefault("RUST_BACKTRACE", "full")
+    argv = [SQ_BIN, *args]
+    effective_cwd = cwd or str(home)
+    start = time.perf_counter()
+    try:
+        proc = subprocess.run(
+            argv,
+            env=env, cwd=effective_cwd,
+            capture_output=True, text=True, check=False, timeout=SQ_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as e:
+        duration_ms = SQ_TIMEOUT_S * 1000
+        _record_invocation(argv, effective_cwd, TIMEOUT_EXIT_CODE,
+                           _output_text(e.stdout), _output_text(e.stderr),
+                           duration_ms)
+        raise
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    _record_invocation(argv, effective_cwd, proc.returncode,
+                       proc.stdout, proc.stderr, duration_ms)
     return proc.returncode, proc.stdout, proc.stderr
 
 
-def init_save(home: Path, save_json: dict) -> None:
+def init_save(home: Path, save_json: dict[str, Any]) -> None:
     save_dir = home / ".shellquest"
     save_dir.mkdir(parents=True, exist_ok=True)
     (save_dir / "save.json").write_text(json.dumps(save_json, indent=2))
 
 
-def read_save(home: Path) -> dict:
+def read_save(home: Path) -> dict[str, Any]:
     path = home / ".shellquest" / "save.json"
     return json.loads(path.read_text())
 
 
-def write_save(home: Path, save: dict) -> None:
+def write_save(home: Path, save: dict[str, Any]) -> None:
     path = home / ".shellquest" / "save.json"
     path.write_text(json.dumps(save, indent=2))
 
 
-def derive_state(save: dict) -> dict:
+def derive_state(save: dict[str, Any]) -> dict[str, Any]:
     c = save["character"]
     w = c.get("weapon")
     a = c.get("armor")
@@ -92,6 +155,47 @@ def cmd_tick(home: Path, cmd: str, cwd: str, exit_code: int) -> tuple[int, str]:
     return rc, stderr
 
 
+def _encounter_int(fields: dict[str, str], key: str) -> int:
+    try:
+        return int(fields.get(key, "0"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _encounter_enemy_name(value: str) -> str:
+    try:
+        return bytes.fromhex(value).decode("utf-8", errors="replace")
+    except (TypeError, ValueError):
+        return f"?{value}"
+
+
+def parse_encounter_lines(stderr: str) -> list[dict[str, object]]:
+    encounters: list[dict[str, object]] = []
+    for raw_line in stderr.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("SQ_ENCOUNTER "):
+            continue
+        try:
+            fields: dict[str, str] = {}
+            for token in line[len("SQ_ENCOUNTER "):].split():
+                key, sep, value = token.partition("=")
+                if sep and key:
+                    fields[key] = value
+            encounters.append({
+                "kind": fields.get("kind", ""),
+                "enemy_name": _encounter_enemy_name(fields.get("enemy", "")),
+                "elite": _encounter_int(fields, "elite"),
+                "dmg_dealt": _encounter_int(fields, "dmg_dealt"),
+                "dmg_taken": _encounter_int(fields, "dmg_taken"),
+                "outcome": fields.get("outcome", ""),
+                "xp_earned": _encounter_int(fields, "xp"),
+                "gold_earned": _encounter_int(fields, "gold"),
+            })
+        except Exception:
+            continue
+    return encounters
+
+
 def cmd_shop_list(home: Path) -> tuple[int, str]:
     rc, _stdout, stderr = _run_sq(home, ["shop"])
     return rc, stderr
@@ -122,8 +226,11 @@ def cmd_arena(home: Path, tier_choice: int, max_rounds: int,
     env = os.environ.copy()
     env["HOME"] = str(home)
     env["SQ_NO_PACING"] = "1"
+    env.setdefault("SQ_DEBUG", "1")
+    env.setdefault("RUST_BACKTRACE", "full")
     env["TERM"] = "xterm-256color"
 
+    start = time.perf_counter()
     pid, fd = pty.fork()
     if pid == 0:
         os.execvpe(SQ_BIN, [SQ_BIN, "arena"], env)
@@ -133,6 +240,7 @@ def cmd_arena(home: Path, tier_choice: int, max_rounds: int,
     sent_idx = 0
     last_send = 0.0
     deadline = time.time() + timeout_s
+    timed_out = False
     while time.time() < deadline:
         try:
             rlist, _, _ = select.select([fd], [], [], 0.5)
@@ -162,15 +270,24 @@ def cmd_arena(home: Path, tier_choice: int, max_rounds: int,
             except OSError:
                 pass
             break
+    else:
+        timed_out = True
+    if timed_out:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
     try:
         os.close(fd)
     except OSError:
         pass
-    try:
-        os.waitpid(pid, os.WNOHANG)
-    except OSError:
-        pass
-    return ANSI_RE.sub("", "".join(chunks))
+    status = _wait_for_child(pid)
+    transcript = ANSI_RE.sub("", "".join(chunks))
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    stderr = f"arena automation timeout after {timeout_s}s" if timed_out else ""
+    exit_code = TIMEOUT_EXIT_CODE if timed_out else _status_exit_code(status)
+    _record_invocation([SQ_BIN, "arena"], str(home), exit_code, transcript, stderr, duration_ms)
+    return transcript
 
 
 PLAYER_DMG_RE = re.compile(r"for (\d+) damage")
@@ -181,7 +298,7 @@ ENTRY_FEE_RE = re.compile(r"Entry fee: (\d+) gold")
 
 
 def parse_arena_output(text: str, character_level: int, tier: str,
-                       tier_index: int) -> dict:
+                       tier_index: int) -> dict[str, Any]:
     rounds_won = 0
     rounds_attempted = 0
     p_swings = 0
@@ -270,4 +387,10 @@ def parse_arena_output(text: str, character_level: int, tier: str,
 
 
 def has_segment_zone(danger: int) -> str:
+    return cwd_for_danger(danger, os.environ.get("HOME", "/sim-home"))
+
+
+def cwd_for_danger(danger: int, home: Path | str) -> str:
+    if danger == 1:
+        return str(home)
     return DANGER_CWDS.get(danger, "/tmp")

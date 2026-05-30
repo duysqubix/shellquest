@@ -14,15 +14,47 @@ pub struct Boss {
     pub spawned_at: DateTime<Utc>,
     #[serde(default)]
     pub dex_mod: i32,
+    #[serde(default)]
+    pub dmg_dealt_total: i32,
+    #[serde(default)]
+    pub dmg_taken_total: i32,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct BossInfo {
+    pub name: String,
+    pub hp: i32,
+    pub attack: i32,
+    pub xp_reward: u32,
+    pub gold_reward: u32,
+    pub dex_mod: i32,
+}
+
+pub const BOSS_SPAWN_RATE: f64 = 1.0 / 500.0;
+
 pub const BOSS_ROSTER: &[(&str, i32, i32, u32, u32, i32)] = &[
-    ("The Kernel Panic", 100, 22, 900, 350, 6),
-    ("Lord of /dev/null", 85, 18, 700, 280, 8),
-    ("SIGKILL Supreme", 90, 25, 800, 320, 9),
-    ("The Infinite Loop", 110, 15, 950, 300, 5),
-    ("The Memory Corruption", 95, 20, 850, 310, 7),
+    ("The Kernel Panic", 220, 29, 1050, 410, 6),
+    ("Lord of /dev/null", 200, 24, 825, 330, 8),
+    ("SIGKILL Supreme", 210, 33, 950, 380, 9),
+    ("The Infinite Loop", 240, 20, 1125, 360, 5),
+    ("The Memory Corruption", 215, 27, 1000, 365, 7),
 ];
+
+pub fn boss_roster() -> Vec<BossInfo> {
+    BOSS_ROSTER
+        .iter()
+        .map(
+            |(name, hp, attack, xp_reward, gold_reward, dex_mod)| BossInfo {
+                name: (*name).to_string(),
+                hp: *hp,
+                attack: *attack,
+                xp_reward: *xp_reward,
+                gold_reward: *gold_reward,
+                dex_mod: *dex_mod,
+            },
+        )
+        .collect()
+}
 
 pub fn spawn_boss() -> Boss {
     use rand::Rng;
@@ -40,6 +72,8 @@ pub fn spawn_boss() -> Boss {
         gold_reward,
         spawned_at: Utc::now(),
         dex_mod,
+        dmg_dealt_total: 0,
+        dmg_taken_total: 0,
     }
 }
 
@@ -69,9 +103,30 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     use crate::journal::{EventType, JournalEntry};
     use rand::Rng;
 
-    let boss_is_stale = state.active_boss.as_ref().is_some_and(|boss| boss.is_stale());
+    let boss_is_stale = state
+        .active_boss
+        .as_ref()
+        .is_some_and(|boss| boss.is_stale());
     if boss_is_stale {
-        let name = state.active_boss.take().unwrap().name;
+        let (name, dmg_dealt_total, dmg_taken_total) = {
+            let boss = state.active_boss.as_ref().unwrap();
+            (
+                boss.name.clone(),
+                boss.dmg_dealt_total,
+                boss.dmg_taken_total,
+            )
+        };
+        state.active_boss = None;
+        crate::telemetry::emit_encounter(
+            "boss",
+            &name,
+            false,
+            dmg_dealt_total,
+            dmg_taken_total,
+            "flee",
+            0,
+            0,
+        );
         crate::display::print_boss_flee(&name, "grows bored waiting and retreats. It will return");
         return;
     }
@@ -122,6 +177,7 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
             let is_crit = hit_roll >= crit_threshold;
             let dmg = if is_crit { raw_dmg * 2 } else { raw_dmg };
             boss.hp -= dmg;
+            boss.dmg_dealt_total += dmg;
             Some((dmg, is_crit))
         } else {
             None
@@ -135,6 +191,8 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     let boss_name = state.active_boss.as_ref().unwrap().name.clone();
     let boss_xp = state.active_boss.as_ref().unwrap().xp_reward;
     let boss_gold = state.active_boss.as_ref().unwrap().gold_reward;
+    let boss_dmg_dealt_total = state.active_boss.as_ref().unwrap().dmg_dealt_total;
+    let boss_dmg_taken_total = state.active_boss.as_ref().unwrap().dmg_taken_total;
 
     if boss_hp_after <= 0 {
         crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, None);
@@ -150,8 +208,22 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
 
         state.add_journal(JournalEntry::new(
             EventType::Combat,
-            format!("Defeated {}! +{} XP +{} gold", boss_name, boss_xp, boss_gold),
+            format!(
+                "Defeated {}! +{} XP +{} gold",
+                boss_name, boss_xp, boss_gold
+            ),
         ));
+
+        crate::telemetry::emit_encounter(
+            "boss",
+            &boss_name,
+            false,
+            boss_dmg_dealt_total,
+            boss_dmg_taken_total,
+            "win",
+            boss_xp,
+            boss_gold,
+        );
 
         state.active_boss = None;
 
@@ -176,45 +248,87 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
 
     let dodge_roll: i32 = rng.gen_range(1..=20);
     let boss_attack_mod = boss_dex_mod + state.character.total_prestiges as i32;
-    let boss_dmg = if crate::character::attack_lands(dodge_roll, boss_attack_mod, state.character.dex_mod()) {
-        let dmg = (boss_atk - player_defense).max(1);
-        let gold_before = state.character.gold;
-        let died = state.character.take_damage(dmg);
-        if died {
-            if state.permadeath {
-                crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, Some(dmg));
-                print_signature_line(signature_label);
-                crate::display::print_permadeath_eulogy(&state.character, &boss_name);
-                let path = crate::state::save_path();
-                let _ = std::fs::remove_file(&path);
-                std::process::exit(0);
-            } else {
-                state.character.die();
-                let gold_loss = gold_before * 15 / 100;
-                crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, Some(dmg));
-                print_signature_line(signature_label);
-                crate::display::print_boss_flee(
-                    &boss_name,
-                    "laughs as you fall... and vanishes into the void",
-                );
-                state.add_journal(crate::journal::JournalEntry::new(
-                    crate::journal::EventType::Death,
-                    format!("{} fled after you fell. XP reset, -{} gold.", boss_name, gold_loss),
-                ));
-                state.active_boss = None;
-                return;
+    let boss_dmg =
+        if crate::character::attack_lands(dodge_roll, boss_attack_mod, state.character.dex_mod()) {
+            let dmg = (boss_atk - player_defense).max(1);
+            let gold_before = state.character.gold;
+            let died = state.character.take_damage(dmg);
+            if let Some(boss) = state.active_boss.as_mut() {
+                boss.dmg_taken_total += dmg;
             }
-        }
-        Some(dmg)
-    } else {
-        None
-    };
+            let boss_dmg_dealt_total = state.active_boss.as_ref().unwrap().dmg_dealt_total;
+            let boss_dmg_taken_total = state.active_boss.as_ref().unwrap().dmg_taken_total;
+            if died {
+                if state.permadeath {
+                    crate::display::print_boss_tick(
+                        state.active_boss.as_ref().unwrap(),
+                        player_dmg,
+                        Some(dmg),
+                    );
+                    print_signature_line(signature_label);
+                    crate::display::print_permadeath_eulogy(&state.character, &boss_name);
+                    crate::telemetry::emit_encounter(
+                        "boss",
+                        &boss_name,
+                        false,
+                        boss_dmg_dealt_total,
+                        boss_dmg_taken_total,
+                        "loss",
+                        0,
+                        0,
+                    );
+                    let path = crate::state::save_path();
+                    let _ = std::fs::remove_file(&path);
+                    std::process::exit(0);
+                } else {
+                    state.character.die();
+                    let gold_loss = gold_before * 15 / 100;
+                    crate::display::print_boss_tick(
+                        state.active_boss.as_ref().unwrap(),
+                        player_dmg,
+                        Some(dmg),
+                    );
+                    print_signature_line(signature_label);
+                    crate::display::print_boss_flee(
+                        &boss_name,
+                        "laughs as you fall... and vanishes into the void",
+                    );
+                    state.add_journal(crate::journal::JournalEntry::new(
+                        crate::journal::EventType::Death,
+                        format!(
+                            "{} fled after you fell. XP reset, -{} gold.",
+                            boss_name, gold_loss
+                        ),
+                    ));
+                    crate::telemetry::emit_encounter(
+                        "boss",
+                        &boss_name,
+                        false,
+                        boss_dmg_dealt_total,
+                        boss_dmg_taken_total,
+                        "loss",
+                        0,
+                        0,
+                    );
+                    state.active_boss = None;
+                    return;
+                }
+            }
+            Some(dmg)
+        } else {
+            None
+        };
 
     crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, boss_dmg);
     print_signature_line(signature_label);
     state.add_journal(JournalEntry::new(
         EventType::Combat,
-        format!("[BOSS] {} — HP: {}/{}", boss_name, boss_hp_after.max(0), boss_max_hp),
+        format!(
+            "[BOSS] {} — HP: {}/{}",
+            boss_name,
+            boss_hp_after.max(0),
+            boss_max_hp
+        ),
     ));
 }
 
@@ -232,6 +346,20 @@ mod tests {
     #[test]
     fn boss_roster_has_five_entries() {
         assert_eq!(BOSS_ROSTER.len(), 5);
+    }
+
+    #[test]
+    fn boss_roster_catalog_has_five_positive_entries() {
+        let bosses = boss_roster();
+
+        assert_eq!(bosses.len(), 5);
+        for boss in bosses {
+            assert!(!boss.name.is_empty());
+            assert!(boss.hp > 0);
+            assert!(boss.attack > 0);
+            assert!(boss.xp_reward > 0);
+            assert!(boss.gold_reward > 0);
+        }
     }
 
     #[test]
@@ -323,6 +451,8 @@ mod tests {
             gold_reward: 350,
             spawned_at: Utc::now(),
             dex_mod: 8,
+            dmg_dealt_total: 0,
+            dmg_taken_total: 0,
         });
 
         let hp0 = state.character.hp;

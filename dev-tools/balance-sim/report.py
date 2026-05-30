@@ -98,6 +98,106 @@ def arena_summary(conn, tuning_label: str) -> str:
     return "\n".join(lines)
 
 
+def boss_summary(conn, tuning_label: str) -> str:
+    rows = conn.execute(
+        """
+        SELECT r.class, r.strategy, oe.enemy_name,
+               COUNT(*) AS encounters,
+               SUM(CASE WHEN oe.outcome='win' THEN 1 ELSE 0 END) AS wins,
+               SUM(CASE WHEN oe.outcome='loss' THEN 1 ELSE 0 END) AS losses,
+               SUM(CASE WHEN oe.outcome='flee' THEN 1 ELSE 0 END) AS flees,
+               AVG(oe.dmg_dealt) AS avg_dmg_dealt,
+               AVG(oe.dmg_taken) AS avg_dmg_taken
+          FROM overworld_encounter oe
+          JOIN run r ON r.id = oe.run_id
+         WHERE r.tuning_label = ? AND oe.kind = 'boss'
+         GROUP BY r.class, r.strategy, oe.enemy_name
+         ORDER BY r.class, r.strategy, oe.enemy_name
+        """, (tuning_label,)
+    ).fetchall()
+    if not rows:
+        return "(no boss encounters recorded — bosses spawn at 1/500, short sweeps may have none)"
+    lines = ["| Class | Strategy | Boss | N | Wins | Losses | Flees | Win % | Avg Dmg Dealt | Avg Dmg Taken |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
+    for r in rows:
+        win_rate = 100 * r['wins'] / r['encounters'] if r['encounters'] else 0
+        lines.append(
+            f"| {r['class']} | {r['strategy']} | {r['enemy_name']} | {r['encounters']} "
+            f"| {r['wins']} | {r['losses']} | {r['flees']} | {win_rate:.0f}% "
+            f"| {r['avg_dmg_dealt']:.1f} | {r['avg_dmg_taken']:.1f} |"
+        )
+    return "\n".join(lines)
+
+
+def mob_summary(conn, tuning_label: str) -> str:
+    rows = conn.execute(
+        """
+        SELECT r.class, r.strategy,
+               COUNT(*) AS encounters,
+               SUM(CASE WHEN oe.outcome='kill' THEN 1 ELSE 0 END) AS kills,
+               SUM(CASE WHEN oe.outcome='draw' THEN 1 ELSE 0 END) AS draws,
+               SUM(CASE WHEN oe.outcome='death' THEN 1 ELSE 0 END) AS deaths,
+               SUM(oe.elite) AS elites,
+               AVG(oe.dmg_dealt) AS avg_dmg_dealt,
+               AVG(oe.dmg_taken) AS avg_dmg_taken
+          FROM overworld_encounter oe
+          JOIN run r ON r.id = oe.run_id
+         WHERE r.tuning_label = ? AND oe.kind = 'mob'
+         GROUP BY r.class, r.strategy
+         ORDER BY r.class, r.strategy
+        """, (tuning_label,)
+    ).fetchall()
+    if not rows:
+        return "(no mob encounters recorded)"
+    lines = ["| Class | Strategy | N | Kills | Draws | Deaths | Elites | Avg Dmg Dealt | Avg Dmg Taken |",
+             "|---|---|---|---|---|---|---|---|---|"]
+    for r in rows:
+        lines.append(
+            f"| {r['class']} | {r['strategy']} | {r['encounters']} "
+            f"| {r['kills']} | {r['draws']} | {r['deaths']} | {r['elites']} "
+            f"| {r['avg_dmg_dealt']:.1f} | {r['avg_dmg_taken']:.1f} |"
+        )
+    return "\n".join(lines)
+
+
+def damage_summary(conn, tuning_label: str) -> str:
+    rows = conn.execute(
+        """
+        SELECT r.class, r.strategy,
+               SUM(CASE WHEN oe.kind='mob' THEN oe.dmg_dealt ELSE 0 END) AS mob_dmg_dealt,
+               SUM(CASE WHEN oe.kind='mob' THEN oe.dmg_taken ELSE 0 END) AS mob_dmg_taken,
+               SUM(CASE WHEN oe.kind='boss' THEN oe.dmg_dealt ELSE 0 END) AS boss_dmg_dealt,
+               SUM(CASE WHEN oe.kind='boss' THEN oe.dmg_taken ELSE 0 END) AS boss_dmg_taken,
+               AVG(CASE WHEN oe.kind='mob' THEN oe.dmg_dealt END) AS avg_mob_dmg_dealt,
+               AVG(CASE WHEN oe.kind='mob' THEN oe.dmg_taken END) AS avg_mob_dmg_taken,
+               AVG(CASE WHEN oe.kind='boss' THEN oe.dmg_dealt END) AS avg_boss_dmg_dealt,
+               AVG(CASE WHEN oe.kind='boss' THEN oe.dmg_taken END) AS avg_boss_dmg_taken
+          FROM overworld_encounter oe
+          JOIN run r ON r.id = oe.run_id
+         WHERE r.tuning_label = ?
+         GROUP BY r.class, r.strategy
+         ORDER BY r.class, r.strategy
+        """, (tuning_label,)
+    ).fetchall()
+    if not rows:
+        return "(no overworld encounters recorded)"
+
+    def fmt(v):
+        return f"{v:.1f}" if v is not None else "—"
+
+    lines = ["| Class | Strategy | Mob Dmg Dealt (tot/avg) | Mob Dmg Taken (tot/avg) | Boss Dmg Dealt (tot/avg) | Boss Dmg Taken (tot/avg) |",
+             "|---|---|---|---|---|---|"]
+    for r in rows:
+        lines.append(
+            f"| {r['class']} | {r['strategy']} "
+            f"| {int(r['mob_dmg_dealt'])} / {fmt(r['avg_mob_dmg_dealt'])} "
+            f"| {int(r['mob_dmg_taken'])} / {fmt(r['avg_mob_dmg_taken'])} "
+            f"| {int(r['boss_dmg_dealt'])} / {fmt(r['avg_boss_dmg_dealt'])} "
+            f"| {int(r['boss_dmg_taken'])} / {fmt(r['avg_boss_dmg_taken'])} |"
+        )
+    return "\n".join(lines)
+
+
 def progression_curve(conn, tuning_label: str, cls: str, strategy: str) -> str:
     rows = conn.execute(
         """
@@ -161,6 +261,18 @@ def main() -> int:
         "## Arena Performance",
         "",
         arena_summary(conn, args.tuning_label),
+        "",
+        "## Boss Performance",
+        "",
+        boss_summary(conn, args.tuning_label),
+        "",
+        "## Mob Encounters",
+        "",
+        mob_summary(conn, args.tuning_label),
+        "",
+        "## Damage Summary (overworld mob vs boss)",
+        "",
+        damage_summary(conn, args.tuning_label),
         "",
         time_to_level(conn, args.tuning_label, 25),
         "",

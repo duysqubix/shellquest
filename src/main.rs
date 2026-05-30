@@ -1,14 +1,15 @@
 mod arena;
 mod boss;
-mod messages;
 mod character;
 mod display;
 mod events;
 mod help;
 mod journal;
 mod loot;
+mod messages;
 mod sage;
 mod state;
+mod telemetry;
 mod zones;
 
 use character::{Class, Race};
@@ -45,6 +46,18 @@ enum Commands {
     Inventory,
     /// View your adventure journal
     Journal,
+    /// Print the full static item catalog
+    Items {
+        /// Emit JSON output
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the static boss and monster bestiary
+    Bestiary {
+        /// Emit JSON output
+        #[arg(long)]
+        json: bool,
+    },
     /// Process a terminal command (called by shell hook)
     Tick {
         /// The command that was run
@@ -143,13 +156,19 @@ fn main() {
         Commands::Status => cmd_status(),
         Commands::Inventory => cmd_inventory(),
         Commands::Journal => cmd_journal(),
+        Commands::Items { json } => cmd_items(json),
+        Commands::Bestiary { json } => cmd_bestiary(json),
         Commands::Tick {
             cmd,
             cwd,
             exit_code,
             test_sage,
         } => cmd_tick(&cmd, &cwd, exit_code, test_sage),
-        Commands::Hook { shell, install, file } => cmd_hook(&shell, install || file.is_some(), file),
+        Commands::Hook {
+            shell,
+            install,
+            file,
+        } => cmd_hook(&shell, install || file.is_some(), file),
         Commands::Shop => cmd_shop(),
         Commands::Buy { number } => cmd_buy(number),
         Commands::Sell { item } => cmd_sell(&item.join(" ")),
@@ -335,11 +354,11 @@ fn cmd_init() {
                 name.bold().green()
             );
             println!();
-            println!("  Run {} to install the shell hook.", "sq hook --shell zsh".cyan());
             println!(
-                "  Run {} to see your character.",
-                "sq status".cyan()
+                "  Run {} to install the shell hook.",
+                "sq hook --shell zsh".cyan()
             );
+            println!("  Run {} to see your character.", "sq status".cyan());
             println!(
                 "{}",
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".dimmed()
@@ -376,6 +395,63 @@ fn cmd_journal() {
     }
 }
 
+fn cmd_items(_json: bool) {
+    let weights = loot::rarity_weights();
+    let rarity_weights: serde_json::Map<String, serde_json::Value> = weights
+        .iter()
+        .map(|(rarity, weight)| (rarity.to_string(), serde_json::json!(*weight)))
+        .collect();
+    let rarity_multipliers: serde_json::Map<String, serde_json::Value> = weights
+        .iter()
+        .map(|(rarity, _)| {
+            (
+                rarity.to_string(),
+                serde_json::json!(loot::rarity_multiplier(*rarity)),
+            )
+        })
+        .collect();
+
+    let value = serde_json::json!({
+        "items": loot::catalog(),
+        "rarity_weights": rarity_weights,
+        "rarity_multipliers": rarity_multipliers,
+    });
+
+    match serde_json::to_string_pretty(&value) {
+        Ok(json) => println!("{json}"),
+        Err(e) => {
+            eprintln!("{} Failed to serialize item catalog: {}", "❌".bold(), e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_bestiary(_json: bool) {
+    let tier_danger: serde_json::Map<String, serde_json::Value> = events::tier_danger()
+        .into_iter()
+        .map(|(danger, tiers)| (danger.to_string(), serde_json::json!(tiers)))
+        .collect();
+
+    let value = serde_json::json!({
+        "bosses": boss::boss_roster(),
+        "monsters": events::monster_bestiary(),
+        "meta": {
+            "tier_danger": tier_danger,
+            "tier_order": events::monster_tier_order(),
+            "elite": events::elite_modifiers(),
+            "boss_spawn_rate": boss::BOSS_SPAWN_RATE,
+        },
+    });
+
+    match serde_json::to_string_pretty(&value) {
+        Ok(json) => println!("{json}"),
+        Err(e) => {
+            eprintln!("{} Failed to serialize bestiary: {}", "❌".bold(), e);
+            std::process::exit(1);
+        }
+    }
+}
+
 fn format_help(topic: Option<&str>) -> String {
     match topic {
         None => help::render_index(),
@@ -391,10 +467,20 @@ fn cmd_help(topic: Option<&str>) {
     print!("{}", format_help(topic));
 }
 
+fn sq_debug() -> bool {
+    telemetry::sq_debug_enabled()
+}
+
 fn cmd_tick(cmd: &str, cwd: &str, exit_code: i32, test_sage: bool) {
     let mut game = match state::load() {
         Ok(g) => g,
-        Err(_) => return, // Silently skip if no character
+        Err(e) => {
+            if sq_debug() {
+                eprintln!("{} Tick load failure: {}", "❌".bold(), e.red());
+                std::process::exit(1);
+            }
+            return; // Silently skip if no character
+        }
     };
 
     events::tick(&mut game, cmd, cwd, exit_code);
@@ -407,12 +493,16 @@ fn cmd_tick(cmd: &str, cwd: &str, exit_code: i32, test_sage: bool) {
 
     if let Err(e) = state::save(&game) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+        if sq_debug() {
+            std::process::exit(1);
+        }
     }
 }
 
 fn hook_code(shell: &str) -> Option<String> {
     match shell {
-        "bash" => Some(r#"
+        "bash" => Some(
+            r#"
 # shellquest (sq) — passive terminal RPG hook
 __sq_hook() {
     local exit_code=$?
@@ -422,8 +512,11 @@ __sq_hook() {
     sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
 }
 PROMPT_COMMAND="__sq_hook;$PROMPT_COMMAND"
-"#.to_string()),
-        "zsh" => Some(r#"
+"#
+            .to_string(),
+        ),
+        "zsh" => Some(
+            r#"
 # shellquest (sq) — passive terminal RPG hook
 __sq_hook() {
     local exit_code=$?
@@ -433,8 +526,11 @@ __sq_hook() {
     sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
 }
 precmd_functions+=(__sq_hook)
-"#.to_string()),
-        "fish" => Some(r#"
+"#
+            .to_string(),
+        ),
+        "fish" => Some(
+            r#"
 # shellquest (sq) — passive terminal RPG hook
 function __sq_hook --on-event fish_postexec
     set -l cmd $argv[1]
@@ -443,7 +539,9 @@ function __sq_hook --on-event fish_postexec
     [ "$first" = "sq" ]; and return
     sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
 end
-"#.to_string()),
+"#
+            .to_string(),
+        ),
         _ => None,
     }
 }
@@ -453,7 +551,11 @@ fn default_rc_file(shell: &str) -> Option<String> {
     match shell {
         "bash" => Some(home.join(".bashrc").to_string_lossy().to_string()),
         "zsh" => Some(home.join(".zshrc").to_string_lossy().to_string()),
-        "fish" => Some(home.join(".config/fish/config.fish").to_string_lossy().to_string()),
+        "fish" => Some(
+            home.join(".config/fish/config.fish")
+                .to_string_lossy()
+                .to_string(),
+        ),
         _ => None,
     }
 }
@@ -482,7 +584,11 @@ fn cmd_hook(shell: &str, install: bool, file: Option<String>) {
     let target = match target {
         Some(t) => t,
         None => {
-            eprintln!("{} Could not determine rc file for shell: {}", "❌".bold(), shell.red());
+            eprintln!(
+                "{} Could not determine rc file for shell: {}",
+                "❌".bold(),
+                shell.red()
+            );
             return;
         }
     };
@@ -505,21 +611,26 @@ fn cmd_hook(shell: &str, install: bool, file: Option<String>) {
         Ok(mut f) => {
             use std::io::Write;
             if let Err(e) = f.write_all(code.as_bytes()) {
-                eprintln!("{} Failed to write hook: {}", "❌".bold(), e.to_string().red());
+                eprintln!(
+                    "{} Failed to write hook: {}",
+                    "❌".bold(),
+                    e.to_string().red()
+                );
                 return;
             }
-            println!(
-                "{} Hook installed to {}",
-                "✓".green().bold(),
-                target.cyan()
-            );
+            println!("{} Hook installed to {}", "✓".green().bold(), target.cyan());
             println!(
                 "  Run {} or restart your terminal to activate.",
                 format!("source {}", target).dimmed()
             );
         }
         Err(e) => {
-            eprintln!("{} Failed to open {}: {}", "❌".bold(), target, e.to_string().red());
+            eprintln!(
+                "{} Failed to open {}: {}",
+                "❌".bold(),
+                target,
+                e.to_string().red()
+            );
         }
     }
 }
@@ -544,13 +655,7 @@ fn cmd_prestige() {
     }
 
     println!();
-    println!(
-        "{}",
-        "✨ PRESTIGE ✨"
-            .yellow()
-            .bold()
-            .on_black()
-    );
+    println!("{}", "✨ PRESTIGE ✨".yellow().bold().on_black());
     println!(
         "{}",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".yellow()
@@ -598,7 +703,11 @@ fn cmd_prestige() {
     }
 
     let subclass = loop {
-        let choice = prompt(&format!("{} Choose [1-{}]: ", "🎭".bold(), subclasses.len()));
+        let choice = prompt(&format!(
+            "{} Choose [1-{}]: ",
+            "🎭".bold(),
+            subclasses.len()
+        ));
         if let Ok(n) = choice.parse::<usize>() {
             if n >= 1 && n <= subclasses.len() {
                 break subclasses[n - 1].clone();
@@ -684,10 +793,7 @@ fn cmd_shop() {
             "home directory".cyan().bold(),
             cwd.dimmed()
         );
-        println!(
-            "  Run {} to return home first.",
-            "cd ~".cyan()
-        );
+        println!("  Run {} to return home first.", "cd ~".cyan());
         return;
     }
 
@@ -702,10 +808,7 @@ fn cmd_shop() {
     refresh_shop_if_needed(&mut game);
 
     println!();
-    println!(
-        "{}",
-        "🏪 The Terminal Bazaar".bold().yellow()
-    );
+    println!("{}", "🏪 The Terminal Bazaar".bold().yellow());
     println!("{}", "─".repeat(50).dimmed());
     println!(
         "  {} {}",
@@ -744,14 +847,8 @@ fn cmd_shop() {
     }
 
     println!("{}", "─".repeat(50).dimmed());
-    println!(
-        "  Use {} to purchase an item.",
-        "sq buy <number>".cyan()
-    );
-    println!(
-        "  Shop refreshes daily at {}.",
-        "midnight UTC".dimmed()
-    );
+    println!("  Use {} to purchase an item.", "sq buy <number>".cyan());
+    println!("  Shop refreshes daily at {}.", "midnight UTC".dimmed());
     println!();
 
     if let Err(e) = state::save(&game) {
@@ -897,7 +994,11 @@ fn cmd_sell(query: &str) {
                 "⚠️".yellow(),
                 format!("{}", n).white().bold(),
                 format!("{}", game.character.inventory.len()).white().bold(),
-                if game.character.inventory.len() == 1 { "" } else { "s" },
+                if game.character.inventory.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                },
                 "sq inventory".cyan()
             );
             return;
@@ -993,14 +1094,21 @@ fn sweep_junk(items: Vec<character::Item>) -> SweepResult {
     let mut sold_count = 0;
     let mut total_price: u32 = 0;
     for item in items {
-        if matches!(item.rarity, character::Rarity::Common | character::Rarity::Uncommon) {
+        if matches!(
+            item.rarity,
+            character::Rarity::Common | character::Rarity::Uncommon
+        ) {
             total_price += loot::sell_price(&item);
             sold_count += 1;
         } else {
             kept.push(item);
         }
     }
-    SweepResult { kept, sold_count, total_price }
+    SweepResult {
+        kept,
+        sold_count,
+        total_price,
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -1016,7 +1124,10 @@ enum ItemLookup {
     Inventory(usize),
 }
 
-fn find_equipped_slot_to_enchant(game: &state::GameState, query: &str) -> Result<EquippedSlot, &'static str> {
+fn find_equipped_slot_to_enchant(
+    game: &state::GameState,
+    query: &str,
+) -> Result<EquippedSlot, &'static str> {
     let q = query.to_lowercase();
     let mut matches: Vec<EquippedSlot> = Vec::new();
     if let Some(w) = &game.character.weapon {
@@ -1213,7 +1324,10 @@ fn cmd_identify(query: &str) {
         ),
         ItemLookup::Inventory(idx) => (
             &game.character.inventory[idx],
-            display::ItemSource::Inventory { index: idx + 1, total: total_inv },
+            display::ItemSource::Inventory {
+                index: idx + 1,
+                total: total_inv,
+            },
         ),
     };
 
@@ -1386,7 +1500,10 @@ fn lookup_typo_and_gibberish_paths() {
 
     match lookup_topic("jounral") {
         LookupResult::Suggestions(s) => {
-            assert!(!s.is_empty(), "expected at least one suggestion for 'jounral'");
+            assert!(
+                !s.is_empty(),
+                "expected at least one suggestion for 'jounral'"
+            );
             assert_eq!(
                 s[0].name, "journal",
                 "first suggestion for 'jounral' must be 'journal'"
@@ -1465,13 +1582,27 @@ mod tests {
     use crate::character::{Character, Class, Item, ItemSlot, Race, Rarity};
 
     fn make_state_with_items(items: Vec<Item>) -> state::GameState {
-        let mut s = state::GameState::new(Character::new("T".to_string(), Class::Rogue, Race::Human));
+        let mut s =
+            state::GameState::new(Character::new("T".to_string(), Class::Rogue, Race::Human));
         s.character.inventory = items;
         s
     }
 
     fn item(name: &str) -> Item {
-        Item { name: name.to_string(), slot: ItemSlot::Weapon, power: 1, rarity: Rarity::Common, enchant_level: 0 }
+        Item {
+            name: name.to_string(),
+            slot: ItemSlot::Weapon,
+            power: 1,
+            rarity: Rarity::Common,
+            enchant_level: 0,
+        }
+    }
+
+    #[test]
+    fn sq_debug_enabled_when_env_is_present() {
+        assert!(telemetry::sq_debug_value_enabled(Some("")));
+        assert!(telemetry::sq_debug_value_enabled(Some("1")));
+        assert!(!telemetry::sq_debug_value_enabled(None));
     }
 
     #[test]
@@ -1496,7 +1627,10 @@ mod tests {
 
     #[test]
     fn fuzzy_match_full_name_exact() {
-        assert!(fuzzy_match_name("Big Sword of Awesome", "Big Sword of Awesome"));
+        assert!(fuzzy_match_name(
+            "Big Sword of Awesome",
+            "Big Sword of Awesome"
+        ));
     }
 
     #[test]
@@ -1517,13 +1651,19 @@ mod tests {
     #[test]
     fn find_inventory_item_exact_match() {
         let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
-        assert_eq!(find_inventory_item(&state, "Big Sword of Awesome"), Ok(Some(0)));
+        assert_eq!(
+            find_inventory_item(&state, "Big Sword of Awesome"),
+            Ok(Some(0))
+        );
     }
 
     #[test]
     fn find_inventory_item_case_insensitive_exact() {
         let state = make_state_with_items(vec![item("Big Sword of Awesome")]);
-        assert_eq!(find_inventory_item(&state, "big sword of awesome"), Ok(Some(0)));
+        assert_eq!(
+            find_inventory_item(&state, "big sword of awesome"),
+            Ok(Some(0))
+        );
     }
 
     #[test]
@@ -1552,11 +1692,11 @@ mod tests {
 
     #[test]
     fn find_inventory_item_exact_wins_over_fuzzy() {
-        let state = make_state_with_items(vec![
-            item("Small Shield"),
-            item("Big Sword of Awesome"),
-        ]);
-        assert_eq!(find_inventory_item(&state, "Big Sword of Awesome"), Ok(Some(1)));
+        let state = make_state_with_items(vec![item("Small Shield"), item("Big Sword of Awesome")]);
+        assert_eq!(
+            find_inventory_item(&state, "Big Sword of Awesome"),
+            Ok(Some(1))
+        );
     }
 
     #[test]
@@ -1745,7 +1885,10 @@ mod tests {
             .expect("'sq id ring of fortune' must parse via the `id` alias");
         match cli.command {
             Commands::Identify { name } => {
-                assert_eq!(name, vec!["ring".to_string(), "of".to_string(), "fortune".to_string()]);
+                assert_eq!(
+                    name,
+                    vec!["ring".to_string(), "of".to_string(), "fortune".to_string()]
+                );
             }
             _ => panic!("expected Commands::Identify via alias"),
         }
@@ -1852,7 +1995,13 @@ mod tests {
     }
 
     fn item_full(name: &str, power: i32, rarity: Rarity) -> Item {
-        Item { name: name.to_string(), slot: ItemSlot::Weapon, power, rarity, enchant_level: 0 }
+        Item {
+            name: name.to_string(),
+            slot: ItemSlot::Weapon,
+            power,
+            rarity,
+            enchant_level: 0,
+        }
     }
 
     #[test]
@@ -1938,12 +2087,7 @@ mod tests {
 
     #[test]
     fn identify_lookup_matches_equipped_weapon_by_exact_name() {
-        let s = state_with_loadout(
-            Some(item("Scythe of Segfault")),
-            None,
-            None,
-            vec![],
-        );
+        let s = state_with_loadout(Some(item("Scythe of Segfault")), None, None, vec![]);
         assert_eq!(
             find_inventory_or_equipped_item(&s, "Scythe of Segfault"),
             Ok(Some(ItemLookup::Equipped(EquippedSlot::Weapon))),
@@ -1952,12 +2096,7 @@ mod tests {
 
     #[test]
     fn identify_lookup_matches_equipped_armor_by_substring() {
-        let s = state_with_loadout(
-            None,
-            Some(item("Leather Cuirass")),
-            None,
-            vec![],
-        );
+        let s = state_with_loadout(None, Some(item("Leather Cuirass")), None, vec![]);
         assert_eq!(
             find_inventory_or_equipped_item(&s, "leather"),
             Ok(Some(ItemLookup::Equipped(EquippedSlot::Armor))),
@@ -1966,12 +2105,7 @@ mod tests {
 
     #[test]
     fn identify_lookup_matches_equipped_ring_via_fuzzy_tokens() {
-        let s = state_with_loadout(
-            None,
-            None,
-            Some(item("Ring of Fortune")),
-            vec![],
-        );
+        let s = state_with_loadout(None, None, Some(item("Ring of Fortune")), vec![]);
         assert_eq!(
             find_inventory_or_equipped_item(&s, "ring fortune"),
             Ok(Some(ItemLookup::Equipped(EquippedSlot::Ring))),
@@ -2004,10 +2138,7 @@ mod tests {
             None,
             vec![item("Rusty Pipe")],
         );
-        assert_eq!(
-            find_inventory_or_equipped_item(&s, "hammer"),
-            Ok(None),
-        );
+        assert_eq!(find_inventory_or_equipped_item(&s, "hammer"), Ok(None),);
     }
 
     #[test]
@@ -2171,11 +2302,7 @@ fn cmd_equip(name: &str) {
 
 fn cmd_wield(name: &str) {
     if name.is_empty() {
-        eprintln!(
-            "{} Usage: {}",
-            "❌".bold(),
-            "sq wield <weapon name>".cyan()
-        );
+        eprintln!("{} Usage: {}", "❌".bold(), "sq wield <weapon name>".cyan());
         return;
     }
 
@@ -2227,11 +2354,7 @@ fn cmd_wield(name: &str) {
             old_name.dimmed()
         );
     } else {
-        println!(
-            "{} Now wielding {}!",
-            "⚔️".bold(),
-            item_name.green().bold()
-        );
+        println!("{} Now wielding {}!", "⚔️".bold(), item_name.green().bold());
     }
 
     if let Err(e) = state::save(&game) {
@@ -2259,23 +2382,17 @@ fn cmd_remove(name: &str) {
 
     let query = name.to_lowercase();
 
-    let slot = if fuzzy_match_name(
-        game.character.weapon.as_ref().map_or("", |i| &i.name),
-        name,
-    ) || query == "weapon"
+    let slot = if fuzzy_match_name(game.character.weapon.as_ref().map_or("", |i| &i.name), name)
+        || query == "weapon"
     {
         "weapon"
-    } else if fuzzy_match_name(
-        game.character.armor.as_ref().map_or("", |i| &i.name),
-        name,
-    ) || query == "armor"
+    } else if fuzzy_match_name(game.character.armor.as_ref().map_or("", |i| &i.name), name)
+        || query == "armor"
         || query == "armour"
     {
         "armor"
-    } else if fuzzy_match_name(
-        game.character.ring.as_ref().map_or("", |i| &i.name),
-        name,
-    ) || query == "ring"
+    } else if fuzzy_match_name(game.character.ring.as_ref().map_or("", |i| &i.name), name)
+        || query == "ring"
     {
         "ring"
     } else {
@@ -2289,7 +2406,11 @@ fn cmd_remove(name: &str) {
         .collect();
 
         if equipped.is_empty() {
-            println!("{} Nothing equipped. Use {} to see your gear.", "⚠️".yellow(), "sq status".cyan());
+            println!(
+                "{} Nothing equipped. Use {} to see your gear.",
+                "⚠️".yellow(),
+                "sq status".cyan()
+            );
         } else {
             println!(
                 "{} No equipped item matching {}. Equipped: {}",
@@ -2336,11 +2457,7 @@ fn cmd_remove(name: &str) {
 
 fn cmd_drink(name: &str) {
     if name.is_empty() {
-        eprintln!(
-            "{} Usage: {}",
-            "❌".bold(),
-            "sq drink <potion name>".cyan()
-        );
+        eprintln!("{} Usage: {}", "❌".bold(), "sq drink <potion name>".cyan());
         return;
     }
 
@@ -2399,11 +2516,7 @@ fn cmd_drink(name: &str) {
 
 fn cmd_drop_item(name: &str) {
     if name.is_empty() {
-        eprintln!(
-            "{} Usage: {}",
-            "❌".bold(),
-            "sq drop <item name>".cyan()
-        );
+        eprintln!("{} Usage: {}", "❌".bold(), "sq drop <item name>".cyan());
         return;
     }
 
@@ -2471,10 +2584,7 @@ fn cmd_update() {
     use std::process::Command;
 
     println!();
-    println!(
-        "{}",
-        "⬆️  Updating shellquest...".bold().cyan()
-    );
+    println!("{}", "⬆️  Updating shellquest...".bold().cyan());
     println!(
         "{}",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".dimmed()
@@ -2542,8 +2652,7 @@ fn cmd_arena(from_deprecated: bool) {
     if from_deprecated {
         println!(
             "{}",
-            "⚠️  The `tournament` command is deprecated. Use `sq arena` instead."
-                .yellow()
+            "⚠️  The `tournament` command is deprecated. Use `sq arena` instead.".yellow()
         );
     }
 
@@ -2624,12 +2733,7 @@ fn cmd_arena(from_deprecated: bool) {
                 arena::ArenaOutcome::CashOut { rounds_cleared } => ("Cashed out", rounds_cleared),
                 arena::ArenaOutcome::Victory { rounds_cleared } => ("Victory", rounds_cleared),
             };
-            println!(
-                "{} {} after {} rounds.",
-                "🏁".bold(),
-                label,
-                rounds
-            );
+            println!("{} {} after {} rounds.", "🏁".bold(), label, rounds);
         }
         None => {
             println!("{}", "Arena run cancelled before round 1.".dimmed());
@@ -2686,4 +2790,3 @@ fn select_arena_tier(character: &character::Character) -> Option<arena::ArenaTie
         }
     }
 }
-

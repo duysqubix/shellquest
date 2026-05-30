@@ -1,5 +1,6 @@
 use crate::character::{Item, ItemSlot, Rarity};
 use rand::Rng;
+use serde::Serialize;
 
 struct LootEntry {
     name: &'static str,
@@ -7,20 +8,76 @@ struct LootEntry {
     power_range: (i32, i32),
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct CatalogEntry {
+    pub name: String,
+    pub slot: ItemSlot,
+    pub rarity: Rarity,
+    pub power_min: i32,
+    pub power_max: i32,
+    pub price_min: u32,
+    pub price_max: u32,
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  RARITY TIERS — drop rates (out of 10000)
 //  Common: 70%, Uncommon: 25%, Rare: 4%, Epic: 0.99%, Legendary: 0.01%
 // ═══════════════════════════════════════════════════════════════
 
+const RARITY_ROLL_TOTAL: u32 = 10_000;
+const COMMON_ROLL_COUNT: u32 = 7_000;
+const UNCOMMON_ROLL_COUNT: u32 = 2_500;
+const RARE_ROLL_COUNT: u32 = 400;
+const EPIC_ROLL_COUNT: u32 = 99;
+const LEGENDARY_ROLL_COUNT: u32 = 1;
+
+const COMMON_ROLL_START: u32 = 0;
+const COMMON_ROLL_END: u32 = COMMON_ROLL_START + COMMON_ROLL_COUNT - 1;
+const UNCOMMON_ROLL_START: u32 = COMMON_ROLL_END + 1;
+const UNCOMMON_ROLL_END: u32 = UNCOMMON_ROLL_START + UNCOMMON_ROLL_COUNT - 1;
+const RARE_ROLL_START: u32 = UNCOMMON_ROLL_END + 1;
+const RARE_ROLL_END: u32 = RARE_ROLL_START + RARE_ROLL_COUNT - 1;
+const EPIC_ROLL_START: u32 = RARE_ROLL_END + 1;
+const EPIC_ROLL_END: u32 = EPIC_ROLL_START + EPIC_ROLL_COUNT - 1;
+const LEGENDARY_ROLL_START: u32 = EPIC_ROLL_END + 1;
+const LEGENDARY_ROLL_END: u32 = LEGENDARY_ROLL_START + LEGENDARY_ROLL_COUNT - 1;
+
 fn roll_rarity(rng: &mut impl Rng) -> Rarity {
-    let roll = rng.gen_range(0u32..10000);
+    let roll = rng.gen_range(0u32..RARITY_ROLL_TOTAL);
     match roll {
-        0..=6999 => Rarity::Common,       // 70.00%
-        7000..=9499 => Rarity::Uncommon,   // 25.00%
-        9500..=9899 => Rarity::Rare,       // 4.00%
-        9900..=9998 => Rarity::Epic,       // 0.99%
-        _ => Rarity::Legendary,            // 0.01%
+        COMMON_ROLL_START..=COMMON_ROLL_END => Rarity::Common,
+        UNCOMMON_ROLL_START..=UNCOMMON_ROLL_END => Rarity::Uncommon,
+        RARE_ROLL_START..=RARE_ROLL_END => Rarity::Rare,
+        EPIC_ROLL_START..=EPIC_ROLL_END => Rarity::Epic,
+        LEGENDARY_ROLL_START..=LEGENDARY_ROLL_END => Rarity::Legendary,
+        _ => unreachable!("rarity roll is always below RARITY_ROLL_TOTAL"),
     }
+}
+
+/// Drop fractions derived from the same basis-point ranges used by `roll_rarity`.
+pub fn rarity_weights() -> Vec<(Rarity, f64)> {
+    vec![
+        (
+            Rarity::Common,
+            COMMON_ROLL_COUNT as f64 / RARITY_ROLL_TOTAL as f64,
+        ),
+        (
+            Rarity::Uncommon,
+            UNCOMMON_ROLL_COUNT as f64 / RARITY_ROLL_TOTAL as f64,
+        ),
+        (
+            Rarity::Rare,
+            RARE_ROLL_COUNT as f64 / RARITY_ROLL_TOTAL as f64,
+        ),
+        (
+            Rarity::Epic,
+            EPIC_ROLL_COUNT as f64 / RARITY_ROLL_TOTAL as f64,
+        ),
+        (
+            Rarity::Legendary,
+            LEGENDARY_ROLL_COUNT as f64 / RARITY_ROLL_TOTAL as f64,
+        ),
+    ]
 }
 
 // ===============================================================
@@ -29,41 +86,169 @@ fn roll_rarity(rng: &mut impl Rng) -> Rarity {
 
 const COMMON: &[LootEntry] = &[
     // Weapons
-    LootEntry { name: "Rusty Crowbar", slot: ItemSlot::Weapon, power_range: (1, 2) },
-    LootEntry { name: "Dull Letter Opener", slot: ItemSlot::Weapon, power_range: (1, 2) },
-    LootEntry { name: "Chipped Screwdriver", slot: ItemSlot::Weapon, power_range: (2, 3) },
-    LootEntry { name: "Bent Fork", slot: ItemSlot::Weapon, power_range: (2, 3) },
-    LootEntry { name: "Heavy Stapler", slot: ItemSlot::Weapon, power_range: (2, 3) },
-    LootEntry { name: "Wooden Ruler", slot: ItemSlot::Weapon, power_range: (2, 4) },
-    LootEntry { name: "Plastic Spork", slot: ItemSlot::Weapon, power_range: (3, 4) },
-    LootEntry { name: "Blunt Pencil", slot: ItemSlot::Weapon, power_range: (3, 4) },
+    LootEntry {
+        name: "Rusty Crowbar",
+        slot: ItemSlot::Weapon,
+        power_range: (1, 2),
+    },
+    LootEntry {
+        name: "Dull Letter Opener",
+        slot: ItemSlot::Weapon,
+        power_range: (1, 2),
+    },
+    LootEntry {
+        name: "Chipped Screwdriver",
+        slot: ItemSlot::Weapon,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Bent Fork",
+        slot: ItemSlot::Weapon,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Heavy Stapler",
+        slot: ItemSlot::Weapon,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Wooden Ruler",
+        slot: ItemSlot::Weapon,
+        power_range: (2, 4),
+    },
+    LootEntry {
+        name: "Plastic Spork",
+        slot: ItemSlot::Weapon,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Blunt Pencil",
+        slot: ItemSlot::Weapon,
+        power_range: (3, 4),
+    },
     // Armors
-    LootEntry { name: "Coffee-Stained Hoodie", slot: ItemSlot::Armor, power_range: (1, 2) },
-    LootEntry { name: "Tattered T-shirt", slot: ItemSlot::Armor, power_range: (1, 2) },
-    LootEntry { name: "Cardboard Box", slot: ItemSlot::Armor, power_range: (2, 3) },
-    LootEntry { name: "Plastic Poncho", slot: ItemSlot::Armor, power_range: (2, 3) },
-    LootEntry { name: "Thick Denim Jacket", slot: ItemSlot::Armor, power_range: (2, 3) },
-    LootEntry { name: "Old Sneakers", slot: ItemSlot::Armor, power_range: (2, 4) },
-    LootEntry { name: "Frayed Beanie", slot: ItemSlot::Armor, power_range: (3, 4) },
-    LootEntry { name: "Stained Apron", slot: ItemSlot::Armor, power_range: (3, 4) },
+    LootEntry {
+        name: "Coffee-Stained Hoodie",
+        slot: ItemSlot::Armor,
+        power_range: (1, 2),
+    },
+    LootEntry {
+        name: "Tattered T-shirt",
+        slot: ItemSlot::Armor,
+        power_range: (1, 2),
+    },
+    LootEntry {
+        name: "Cardboard Box",
+        slot: ItemSlot::Armor,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Plastic Poncho",
+        slot: ItemSlot::Armor,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Thick Denim Jacket",
+        slot: ItemSlot::Armor,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Old Sneakers",
+        slot: ItemSlot::Armor,
+        power_range: (2, 4),
+    },
+    LootEntry {
+        name: "Frayed Beanie",
+        slot: ItemSlot::Armor,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Stained Apron",
+        slot: ItemSlot::Armor,
+        power_range: (3, 4),
+    },
     // Rings
-    LootEntry { name: "Copper Washer", slot: ItemSlot::Ring, power_range: (1, 2) },
-    LootEntry { name: "Plastic Zip-tie", slot: ItemSlot::Ring, power_range: (1, 2) },
-    LootEntry { name: "Rubber Band", slot: ItemSlot::Ring, power_range: (2, 3) },
-    LootEntry { name: "String Loop", slot: ItemSlot::Ring, power_range: (2, 3) },
-    LootEntry { name: "Rusty Nut", slot: ItemSlot::Ring, power_range: (2, 3) },
-    LootEntry { name: "Glass Bead", slot: ItemSlot::Ring, power_range: (2, 4) },
-    LootEntry { name: "Paperclip Ring", slot: ItemSlot::Ring, power_range: (3, 4) },
-    LootEntry { name: "Soda Tab", slot: ItemSlot::Ring, power_range: (3, 4) },
+    LootEntry {
+        name: "Copper Washer",
+        slot: ItemSlot::Ring,
+        power_range: (1, 2),
+    },
+    LootEntry {
+        name: "Plastic Zip-tie",
+        slot: ItemSlot::Ring,
+        power_range: (1, 2),
+    },
+    LootEntry {
+        name: "Rubber Band",
+        slot: ItemSlot::Ring,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "String Loop",
+        slot: ItemSlot::Ring,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Rusty Nut",
+        slot: ItemSlot::Ring,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Glass Bead",
+        slot: ItemSlot::Ring,
+        power_range: (2, 4),
+    },
+    LootEntry {
+        name: "Paperclip Ring",
+        slot: ItemSlot::Ring,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Soda Tab",
+        slot: ItemSlot::Ring,
+        power_range: (3, 4),
+    },
     // Potions
-    LootEntry { name: "Lukewarm Water", slot: ItemSlot::Potion, power_range: (1, 2) },
-    LootEntry { name: "Stale Coffee", slot: ItemSlot::Potion, power_range: (1, 2) },
-    LootEntry { name: "Flat Soda", slot: ItemSlot::Potion, power_range: (2, 3) },
-    LootEntry { name: "Generic Energy Drink", slot: ItemSlot::Potion, power_range: (2, 3) },
-    LootEntry { name: "Tap Water", slot: ItemSlot::Potion, power_range: (2, 3) },
-    LootEntry { name: "Half-Empty Juice Box", slot: ItemSlot::Potion, power_range: (2, 4) },
-    LootEntry { name: "Cold Soup", slot: ItemSlot::Potion, power_range: (3, 4) },
-    LootEntry { name: "Expired Milk", slot: ItemSlot::Potion, power_range: (3, 4) },
+    LootEntry {
+        name: "Lukewarm Water",
+        slot: ItemSlot::Potion,
+        power_range: (1, 2),
+    },
+    LootEntry {
+        name: "Stale Coffee",
+        slot: ItemSlot::Potion,
+        power_range: (1, 2),
+    },
+    LootEntry {
+        name: "Flat Soda",
+        slot: ItemSlot::Potion,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Generic Energy Drink",
+        slot: ItemSlot::Potion,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Tap Water",
+        slot: ItemSlot::Potion,
+        power_range: (2, 3),
+    },
+    LootEntry {
+        name: "Half-Empty Juice Box",
+        slot: ItemSlot::Potion,
+        power_range: (2, 4),
+    },
+    LootEntry {
+        name: "Cold Soup",
+        slot: ItemSlot::Potion,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Expired Milk",
+        slot: ItemSlot::Potion,
+        power_range: (3, 4),
+    },
 ];
 
 // ===============================================================
@@ -72,41 +257,169 @@ const COMMON: &[LootEntry] = &[
 
 const UNCOMMON: &[LootEntry] = &[
     // Weapons
-    LootEntry { name: "Polished Wrench", slot: ItemSlot::Weapon, power_range: (3, 4) },
-    LootEntry { name: "Sharp Utility Knife", slot: ItemSlot::Weapon, power_range: (3, 4) },
-    LootEntry { name: "Weighted Hammer", slot: ItemSlot::Weapon, power_range: (3, 5) },
-    LootEntry { name: "Steel-Tipped Pen", slot: ItemSlot::Weapon, power_range: (4, 5) },
-    LootEntry { name: "Industrial Scissors", slot: ItemSlot::Weapon, power_range: (4, 5) },
-    LootEntry { name: "Brass Knuckles", slot: ItemSlot::Weapon, power_range: (4, 6) },
-    LootEntry { name: "Iron Pipe", slot: ItemSlot::Weapon, power_range: (5, 6) },
-    LootEntry { name: "Sharpened Spatula", slot: ItemSlot::Weapon, power_range: (5, 6) },
+    LootEntry {
+        name: "Polished Wrench",
+        slot: ItemSlot::Weapon,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Sharp Utility Knife",
+        slot: ItemSlot::Weapon,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Weighted Hammer",
+        slot: ItemSlot::Weapon,
+        power_range: (3, 5),
+    },
+    LootEntry {
+        name: "Steel-Tipped Pen",
+        slot: ItemSlot::Weapon,
+        power_range: (4, 5),
+    },
+    LootEntry {
+        name: "Industrial Scissors",
+        slot: ItemSlot::Weapon,
+        power_range: (4, 5),
+    },
+    LootEntry {
+        name: "Brass Knuckles",
+        slot: ItemSlot::Weapon,
+        power_range: (4, 6),
+    },
+    LootEntry {
+        name: "Iron Pipe",
+        slot: ItemSlot::Weapon,
+        power_range: (5, 6),
+    },
+    LootEntry {
+        name: "Sharpened Spatula",
+        slot: ItemSlot::Weapon,
+        power_range: (5, 6),
+    },
     // Armors
-    LootEntry { name: "Reinforced Vest", slot: ItemSlot::Armor, power_range: (3, 4) },
-    LootEntry { name: "Padded Windbreaker", slot: ItemSlot::Armor, power_range: (3, 4) },
-    LootEntry { name: "Leather Apron", slot: ItemSlot::Armor, power_range: (3, 5) },
-    LootEntry { name: "Hard Hat", slot: ItemSlot::Armor, power_range: (4, 5) },
-    LootEntry { name: "Work Gloves", slot: ItemSlot::Armor, power_range: (4, 5) },
-    LootEntry { name: "Cargo Pants", slot: ItemSlot::Armor, power_range: (4, 6) },
-    LootEntry { name: "Steel-Toed Boots", slot: ItemSlot::Armor, power_range: (5, 6) },
-    LootEntry { name: "Safety Goggles", slot: ItemSlot::Armor, power_range: (5, 6) },
+    LootEntry {
+        name: "Reinforced Vest",
+        slot: ItemSlot::Armor,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Padded Windbreaker",
+        slot: ItemSlot::Armor,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Leather Apron",
+        slot: ItemSlot::Armor,
+        power_range: (3, 5),
+    },
+    LootEntry {
+        name: "Hard Hat",
+        slot: ItemSlot::Armor,
+        power_range: (4, 5),
+    },
+    LootEntry {
+        name: "Work Gloves",
+        slot: ItemSlot::Armor,
+        power_range: (4, 5),
+    },
+    LootEntry {
+        name: "Cargo Pants",
+        slot: ItemSlot::Armor,
+        power_range: (4, 6),
+    },
+    LootEntry {
+        name: "Steel-Toed Boots",
+        slot: ItemSlot::Armor,
+        power_range: (5, 6),
+    },
+    LootEntry {
+        name: "Safety Goggles",
+        slot: ItemSlot::Armor,
+        power_range: (5, 6),
+    },
     // Rings
-    LootEntry { name: "Silver Band", slot: ItemSlot::Ring, power_range: (3, 4) },
-    LootEntry { name: "Polished Brass Ring", slot: ItemSlot::Ring, power_range: (3, 4) },
-    LootEntry { name: "Iron Signet", slot: ItemSlot::Ring, power_range: (3, 5) },
-    LootEntry { name: "Braided Wire Loop", slot: ItemSlot::Ring, power_range: (4, 5) },
-    LootEntry { name: "Quartz Ring", slot: ItemSlot::Ring, power_range: (4, 5) },
-    LootEntry { name: "Steel Washer", slot: ItemSlot::Ring, power_range: (4, 6) },
-    LootEntry { name: "Polished Pebble", slot: ItemSlot::Ring, power_range: (5, 6) },
-    LootEntry { name: "Copper Coil", slot: ItemSlot::Ring, power_range: (5, 6) },
+    LootEntry {
+        name: "Silver Band",
+        slot: ItemSlot::Ring,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Polished Brass Ring",
+        slot: ItemSlot::Ring,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Iron Signet",
+        slot: ItemSlot::Ring,
+        power_range: (3, 5),
+    },
+    LootEntry {
+        name: "Braided Wire Loop",
+        slot: ItemSlot::Ring,
+        power_range: (4, 5),
+    },
+    LootEntry {
+        name: "Quartz Ring",
+        slot: ItemSlot::Ring,
+        power_range: (4, 5),
+    },
+    LootEntry {
+        name: "Steel Washer",
+        slot: ItemSlot::Ring,
+        power_range: (4, 6),
+    },
+    LootEntry {
+        name: "Polished Pebble",
+        slot: ItemSlot::Ring,
+        power_range: (5, 6),
+    },
+    LootEntry {
+        name: "Copper Coil",
+        slot: ItemSlot::Ring,
+        power_range: (5, 6),
+    },
     // Potions
-    LootEntry { name: "Fresh Espresso", slot: ItemSlot::Potion, power_range: (3, 4) },
-    LootEntry { name: "Cold Brew", slot: ItemSlot::Potion, power_range: (3, 4) },
-    LootEntry { name: "Vitamin Water", slot: ItemSlot::Potion, power_range: (3, 5) },
-    LootEntry { name: "Electrolyte Drink", slot: ItemSlot::Potion, power_range: (4, 5) },
-    LootEntry { name: "Herbal Tea", slot: ItemSlot::Potion, power_range: (4, 5) },
-    LootEntry { name: "Protein Shake", slot: ItemSlot::Potion, power_range: (4, 6) },
-    LootEntry { name: "Bottled Water", slot: ItemSlot::Potion, power_range: (5, 6) },
-    LootEntry { name: "Fruit Smoothie", slot: ItemSlot::Potion, power_range: (5, 6) },
+    LootEntry {
+        name: "Fresh Espresso",
+        slot: ItemSlot::Potion,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Cold Brew",
+        slot: ItemSlot::Potion,
+        power_range: (3, 4),
+    },
+    LootEntry {
+        name: "Vitamin Water",
+        slot: ItemSlot::Potion,
+        power_range: (3, 5),
+    },
+    LootEntry {
+        name: "Electrolyte Drink",
+        slot: ItemSlot::Potion,
+        power_range: (4, 5),
+    },
+    LootEntry {
+        name: "Herbal Tea",
+        slot: ItemSlot::Potion,
+        power_range: (4, 5),
+    },
+    LootEntry {
+        name: "Protein Shake",
+        slot: ItemSlot::Potion,
+        power_range: (4, 6),
+    },
+    LootEntry {
+        name: "Bottled Water",
+        slot: ItemSlot::Potion,
+        power_range: (5, 6),
+    },
+    LootEntry {
+        name: "Fruit Smoothie",
+        slot: ItemSlot::Potion,
+        power_range: (5, 6),
+    },
 ];
 
 // ===============================================================
@@ -115,41 +428,169 @@ const UNCOMMON: &[LootEntry] = &[
 
 const RARE: &[LootEntry] = &[
     // Weapons
-    LootEntry { name: "Bit-Blitzer", slot: ItemSlot::Weapon, power_range: (5, 6) },
-    LootEntry { name: "Logic-Lash", slot: ItemSlot::Weapon, power_range: (5, 7) },
-    LootEntry { name: "Syntax-Slicer", slot: ItemSlot::Weapon, power_range: (6, 7) },
-    LootEntry { name: "Code-Cracker", slot: ItemSlot::Weapon, power_range: (6, 8) },
-    LootEntry { name: "Data-Dagger", slot: ItemSlot::Weapon, power_range: (7, 8) },
-    LootEntry { name: "Thread-Thresher", slot: ItemSlot::Weapon, power_range: (7, 9) },
-    LootEntry { name: "Memory-Maul", slot: ItemSlot::Weapon, power_range: (8, 10) },
-    LootEntry { name: "Buffer-Blade", slot: ItemSlot::Weapon, power_range: (9, 10) },
+    LootEntry {
+        name: "Bit-Blitzer",
+        slot: ItemSlot::Weapon,
+        power_range: (5, 6),
+    },
+    LootEntry {
+        name: "Logic-Lash",
+        slot: ItemSlot::Weapon,
+        power_range: (5, 7),
+    },
+    LootEntry {
+        name: "Syntax-Slicer",
+        slot: ItemSlot::Weapon,
+        power_range: (6, 7),
+    },
+    LootEntry {
+        name: "Code-Cracker",
+        slot: ItemSlot::Weapon,
+        power_range: (6, 8),
+    },
+    LootEntry {
+        name: "Data-Dagger",
+        slot: ItemSlot::Weapon,
+        power_range: (7, 8),
+    },
+    LootEntry {
+        name: "Thread-Thresher",
+        slot: ItemSlot::Weapon,
+        power_range: (7, 9),
+    },
+    LootEntry {
+        name: "Memory-Maul",
+        slot: ItemSlot::Weapon,
+        power_range: (8, 10),
+    },
+    LootEntry {
+        name: "Buffer-Blade",
+        slot: ItemSlot::Weapon,
+        power_range: (9, 10),
+    },
     // Armors
-    LootEntry { name: "Buffer-Bulwark", slot: ItemSlot::Armor, power_range: (5, 6) },
-    LootEntry { name: "Shell-Shield", slot: ItemSlot::Armor, power_range: (5, 7) },
-    LootEntry { name: "Script-Shroud", slot: ItemSlot::Armor, power_range: (6, 7) },
-    LootEntry { name: "Logic-Layer", slot: ItemSlot::Armor, power_range: (6, 8) },
-    LootEntry { name: "Data-Drape", slot: ItemSlot::Armor, power_range: (7, 8) },
-    LootEntry { name: "Thread-Tunic", slot: ItemSlot::Armor, power_range: (7, 9) },
-    LootEntry { name: "Memory-Mail", slot: ItemSlot::Armor, power_range: (8, 10) },
-    LootEntry { name: "Kernel-Cloak", slot: ItemSlot::Armor, power_range: (9, 10) },
+    LootEntry {
+        name: "Buffer-Bulwark",
+        slot: ItemSlot::Armor,
+        power_range: (5, 6),
+    },
+    LootEntry {
+        name: "Shell-Shield",
+        slot: ItemSlot::Armor,
+        power_range: (5, 7),
+    },
+    LootEntry {
+        name: "Script-Shroud",
+        slot: ItemSlot::Armor,
+        power_range: (6, 7),
+    },
+    LootEntry {
+        name: "Logic-Layer",
+        slot: ItemSlot::Armor,
+        power_range: (6, 8),
+    },
+    LootEntry {
+        name: "Data-Drape",
+        slot: ItemSlot::Armor,
+        power_range: (7, 8),
+    },
+    LootEntry {
+        name: "Thread-Tunic",
+        slot: ItemSlot::Armor,
+        power_range: (7, 9),
+    },
+    LootEntry {
+        name: "Memory-Mail",
+        slot: ItemSlot::Armor,
+        power_range: (8, 10),
+    },
+    LootEntry {
+        name: "Kernel-Cloak",
+        slot: ItemSlot::Armor,
+        power_range: (9, 10),
+    },
     // Rings
-    LootEntry { name: "Loop-Link", slot: ItemSlot::Ring, power_range: (5, 6) },
-    LootEntry { name: "Node-Nexus", slot: ItemSlot::Ring, power_range: (5, 7) },
-    LootEntry { name: "Bit-Bind", slot: ItemSlot::Ring, power_range: (6, 7) },
-    LootEntry { name: "Code-Coil", slot: ItemSlot::Ring, power_range: (6, 8) },
-    LootEntry { name: "Data-Dot", slot: ItemSlot::Ring, power_range: (7, 8) },
-    LootEntry { name: "Thread-Tie", slot: ItemSlot::Ring, power_range: (7, 9) },
-    LootEntry { name: "Memory-Mark", slot: ItemSlot::Ring, power_range: (8, 10) },
-    LootEntry { name: "Kernel-Key", slot: ItemSlot::Ring, power_range: (9, 10) },
+    LootEntry {
+        name: "Loop-Link",
+        slot: ItemSlot::Ring,
+        power_range: (5, 6),
+    },
+    LootEntry {
+        name: "Node-Nexus",
+        slot: ItemSlot::Ring,
+        power_range: (5, 7),
+    },
+    LootEntry {
+        name: "Bit-Bind",
+        slot: ItemSlot::Ring,
+        power_range: (6, 7),
+    },
+    LootEntry {
+        name: "Code-Coil",
+        slot: ItemSlot::Ring,
+        power_range: (6, 8),
+    },
+    LootEntry {
+        name: "Data-Dot",
+        slot: ItemSlot::Ring,
+        power_range: (7, 8),
+    },
+    LootEntry {
+        name: "Thread-Tie",
+        slot: ItemSlot::Ring,
+        power_range: (7, 9),
+    },
+    LootEntry {
+        name: "Memory-Mark",
+        slot: ItemSlot::Ring,
+        power_range: (8, 10),
+    },
+    LootEntry {
+        name: "Kernel-Key",
+        slot: ItemSlot::Ring,
+        power_range: (9, 10),
+    },
     // Potions
-    LootEntry { name: "Logic-Litre", slot: ItemSlot::Potion, power_range: (5, 6) },
-    LootEntry { name: "Syntax-Sip", slot: ItemSlot::Potion, power_range: (5, 7) },
-    LootEntry { name: "Code-Cordial", slot: ItemSlot::Potion, power_range: (6, 7) },
-    LootEntry { name: "Data-Draught", slot: ItemSlot::Potion, power_range: (6, 8) },
-    LootEntry { name: "Thread-Tonic", slot: ItemSlot::Potion, power_range: (7, 8) },
-    LootEntry { name: "Bit-Brew", slot: ItemSlot::Potion, power_range: (7, 9) },
-    LootEntry { name: "Memory-Mist", slot: ItemSlot::Potion, power_range: (8, 10) },
-    LootEntry { name: "Kernel-Keg", slot: ItemSlot::Potion, power_range: (9, 10) },
+    LootEntry {
+        name: "Logic-Litre",
+        slot: ItemSlot::Potion,
+        power_range: (5, 6),
+    },
+    LootEntry {
+        name: "Syntax-Sip",
+        slot: ItemSlot::Potion,
+        power_range: (5, 7),
+    },
+    LootEntry {
+        name: "Code-Cordial",
+        slot: ItemSlot::Potion,
+        power_range: (6, 7),
+    },
+    LootEntry {
+        name: "Data-Draught",
+        slot: ItemSlot::Potion,
+        power_range: (6, 8),
+    },
+    LootEntry {
+        name: "Thread-Tonic",
+        slot: ItemSlot::Potion,
+        power_range: (7, 8),
+    },
+    LootEntry {
+        name: "Bit-Brew",
+        slot: ItemSlot::Potion,
+        power_range: (7, 9),
+    },
+    LootEntry {
+        name: "Memory-Mist",
+        slot: ItemSlot::Potion,
+        power_range: (8, 10),
+    },
+    LootEntry {
+        name: "Kernel-Keg",
+        slot: ItemSlot::Potion,
+        power_range: (9, 10),
+    },
 ];
 
 // ===============================================================
@@ -158,41 +599,169 @@ const RARE: &[LootEntry] = &[
 
 const EPIC: &[LootEntry] = &[
     // Weapons
-    LootEntry { name: "Void-Pointer Voulge", slot: ItemSlot::Weapon, power_range: (8, 10) },
-    LootEntry { name: "Heap-Stalker Harpoon", slot: ItemSlot::Weapon, power_range: (8, 11) },
-    LootEntry { name: "Stack-Smasher Sledge", slot: ItemSlot::Weapon, power_range: (9, 11) },
-    LootEntry { name: "Mutex-Mangler Mace", slot: ItemSlot::Weapon, power_range: (10, 12) },
-    LootEntry { name: "Segfault Scythe", slot: ItemSlot::Weapon, power_range: (10, 13) },
-    LootEntry { name: "Kernel-Cutter Katana", slot: ItemSlot::Weapon, power_range: (11, 14) },
-    LootEntry { name: "Runtime-Ravager Rapier", slot: ItemSlot::Weapon, power_range: (12, 14) },
-    LootEntry { name: "Compiler-Crushing Claymore", slot: ItemSlot::Weapon, power_range: (13, 15) },
+    LootEntry {
+        name: "Void-Pointer Voulge",
+        slot: ItemSlot::Weapon,
+        power_range: (8, 10),
+    },
+    LootEntry {
+        name: "Heap-Stalker Harpoon",
+        slot: ItemSlot::Weapon,
+        power_range: (8, 11),
+    },
+    LootEntry {
+        name: "Stack-Smasher Sledge",
+        slot: ItemSlot::Weapon,
+        power_range: (9, 11),
+    },
+    LootEntry {
+        name: "Mutex-Mangler Mace",
+        slot: ItemSlot::Weapon,
+        power_range: (10, 12),
+    },
+    LootEntry {
+        name: "Segfault Scythe",
+        slot: ItemSlot::Weapon,
+        power_range: (10, 13),
+    },
+    LootEntry {
+        name: "Kernel-Cutter Katana",
+        slot: ItemSlot::Weapon,
+        power_range: (11, 14),
+    },
+    LootEntry {
+        name: "Runtime-Ravager Rapier",
+        slot: ItemSlot::Weapon,
+        power_range: (12, 14),
+    },
+    LootEntry {
+        name: "Compiler-Crushing Claymore",
+        slot: ItemSlot::Weapon,
+        power_range: (13, 15),
+    },
     // Armors
-    LootEntry { name: "Mantle of the Mainframe", slot: ItemSlot::Armor, power_range: (8, 10) },
-    LootEntry { name: "Robes of the Root", slot: ItemSlot::Armor, power_range: (8, 11) },
-    LootEntry { name: "Plate of the Processor", slot: ItemSlot::Armor, power_range: (9, 11) },
-    LootEntry { name: "Vestments of the Virtual", slot: ItemSlot::Armor, power_range: (10, 12) },
-    LootEntry { name: "Cloak of the Compiler", slot: ItemSlot::Armor, power_range: (10, 13) },
-    LootEntry { name: "Armor of the Assembler", slot: ItemSlot::Armor, power_range: (11, 14) },
-    LootEntry { name: "Guard of the Garbage-Collector", slot: ItemSlot::Armor, power_range: (12, 14) },
-    LootEntry { name: "Suit of the Superuser", slot: ItemSlot::Armor, power_range: (13, 15) },
+    LootEntry {
+        name: "Mantle of the Mainframe",
+        slot: ItemSlot::Armor,
+        power_range: (8, 10),
+    },
+    LootEntry {
+        name: "Robes of the Root",
+        slot: ItemSlot::Armor,
+        power_range: (8, 11),
+    },
+    LootEntry {
+        name: "Plate of the Processor",
+        slot: ItemSlot::Armor,
+        power_range: (9, 11),
+    },
+    LootEntry {
+        name: "Vestments of the Virtual",
+        slot: ItemSlot::Armor,
+        power_range: (10, 12),
+    },
+    LootEntry {
+        name: "Cloak of the Compiler",
+        slot: ItemSlot::Armor,
+        power_range: (10, 13),
+    },
+    LootEntry {
+        name: "Armor of the Assembler",
+        slot: ItemSlot::Armor,
+        power_range: (11, 14),
+    },
+    LootEntry {
+        name: "Guard of the Garbage-Collector",
+        slot: ItemSlot::Armor,
+        power_range: (12, 14),
+    },
+    LootEntry {
+        name: "Suit of the Superuser",
+        slot: ItemSlot::Armor,
+        power_range: (13, 15),
+    },
     // Rings
-    LootEntry { name: "Sigil of the Sysadmin", slot: ItemSlot::Ring, power_range: (8, 10) },
-    LootEntry { name: "Band of the Binary", slot: ItemSlot::Ring, power_range: (8, 11) },
-    LootEntry { name: "Loop of the Low-Level", slot: ItemSlot::Ring, power_range: (9, 11) },
-    LootEntry { name: "Amulet of the Architect", slot: ItemSlot::Ring, power_range: (10, 12) },
-    LootEntry { name: "Ring of the Runtime", slot: ItemSlot::Ring, power_range: (10, 13) },
-    LootEntry { name: "Coil of the Core", slot: ItemSlot::Ring, power_range: (11, 14) },
-    LootEntry { name: "Mark of the Mutex", slot: ItemSlot::Ring, power_range: (12, 14) },
-    LootEntry { name: "Signet of the Socket", slot: ItemSlot::Ring, power_range: (13, 15) },
+    LootEntry {
+        name: "Sigil of the Sysadmin",
+        slot: ItemSlot::Ring,
+        power_range: (8, 10),
+    },
+    LootEntry {
+        name: "Band of the Binary",
+        slot: ItemSlot::Ring,
+        power_range: (8, 11),
+    },
+    LootEntry {
+        name: "Loop of the Low-Level",
+        slot: ItemSlot::Ring,
+        power_range: (9, 11),
+    },
+    LootEntry {
+        name: "Amulet of the Architect",
+        slot: ItemSlot::Ring,
+        power_range: (10, 12),
+    },
+    LootEntry {
+        name: "Ring of the Runtime",
+        slot: ItemSlot::Ring,
+        power_range: (10, 13),
+    },
+    LootEntry {
+        name: "Coil of the Core",
+        slot: ItemSlot::Ring,
+        power_range: (11, 14),
+    },
+    LootEntry {
+        name: "Mark of the Mutex",
+        slot: ItemSlot::Ring,
+        power_range: (12, 14),
+    },
+    LootEntry {
+        name: "Signet of the Socket",
+        slot: ItemSlot::Ring,
+        power_range: (13, 15),
+    },
     // Potions
-    LootEntry { name: "Essence of the Epoch", slot: ItemSlot::Potion, power_range: (8, 10) },
-    LootEntry { name: "Distillation of the Debugger", slot: ItemSlot::Potion, power_range: (8, 11) },
-    LootEntry { name: "Brew of the Binary", slot: ItemSlot::Potion, power_range: (9, 11) },
-    LootEntry { name: "Elixir of the Executable", slot: ItemSlot::Potion, power_range: (10, 12) },
-    LootEntry { name: "Vial of the Virtual", slot: ItemSlot::Potion, power_range: (10, 13) },
-    LootEntry { name: "Draught of the Daemon", slot: ItemSlot::Potion, power_range: (11, 14) },
-    LootEntry { name: "Tonic of the Terminal", slot: ItemSlot::Potion, power_range: (12, 14) },
-    LootEntry { name: "Sip of the System", slot: ItemSlot::Potion, power_range: (13, 15) },
+    LootEntry {
+        name: "Essence of the Epoch",
+        slot: ItemSlot::Potion,
+        power_range: (8, 10),
+    },
+    LootEntry {
+        name: "Distillation of the Debugger",
+        slot: ItemSlot::Potion,
+        power_range: (8, 11),
+    },
+    LootEntry {
+        name: "Brew of the Binary",
+        slot: ItemSlot::Potion,
+        power_range: (9, 11),
+    },
+    LootEntry {
+        name: "Elixir of the Executable",
+        slot: ItemSlot::Potion,
+        power_range: (10, 12),
+    },
+    LootEntry {
+        name: "Vial of the Virtual",
+        slot: ItemSlot::Potion,
+        power_range: (10, 13),
+    },
+    LootEntry {
+        name: "Draught of the Daemon",
+        slot: ItemSlot::Potion,
+        power_range: (11, 14),
+    },
+    LootEntry {
+        name: "Tonic of the Terminal",
+        slot: ItemSlot::Potion,
+        power_range: (12, 14),
+    },
+    LootEntry {
+        name: "Sip of the System",
+        slot: ItemSlot::Potion,
+        power_range: (13, 15),
+    },
 ];
 
 // ===============================================================
@@ -201,48 +770,226 @@ const EPIC: &[LootEntry] = &[
 
 const LEGENDARY: &[LootEntry] = &[
     // Weapons
-    LootEntry { name: "The Final Commit of Fate", slot: ItemSlot::Weapon, power_range: (15, 17) },
-    LootEntry { name: "The Last Allocator's Wrath", slot: ItemSlot::Weapon, power_range: (16, 18) },
-    LootEntry { name: "The Blade of the Broken Build", slot: ItemSlot::Weapon, power_range: (17, 19) },
-    LootEntry { name: "The Hammer of the Hard Reset", slot: ItemSlot::Weapon, power_range: (18, 20) },
-    LootEntry { name: "The Spear of the Single Source", slot: ItemSlot::Weapon, power_range: (19, 21) },
-    LootEntry { name: "The Bow of the Binary Search", slot: ItemSlot::Weapon, power_range: (20, 22) },
-    LootEntry { name: "The Axe of the Absolute Zero", slot: ItemSlot::Weapon, power_range: (21, 23) },
-    LootEntry { name: "The Dagger of the Deep Copy", slot: ItemSlot::Weapon, power_range: (22, 25) },
+    LootEntry {
+        name: "The Final Commit of Fate",
+        slot: ItemSlot::Weapon,
+        power_range: (15, 17),
+    },
+    LootEntry {
+        name: "The Last Allocator's Wrath",
+        slot: ItemSlot::Weapon,
+        power_range: (16, 18),
+    },
+    LootEntry {
+        name: "The Blade of the Broken Build",
+        slot: ItemSlot::Weapon,
+        power_range: (17, 19),
+    },
+    LootEntry {
+        name: "The Hammer of the Hard Reset",
+        slot: ItemSlot::Weapon,
+        power_range: (18, 20),
+    },
+    LootEntry {
+        name: "The Spear of the Single Source",
+        slot: ItemSlot::Weapon,
+        power_range: (19, 21),
+    },
+    LootEntry {
+        name: "The Bow of the Binary Search",
+        slot: ItemSlot::Weapon,
+        power_range: (20, 22),
+    },
+    LootEntry {
+        name: "The Axe of the Absolute Zero",
+        slot: ItemSlot::Weapon,
+        power_range: (21, 23),
+    },
+    LootEntry {
+        name: "The Dagger of the Deep Copy",
+        slot: ItemSlot::Weapon,
+        power_range: (22, 25),
+    },
     // Armors
-    LootEntry { name: "The Shroud of the Silent Error", slot: ItemSlot::Armor, power_range: (15, 17) },
-    LootEntry { name: "The Aegis of the Absolute Path", slot: ItemSlot::Armor, power_range: (16, 18) },
-    LootEntry { name: "The Mantle of the Master Branch", slot: ItemSlot::Armor, power_range: (17, 19) },
-    LootEntry { name: "The Plate of the Persistent State", slot: ItemSlot::Armor, power_range: (18, 20) },
-    LootEntry { name: "The Robes of the Recursive Call", slot: ItemSlot::Armor, power_range: (19, 21) },
-    LootEntry { name: "The Vest of the Validated Input", slot: ItemSlot::Armor, power_range: (20, 22) },
-    LootEntry { name: "The Cloak of the Clean Code", slot: ItemSlot::Armor, power_range: (21, 23) },
-    LootEntry { name: "The Armor of the Atomic Operation", slot: ItemSlot::Armor, power_range: (22, 25) },
+    LootEntry {
+        name: "The Shroud of the Silent Error",
+        slot: ItemSlot::Armor,
+        power_range: (15, 17),
+    },
+    LootEntry {
+        name: "The Aegis of the Absolute Path",
+        slot: ItemSlot::Armor,
+        power_range: (16, 18),
+    },
+    LootEntry {
+        name: "The Mantle of the Master Branch",
+        slot: ItemSlot::Armor,
+        power_range: (17, 19),
+    },
+    LootEntry {
+        name: "The Plate of the Persistent State",
+        slot: ItemSlot::Armor,
+        power_range: (18, 20),
+    },
+    LootEntry {
+        name: "The Robes of the Recursive Call",
+        slot: ItemSlot::Armor,
+        power_range: (19, 21),
+    },
+    LootEntry {
+        name: "The Vest of the Validated Input",
+        slot: ItemSlot::Armor,
+        power_range: (20, 22),
+    },
+    LootEntry {
+        name: "The Cloak of the Clean Code",
+        slot: ItemSlot::Armor,
+        power_range: (21, 23),
+    },
+    LootEntry {
+        name: "The Armor of the Atomic Operation",
+        slot: ItemSlot::Armor,
+        power_range: (22, 25),
+    },
     // Rings
-    LootEntry { name: "The Loop of the Lost Link", slot: ItemSlot::Ring, power_range: (15, 17) },
-    LootEntry { name: "The Sigil of the Sovereign System", slot: ItemSlot::Ring, power_range: (16, 18) },
-    LootEntry { name: "The Band of the Boundless Buffer", slot: ItemSlot::Ring, power_range: (17, 19) },
-    LootEntry { name: "The Ring of the Root Access", slot: ItemSlot::Ring, power_range: (18, 20) },
-    LootEntry { name: "The Amulet of the Async Await", slot: ItemSlot::Ring, power_range: (19, 21) },
-    LootEntry { name: "The Coil of the Constant Time", slot: ItemSlot::Ring, power_range: (20, 22) },
-    LootEntry { name: "The Signet of the Singleton", slot: ItemSlot::Ring, power_range: (21, 23) },
-    LootEntry { name: "The Mark of the Memory Map", slot: ItemSlot::Ring, power_range: (22, 25) },
+    LootEntry {
+        name: "The Loop of the Lost Link",
+        slot: ItemSlot::Ring,
+        power_range: (15, 17),
+    },
+    LootEntry {
+        name: "The Sigil of the Sovereign System",
+        slot: ItemSlot::Ring,
+        power_range: (16, 18),
+    },
+    LootEntry {
+        name: "The Band of the Boundless Buffer",
+        slot: ItemSlot::Ring,
+        power_range: (17, 19),
+    },
+    LootEntry {
+        name: "The Ring of the Root Access",
+        slot: ItemSlot::Ring,
+        power_range: (18, 20),
+    },
+    LootEntry {
+        name: "The Amulet of the Async Await",
+        slot: ItemSlot::Ring,
+        power_range: (19, 21),
+    },
+    LootEntry {
+        name: "The Coil of the Constant Time",
+        slot: ItemSlot::Ring,
+        power_range: (20, 22),
+    },
+    LootEntry {
+        name: "The Signet of the Singleton",
+        slot: ItemSlot::Ring,
+        power_range: (21, 23),
+    },
+    LootEntry {
+        name: "The Mark of the Memory Map",
+        slot: ItemSlot::Ring,
+        power_range: (22, 25),
+    },
     // Potions
-    LootEntry { name: "The Tear of the Tired Tech-Lead", slot: ItemSlot::Potion, power_range: (15, 17) },
-    LootEntry { name: "The Blood of the Beta Tester", slot: ItemSlot::Potion, power_range: (16, 18) },
-    LootEntry { name: "The Sweat of the Senior Dev", slot: ItemSlot::Potion, power_range: (17, 19) },
-    LootEntry { name: "The Breath of the Backend", slot: ItemSlot::Potion, power_range: (18, 20) },
-    LootEntry { name: "The Soul of the Source Code", slot: ItemSlot::Potion, power_range: (19, 21) },
-    LootEntry { name: "The Heart of the Hardware", slot: ItemSlot::Potion, power_range: (20, 22) },
-    LootEntry { name: "The Essence of the End-User", slot: ItemSlot::Potion, power_range: (21, 23) },
-    LootEntry { name: "The Draught of the Deployment", slot: ItemSlot::Potion, power_range: (22, 25) },
+    LootEntry {
+        name: "The Tear of the Tired Tech-Lead",
+        slot: ItemSlot::Potion,
+        power_range: (15, 17),
+    },
+    LootEntry {
+        name: "The Blood of the Beta Tester",
+        slot: ItemSlot::Potion,
+        power_range: (16, 18),
+    },
+    LootEntry {
+        name: "The Sweat of the Senior Dev",
+        slot: ItemSlot::Potion,
+        power_range: (17, 19),
+    },
+    LootEntry {
+        name: "The Breath of the Backend",
+        slot: ItemSlot::Potion,
+        power_range: (18, 20),
+    },
+    LootEntry {
+        name: "The Soul of the Source Code",
+        slot: ItemSlot::Potion,
+        power_range: (19, 21),
+    },
+    LootEntry {
+        name: "The Heart of the Hardware",
+        slot: ItemSlot::Potion,
+        power_range: (20, 22),
+    },
+    LootEntry {
+        name: "The Essence of the End-User",
+        slot: ItemSlot::Potion,
+        power_range: (21, 23),
+    },
+    LootEntry {
+        name: "The Draught of the Deployment",
+        slot: ItemSlot::Potion,
+        power_range: (22, 25),
+    },
 ];
 
+fn catalog_tables() -> [(Rarity, &'static [LootEntry]); 5] {
+    [
+        (Rarity::Common, COMMON),
+        (Rarity::Uncommon, UNCOMMON),
+        (Rarity::Rare, RARE),
+        (Rarity::Epic, EPIC),
+        (Rarity::Legendary, LEGENDARY),
+    ]
+}
+
+pub fn rarity_multiplier(rarity: Rarity) -> u32 {
+    match rarity {
+        Rarity::Common => 5,
+        Rarity::Uncommon => 8,
+        Rarity::Rare => 13,
+        Rarity::Epic => 22,
+        Rarity::Legendary => 35,
+    }
+}
+
+fn catalog_price(power: i32, rarity: Rarity) -> u32 {
+    ((power + 1) as u32) * rarity_multiplier(rarity)
+}
+
+pub fn catalog() -> Vec<CatalogEntry> {
+    let mut entries = Vec::with_capacity(160);
+
+    for (rarity, table) in catalog_tables() {
+        for entry in table {
+            let (power_min, power_max) = entry.power_range;
+            entries.push(CatalogEntry {
+                name: entry.name.to_string(),
+                slot: entry.slot,
+                rarity,
+                power_min,
+                power_max,
+                price_min: catalog_price(power_min, rarity),
+                price_max: catalog_price(power_max, rarity),
+            });
+        }
+    }
+
+    entries
+}
 
 fn pick_from(rng: &mut impl Rng, table: &[LootEntry], rarity: Rarity) -> Item {
     let entry = &table[rng.gen_range(0..table.len())];
     let power = rng.gen_range(entry.power_range.0..=entry.power_range.1);
-    Item { name: entry.name.to_string(), slot: entry.slot, power, rarity, enchant_level: 0 }
+    Item {
+        name: entry.name.to_string(),
+        slot: entry.slot,
+        power,
+        rarity,
+        enchant_level: 0,
+    }
 }
 
 pub fn roll_loot(_danger_level: u32) -> Item {
@@ -388,14 +1135,7 @@ pub fn roll_loot_scaled(danger_level: u32) -> Item {
 }
 
 pub fn item_price(item: &Item) -> u32 {
-    let multiplier = match item.rarity {
-        Rarity::Common => 5,
-        Rarity::Uncommon => 8,
-        Rarity::Rare => 13,
-        Rarity::Epic => 22,
-        Rarity::Legendary => 35,
-    };
-    (item.power as u32) * multiplier + multiplier
+    catalog_price(item.power, item.rarity)
 }
 
 pub fn enchant_cost(item: &Item) -> u32 {
@@ -429,6 +1169,90 @@ mod tests {
             power,
             rarity,
             enchant_level,
+        }
+    }
+
+    fn same_rarity(left: Rarity, right: Rarity) -> bool {
+        matches!(
+            (left, right),
+            (Rarity::Common, Rarity::Common)
+                | (Rarity::Uncommon, Rarity::Uncommon)
+                | (Rarity::Rare, Rarity::Rare)
+                | (Rarity::Epic, Rarity::Epic)
+                | (Rarity::Legendary, Rarity::Legendary)
+        )
+    }
+
+    #[test]
+    fn catalog_has_expected_static_shape() {
+        let entries = catalog();
+
+        assert_eq!(entries.len(), 160);
+
+        let rarities = [
+            Rarity::Common,
+            Rarity::Uncommon,
+            Rarity::Rare,
+            Rarity::Epic,
+            Rarity::Legendary,
+        ];
+        let slots = [
+            ItemSlot::Weapon,
+            ItemSlot::Armor,
+            ItemSlot::Ring,
+            ItemSlot::Potion,
+        ];
+
+        for rarity in rarities {
+            let rarity_count = entries
+                .iter()
+                .filter(|entry| same_rarity(entry.rarity, rarity))
+                .count();
+            assert_eq!(rarity_count, 32, "expected 32 {:?} entries", rarity);
+
+            for slot in slots {
+                let slot_count = entries
+                    .iter()
+                    .filter(|entry| same_rarity(entry.rarity, rarity) && entry.slot == slot)
+                    .count();
+                assert_eq!(slot_count, 8, "expected 8 {:?} {:?} entries", rarity, slot);
+            }
+        }
+    }
+
+    #[test]
+    fn catalog_prices_follow_rarity_multipliers() {
+        let entries = catalog();
+        let rarities = [
+            Rarity::Common,
+            Rarity::Uncommon,
+            Rarity::Rare,
+            Rarity::Epic,
+            Rarity::Legendary,
+        ];
+
+        for rarity in rarities {
+            let entry = entries
+                .iter()
+                .find(|entry| same_rarity(entry.rarity, rarity))
+                .expect("catalog should contain every rarity");
+            let multiplier = rarity_multiplier(rarity);
+
+            assert_eq!(entry.price_min, ((entry.power_min + 1) as u32) * multiplier);
+            assert_eq!(entry.price_max, ((entry.power_max + 1) as u32) * multiplier);
+        }
+    }
+
+    #[test]
+    fn catalog_power_ranges_are_ordered() {
+        for entry in catalog() {
+            assert!(
+                entry.power_min <= entry.power_max,
+                "{} has inverted power range {}..{}",
+                entry.name,
+                entry.power_min,
+                entry.power_max
+            );
         }
     }
 
@@ -469,16 +1293,34 @@ mod tests {
 
     #[test]
     fn is_enchantable_accepts_weapon_armor_ring() {
-        assert!(is_enchantable(&make_test_item(ItemSlot::Weapon, 1, Rarity::Common, 0)));
-        assert!(is_enchantable(&make_test_item(ItemSlot::Armor, 1, Rarity::Common, 0)));
-        assert!(is_enchantable(&make_test_item(ItemSlot::Ring, 1, Rarity::Common, 0)));
+        assert!(is_enchantable(&make_test_item(
+            ItemSlot::Weapon,
+            1,
+            Rarity::Common,
+            0
+        )));
+        assert!(is_enchantable(&make_test_item(
+            ItemSlot::Armor,
+            1,
+            Rarity::Common,
+            0
+        )));
+        assert!(is_enchantable(&make_test_item(
+            ItemSlot::Ring,
+            1,
+            Rarity::Common,
+            0
+        )));
     }
 
     #[test]
     fn can_enchant_further_allows_levels_0_through_4() {
         for lvl in 0..=4 {
             let item = make_test_item(ItemSlot::Weapon, 1, Rarity::Common, lvl);
-            assert!(can_enchant_further(&item), "level {lvl} should still be enchantable");
+            assert!(
+                can_enchant_further(&item),
+                "level {lvl} should still be enchantable"
+            );
         }
     }
 
@@ -509,8 +1351,10 @@ mod tests {
         let buy = item_price(&base_item);
         let enchant_invested: u32 = (1..=5u32).map(|n| buy * n).sum();
         let total_invested = buy + enchant_invested;
-        assert!(sell_price(&max_item) < total_invested,
-            "enchant-then-sell must not be profitable");
+        assert!(
+            sell_price(&max_item) < total_invested,
+            "enchant-then-sell must not be profitable"
+        );
     }
 
     #[test]
@@ -525,7 +1369,11 @@ mod tests {
     fn roll_loot_returns_positive_power() {
         for _ in 0..20 {
             let item = roll_loot(1);
-            assert!(item.power > 0, "item power should be positive, got {}", item.power);
+            assert!(
+                item.power > 0,
+                "item power should be positive, got {}",
+                item.power
+            );
         }
     }
 
@@ -535,7 +1383,10 @@ mod tests {
             let item = roll_shop_loot();
             match item.rarity {
                 Rarity::Epic | Rarity::Legendary => {
-                    panic!("shop loot returned Epic/Legendary on iteration {}: {}", i, item.name);
+                    panic!(
+                        "shop loot returned Epic/Legendary on iteration {}: {}",
+                        i, item.name
+                    );
                 }
                 _ => {}
             }
@@ -555,9 +1406,27 @@ mod tests {
 
     #[test]
     fn item_price_scales_by_rarity() {
-        let common = Item { name: "A".to_string(), slot: ItemSlot::Weapon, power: 5, rarity: Rarity::Common, enchant_level: 0 };
-        let uncommon = Item { name: "B".to_string(), slot: ItemSlot::Weapon, power: 5, rarity: Rarity::Uncommon, enchant_level: 0 };
-        let rare = Item { name: "C".to_string(), slot: ItemSlot::Weapon, power: 5, rarity: Rarity::Rare, enchant_level: 0 };
+        let common = Item {
+            name: "A".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 5,
+            rarity: Rarity::Common,
+            enchant_level: 0,
+        };
+        let uncommon = Item {
+            name: "B".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 5,
+            rarity: Rarity::Uncommon,
+            enchant_level: 0,
+        };
+        let rare = Item {
+            name: "C".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 5,
+            rarity: Rarity::Rare,
+            enchant_level: 0,
+        };
         let common_price = item_price(&common);
         let uncommon_price = item_price(&uncommon);
         let rare_price = item_price(&rare);
@@ -577,22 +1446,46 @@ mod tests {
 
     #[test]
     fn item_price_formula_correct() {
-        let item = Item { name: "X".to_string(), slot: ItemSlot::Armor, power: 3, rarity: Rarity::Common, enchant_level: 0 };
+        let item = Item {
+            name: "X".to_string(),
+            slot: ItemSlot::Armor,
+            power: 3,
+            rarity: Rarity::Common,
+            enchant_level: 0,
+        };
         // multiplier = 5; price = 3 * 5 + 5 = 20
         assert_eq!(item_price(&item), 20);
     }
 
     #[test]
     fn item_price_legendary_formula() {
-        let item = Item { name: "X".to_string(), slot: ItemSlot::Weapon, power: 10, rarity: Rarity::Legendary, enchant_level: 0 };
+        let item = Item {
+            name: "X".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 10,
+            rarity: Rarity::Legendary,
+            enchant_level: 0,
+        };
         // multiplier = 35; price = 10 * 35 + 35 = 385
         assert_eq!(item_price(&item), 385);
     }
 
     #[test]
     fn rarity_multipliers_within_industry_range_common_to_legendary_ratio_56x() {
-        let common = Item { name: "C".to_string(), slot: ItemSlot::Weapon, power: 1, rarity: Rarity::Common, enchant_level: 0 };
-        let legendary = Item { name: "L".to_string(), slot: ItemSlot::Weapon, power: 1, rarity: Rarity::Legendary, enchant_level: 0 };
+        let common = Item {
+            name: "C".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 1,
+            rarity: Rarity::Common,
+            enchant_level: 0,
+        };
+        let legendary = Item {
+            name: "L".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 1,
+            rarity: Rarity::Legendary,
+            enchant_level: 0,
+        };
         let common_price = item_price(&common);
         let legendary_price = item_price(&legendary);
         let ratio = legendary_price as f32 / common_price as f32;

@@ -11,9 +11,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_DB_PATH = REPO_ROOT / "dev-tools" / "balance-sim" / "runs.db"
-SCHEMA_PATH = REPO_ROOT / "dev-tools" / "balance-sim" / "schema.sql"
+BALANCE_SIM_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_DB_PATH = BALANCE_SIM_DIR / "runs.db"
+SCHEMA_PATH = BALANCE_SIM_DIR / "schema.sql"
 
 
 def open_db(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
@@ -88,6 +88,20 @@ def merge_dbs(target_path: Path, source_paths: list[Path]) -> int:
                     "slot, power, enchant_level, gold_cost, was_equipped) "
                     "SELECT ?, tick_no, event_type, item_name, rarity, slot, power, "
                     "enchant_level, gold_cost, was_equipped FROM src.item_event WHERE run_id = ?",
+                    (new_id, src_id),
+                )
+                target.execute(
+                    "INSERT INTO sq_invocation (run_id, tick_no, argv, cwd, exit_code, "
+                    "stdout, stderr, duration_ms) "
+                    "SELECT ?, tick_no, argv, cwd, exit_code, stdout, stderr, duration_ms "
+                    "FROM src.sq_invocation WHERE run_id = ?",
+                    (new_id, src_id),
+                )
+                target.execute(
+                    "INSERT INTO overworld_encounter (run_id, tick_no, character_level, kind, "
+                    "enemy_name, elite, dmg_dealt, dmg_taken, outcome, xp_earned, gold_earned) "
+                    "SELECT ?, tick_no, character_level, kind, enemy_name, elite, dmg_dealt, "
+                    "dmg_taken, outcome, xp_earned, gold_earned FROM src.overworld_encounter WHERE run_id = ?",
                     (new_id, src_id),
                 )
             merged_runs += len(id_map)
@@ -240,6 +254,45 @@ def insert_item_event(
          event["rarity"], event["slot"], event["power"],
          event["enchant_level"], event.get("gold_cost"),
          1 if event.get("was_equipped") else 0),
+    )
+
+
+def insert_sq_invocation(
+    conn: sqlite3.Connection,
+    run_id: int,
+    tick_no: int,
+    *,
+    argv: str,
+    cwd: str | None,
+    exit_code: int | None,
+    stdout: str | None,
+    stderr: str | None,
+    duration_ms: int | None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO sq_invocation
+        (run_id, tick_no, argv, cwd, exit_code, stdout, stderr, duration_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (run_id, tick_no, argv, cwd, exit_code, stdout, stderr, duration_ms),
+    )
+
+
+def insert_overworld_encounter(
+    conn: sqlite3.Connection, run_id: int, tick_no: int, enc: dict
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO overworld_encounter
+        (run_id, tick_no, character_level, kind, enemy_name, elite,
+         dmg_dealt, dmg_taken, outcome, xp_earned, gold_earned)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (run_id, tick_no, enc["character_level"], enc["kind"],
+         enc["enemy_name"], 1 if enc.get("elite") else 0,
+         enc["dmg_dealt"], enc["dmg_taken"], enc["outcome"],
+         enc["xp_earned"], enc["gold_earned"]),
     )
 
 
