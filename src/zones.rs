@@ -18,6 +18,9 @@ pub enum ZoneColor {
     Cyan,
 }
 
+const VOID_SEGMENT: &str = "the_void";
+pub const VOID_ZONE_NAME: &str = "The Void";
+
 fn has_segment(path: &str, seg: &str) -> bool {
     path.split('/').any(|s| s.eq_ignore_ascii_case(seg))
 }
@@ -26,8 +29,41 @@ fn has_exact_segment(path: &str, seg: &str) -> bool {
     path.split('/').any(|s| s == seg)
 }
 
+pub fn is_void_zone(zone: &Zone) -> bool {
+    zone.name == VOID_ZONE_NAME
+}
+
+pub fn void_depth(path: &str) -> Option<u32> {
+    let mut found_void_root = false;
+    let mut depth = 0;
+
+    for component in std::path::Path::new(path).components() {
+        let std::path::Component::Normal(segment) = component else {
+            continue;
+        };
+
+        if found_void_root {
+            depth += 1;
+            continue;
+        }
+
+        if segment.to_string_lossy().eq_ignore_ascii_case(VOID_SEGMENT) {
+            found_void_root = true;
+        }
+    }
+
+    found_void_root.then_some(depth)
+}
+
 pub fn zone_from_path(path: &str) -> Zone {
-    if has_segment(path, ".ssh") {
+    if has_segment(path, VOID_SEGMENT) {
+        Zone {
+            name: VOID_ZONE_NAME,
+            description: "A hollow maze where commands echo back with teeth...",
+            danger_level: 5,
+            color: ZoneColor::Magenta,
+        }
+    } else if has_segment(path, ".ssh") {
         Zone {
             name: "The Keyring Crypt",
             description: "Ancient keys sleep under lock and curse...",
@@ -322,6 +358,22 @@ mod tests {
         let zone = zone_from_path("/home/user/project/node_modules/lodash");
         assert_eq!(zone.name, "The Abyss of node_modules");
         assert_eq!(zone.danger_level, 5);
+    }
+
+    #[test]
+    fn void_path_maps_to_void_zone() {
+        let zone = zone_from_path("/home/user/.shellquest/the_void/a/b");
+        assert_eq!(zone.name, VOID_ZONE_NAME);
+        assert!(zone.danger_level >= 5);
+        assert!(matches!(zone.color, ZoneColor::Magenta));
+    }
+
+    #[test]
+    fn void_depth_counts_components_after_void_root() {
+        assert_eq!(void_depth("/home/user/.shellquest/the_void"), Some(0));
+        assert_eq!(void_depth("/home/user/.shellquest/the_void/a"), Some(1));
+        assert_eq!(void_depth("/home/user/.shellquest/the_void/a/b"), Some(2));
+        assert_eq!(void_depth("/tmp/not_void/a/b"), None);
     }
 
     #[test]

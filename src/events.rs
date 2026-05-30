@@ -2,7 +2,7 @@ use crate::display;
 use crate::journal::{EventType, JournalEntry};
 use crate::loot::roll_loot;
 use crate::state::GameState;
-use crate::zones::{travel_message, zone_from_path};
+use crate::zones::{is_void_zone, travel_message, void_depth, zone_from_path};
 use colored::*;
 use rand::Rng;
 use serde::Serialize;
@@ -61,16 +61,120 @@ fn final_xp(base: u32, danger: u32, class: &crate::character::Class, cmd: &str) 
 const HOME_HEAL_INTERVAL_SECS: i64 = 30;
 const HOME_HEAL_MAX_ACCUMULATED_SECS: i64 = 30 * 60;
 
+const VOID_ENCOUNTER_NUMERATOR: u32 = 2;
+const VOID_ENCOUNTER_DENOMINATOR: u32 = 3;
+const VOID_MIN_COMBAT_DEPTH: u32 = 1;
+
+/// Void mobs scale from their roster baseline with both character level and maze depth.
+/// HP = base_hp + level * 6 + depth * 12.
+/// ATK = base_attack + floor(level / 2) + depth * 3.
+/// XP = base_xp + level * 2 + depth * 10, before normal zone/affinity XP multipliers.
+const VOID_HP_PER_LEVEL: i32 = 6;
+const VOID_HP_PER_DEPTH: i32 = 12;
+const VOID_ATTACK_LEVEL_DIVISOR: u32 = 2;
+const VOID_ATTACK_PER_DEPTH: i32 = 3;
+const VOID_XP_PER_LEVEL: u32 = 2;
+const VOID_XP_PER_DEPTH: u32 = 10;
+const VOID_DEX_FLOOR: i32 = 6;
+const VOID_DEX_LEVEL_DIVISOR: u32 = 2;
+const VOID_DEX_LEVEL_OFFSET: i32 = -5;
+
+#[derive(Debug, Clone, Copy)]
+struct VoidMonsterTemplate {
+    name: &'static str,
+    flavor: &'static str,
+    base_hp: i32,
+    base_attack: i32,
+    base_xp: u32,
+}
+
+#[derive(Debug, Clone)]
+struct VoidMob {
+    name: String,
+    hp: i32,
+    attack: i32,
+    xp: u32,
+}
+
+const VOID_MONSTER_ROSTER: &[VoidMonsterTemplate] = &[
+    VoidMonsterTemplate {
+        name: "Null Wraith",
+        flavor: "wearing your last prompt as a face",
+        base_hp: 16,
+        base_attack: 5,
+        base_xp: 22,
+    },
+    VoidMonsterTemplate {
+        name: "Echo Eater",
+        flavor: "chewing on commands that never returned",
+        base_hp: 18,
+        base_attack: 6,
+        base_xp: 24,
+    },
+    VoidMonsterTemplate {
+        name: "Orphaned Inode",
+        flavor: "rattling with unlinked memories",
+        base_hp: 22,
+        base_attack: 5,
+        base_xp: 26,
+    },
+    VoidMonsterTemplate {
+        name: "Black Cursor",
+        flavor: "blinking where your exit should be",
+        base_hp: 14,
+        base_attack: 8,
+        base_xp: 23,
+    },
+    VoidMonsterTemplate {
+        name: "TTY Lurker",
+        flavor: "breathing static into the terminal line",
+        base_hp: 20,
+        base_attack: 7,
+        base_xp: 28,
+    },
+    VoidMonsterTemplate {
+        name: "Broken Prompt",
+        flavor: "asking questions with no shell left to answer",
+        base_hp: 24,
+        base_attack: 8,
+        base_xp: 32,
+    },
+    VoidMonsterTemplate {
+        name: "Rift-Mouthed Daemon",
+        flavor: "opening symlinks in its throat",
+        base_hp: 18,
+        base_attack: 9,
+        base_xp: 30,
+    },
+    VoidMonsterTemplate {
+        name: "Zero-Width Horror",
+        flavor: "standing between two path separators",
+        base_hp: 28,
+        base_attack: 6,
+        base_xp: 34,
+    },
+];
+
 pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
-    state.character.commands_run += 1;
     let mut rng = rand::thread_rng();
+    tick_with_rng(state, command, cwd, exit_code, &mut rng);
+}
+
+fn tick_with_rng(
+    state: &mut GameState,
+    command: &str,
+    cwd: &str,
+    exit_code: i32,
+    mut rng: &mut impl Rng,
+) {
+    state.character.commands_run += 1;
 
     let now = chrono::Utc::now();
     handle_passive_healer(state, cwd, now);
 
     if exit_code != 0 {
         if rng.gen_ratio(1, 4) {
-            handle_trap(state, &mut rng);
+            handle_trap(state, rng);
         }
         return;
     }
@@ -79,6 +183,12 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
     let cmd_lower = command.to_lowercase();
     let cmd_base = cmd_lower.split_whitespace().next().unwrap_or("");
     let zone = zone_from_path(cwd);
+
+    if is_void_zone(&zone) && rng.gen_ratio(VOID_ENCOUNTER_NUMERATOR, VOID_ENCOUNTER_DENOMINATOR) {
+        handle_void_encounter(state, rng, &zone, cwd, &cmd_lower);
+        handle_post_command_tick(state, rng);
+        return;
+    }
 
     match cmd_base {
         "cd" => {
@@ -338,21 +448,76 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
         }
     }
 
-    // Passive healing over time
-    if state.character.hp < state.character.max_hp && rng.gen_ratio(1, passive_heal_denominator()) {
-        state.character.heal(1);
-    }
-
-    // Boss tick (runs every tick if a boss is active)
-    crate::boss::tick_boss(state);
-
-    // Passive boss spawn check (very rare world event)
-    crate::boss::maybe_spawn(state);
+    handle_post_command_tick(state, rng);
 }
 
 fn trap_damage(max_hp: i32, rng: &mut impl Rng) -> i32 {
     let pct: f32 = rng.gen_range(0.03..0.06);
     ((max_hp as f32 * pct).round() as i32).max(1)
+}
+
+fn handle_post_command_tick(state: &mut GameState, rng: &mut impl Rng) {
+    if state.character.hp < state.character.max_hp && rng.gen_ratio(1, passive_heal_denominator()) {
+        state.character.heal(1);
+    }
+
+    crate::boss::tick_boss(state);
+    crate::boss::maybe_spawn(state);
+}
+
+fn scale_void_mob(template: &VoidMonsterTemplate, player_level: u32, depth: u32) -> VoidMob {
+    let level = player_level.max(1);
+    let depth = depth.max(VOID_MIN_COMBAT_DEPTH);
+    let level_attack = (level / VOID_ATTACK_LEVEL_DIVISOR) as i32;
+    let name = format!("{} ({})", template.name, template.flavor);
+
+    VoidMob {
+        name,
+        hp: template.base_hp + (level as i32 * VOID_HP_PER_LEVEL) + (depth as i32 * VOID_HP_PER_DEPTH),
+        attack: template.base_attack + level_attack + (depth as i32 * VOID_ATTACK_PER_DEPTH),
+        xp: template.base_xp + (level * VOID_XP_PER_LEVEL) + (depth * VOID_XP_PER_DEPTH),
+    }
+}
+
+fn random_void_mob(rng: &mut impl Rng, player_level: u32, depth: u32) -> VoidMob {
+    let template = &VOID_MONSTER_ROSTER[rng.gen_range(0..VOID_MONSTER_ROSTER.len())];
+    scale_void_mob(template, player_level, depth)
+}
+
+fn void_enemy_dex_mod(player_level: u32, depth: u32, prestiges: u32) -> i32 {
+    let level = player_level.max(1);
+    let depth = depth.max(VOID_MIN_COMBAT_DEPTH) as i32;
+    let scaled = (level / VOID_DEX_LEVEL_DIVISOR) as i32 + depth + VOID_DEX_LEVEL_OFFSET;
+    scaled.max(VOID_DEX_FLOOR + depth) + prestiges as i32
+}
+
+fn handle_void_encounter(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cwd: &str,
+    cmd: &str,
+) {
+    let depth = void_depth(cwd).unwrap_or_default().max(VOID_MIN_COMBAT_DEPTH);
+    let mob = random_void_mob(rng, state.character.level, depth);
+    let enemy_dex_mod = void_enemy_dex_mod(
+        state.character.level,
+        depth,
+        state.character.total_prestiges,
+    );
+
+    combat(
+        state,
+        rng,
+        zone,
+        cmd,
+        &mob.name,
+        mob.attack,
+        mob.hp,
+        mob.xp,
+        false,
+        enemy_dex_mod,
+    );
 }
 
 fn handle_trap(state: &mut GameState, rng: &mut impl Rng) {
@@ -2232,6 +2397,48 @@ mod tests {
     #[test]
     fn encounter_scale_danger_1_below_base() {
         assert_eq!(encounter_scale_for_danger(1), 0.9_f32);
+    }
+
+    #[test]
+    fn void_mob_scaling_formula_pins_level_and_depth() {
+        let low = scale_void_mob(&VOID_MONSTER_ROSTER[0], 1, 1);
+        let high = scale_void_mob(&VOID_MONSTER_ROSTER[0], 50, 6);
+
+        assert_eq!(low.hp, 34);
+        assert_eq!(low.attack, 8);
+        assert_eq!(high.hp, 388);
+        assert_eq!(high.attack, 48);
+        assert!(high.hp > low.hp);
+        assert!(high.attack > low.attack);
+    }
+
+    #[test]
+    fn seeded_tick_in_void_invokes_void_combat() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let mut state = make_state();
+        state.character.level = 10;
+        state.character.strength = 200;
+        state.character.dexterity = 200;
+        state.character.max_hp = 1_000;
+        state.character.hp = 1_000;
+        let mut rng = StdRng::seed_from_u64(2);
+
+        tick_with_rng(
+            &mut state,
+            "ls",
+            "/home/user/.shellquest/the_void/deep/path",
+            0,
+            &mut rng,
+        );
+
+        assert!(state.journal.iter().any(|entry| {
+            matches!(entry.event_type, EventType::Combat)
+                && VOID_MONSTER_ROSTER
+                    .iter()
+                    .any(|mob| entry.message.contains(mob.name))
+        }));
     }
 
     #[test]
