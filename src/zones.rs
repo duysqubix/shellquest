@@ -22,12 +22,44 @@ fn has_segment(path: &str, seg: &str) -> bool {
     path.split('/').any(|s| s.eq_ignore_ascii_case(seg))
 }
 
+fn has_exact_segment(path: &str, seg: &str) -> bool {
+    path.split('/').any(|s| s == seg)
+}
+
 pub fn zone_from_path(path: &str) -> Zone {
-    if has_segment(path, "tmp") {
+    if has_segment(path, ".ssh") {
         Zone {
-            name: "The Wasteland of /tmp",
-            description: "A desolate land where files come to die...",
-            danger_level: 3,
+            name: "The Keyring Crypt",
+            description: "Ancient keys sleep under lock and curse...",
+            danger_level: 5,
+            color: ZoneColor::Magenta,
+        }
+    } else if has_segment(path, "secrets") || has_segment(path, "private") {
+        Zone {
+            name: "The Shadow Vault",
+            description: "Private names are sealed behind hungry dark...",
+            danger_level: 5,
+            color: ZoneColor::Red,
+        }
+    } else if has_segment(path, "sys") {
+        Zone {
+            name: "The Kernel Sanctum",
+            description: "Sacred kernel runes pulse with forbidden authority...",
+            danger_level: 5,
+            color: ZoneColor::Red,
+        }
+    } else if has_segment(path, "root") {
+        Zone {
+            name: "The Forbidden Throne",
+            description: "The root crown waits in a chamber that forgives nothing...",
+            danger_level: 5,
+            color: ZoneColor::Red,
+        }
+    } else if has_segment(path, "node_modules") {
+        Zone {
+            name: "The Abyss of node_modules",
+            description: "An infinite void of dependencies...",
+            danger_level: 5,
             color: ZoneColor::Red,
         }
     } else if has_segment(path, "dev") {
@@ -36,6 +68,34 @@ pub fn zone_from_path(path: &str) -> Zone {
             description: "Strange devices hum with raw power...",
             danger_level: 4,
             color: ZoneColor::Magenta,
+        }
+    } else if has_segment(path, "proc") {
+        Zone {
+            name: "The Process Spires",
+            description: "Towering process trees scrape the static sky...",
+            danger_level: 4,
+            color: ZoneColor::Magenta,
+        }
+    } else if has_segment(path, "boot") {
+        Zone {
+            name: "The Ignition Vault",
+            description: "Boot sigils smolder beneath cold iron doors...",
+            danger_level: 4,
+            color: ZoneColor::Magenta,
+        }
+    } else if has_segment(path, "vendor") {
+        Zone {
+            name: "The Vendor Wastes",
+            description: "Third-party caravans vanish among dependency dunes...",
+            danger_level: 4,
+            color: ZoneColor::Red,
+        }
+    } else if has_segment(path, "tmp") {
+        Zone {
+            name: "The Wasteland of /tmp",
+            description: "A desolate land where files come to die...",
+            danger_level: 3,
+            color: ZoneColor::Red,
         }
     } else if has_segment(path, "etc") {
         Zone {
@@ -51,12 +111,22 @@ pub fn zone_from_path(path: &str) -> Zone {
             danger_level: 3,
             color: ZoneColor::Yellow,
         }
-    } else if has_segment(path, "node_modules") {
+    } else if has_segment(path, ".aws")
+        || has_segment(path, ".gnupg")
+        || has_segment(path, ".config")
+    {
         Zone {
-            name: "The Abyss of node_modules",
-            description: "An infinite void of dependencies...",
-            danger_level: 5,
-            color: ZoneColor::Red,
+            name: "The Sigil Vault",
+            description: "Cloud sigils and machine charms glow behind warded glass...",
+            danger_level: 3,
+            color: ZoneColor::Cyan,
+        }
+    } else if has_segment(path, ".cache") {
+        Zone {
+            name: "The Forgotten Cache",
+            description: "Dusty caches rustle with half-remembered things...",
+            danger_level: 2,
+            color: ZoneColor::Yellow,
         }
     } else if has_segment(path, "target") || has_segment(path, "build") {
         Zone {
@@ -85,6 +155,103 @@ pub fn zone_from_path(path: &str) -> Zone {
             description: "Assertions echo through the arena...",
             danger_level: 2,
             color: ZoneColor::Green,
+        }
+    } else if has_segment(path, "bin") || has_segment(path, "sbin") || has_segment(path, "usr") {
+        Zone {
+            name: "The Binary Bastion",
+            description: "Executable armories line the battlements...",
+            danger_level: 3,
+            color: ZoneColor::Blue,
+        }
+    } else if has_segment(path, "dist") {
+        Zone {
+            name: "The Distribution Expanse",
+            description: "Bundled artifacts stretch to the horizon...",
+            danger_level: 2,
+            color: ZoneColor::Yellow,
+        }
+    } else if has_segment(path, ".cargo") || has_segment(path, ".rustup") {
+        Zone {
+            name: "The Crate Caverns",
+            description: "Rusty crates glitter in compile-lit tunnels...",
+            danger_level: 2,
+            color: ZoneColor::Yellow,
+        }
+    } else if has_segment(path, "__pycache__")
+        || has_segment(path, ".venv")
+        || has_segment(path, "venv")
+    {
+        Zone {
+            name: "The Bytecode Bog",
+            description: "Stale bytecode bubbles under a thin virtual mist...",
+            danger_level: 3,
+            color: ZoneColor::Cyan,
+        }
+    } else if has_segment(path, ".gradle") || has_segment(path, ".m2") {
+        Zone {
+            name: "The Artifact Depths",
+            description: "Build relics sink through layered dependency stone...",
+            danger_level: 3,
+            color: ZoneColor::Magenta,
+        }
+    } else if has_segment(path, "log") || has_segment(path, "logs") {
+        Zone {
+            name: "The Logfile Mire",
+            description: "Rotating logs churn in a swamp of timestamps...",
+            danger_level: 3,
+            color: ZoneColor::Yellow,
+        }
+    } else if has_segment(path, "backup") || has_segment(path, "backups") {
+        Zone {
+            name: "The Vault of Echoes",
+            description: "Old backups whisper what the present forgot...",
+            danger_level: 2,
+            color: ZoneColor::Blue,
+        }
+    } else if has_segment(path, "data") {
+        Zone {
+            name: "The Data Wells",
+            description: "Deep wells of structured memory glimmer below...",
+            danger_level: 2,
+            color: ZoneColor::Cyan,
+        }
+    } else if has_exact_segment(path, "Downloads") {
+        Zone {
+            name: "The Drift",
+            description: "Downloaded curios wash up on a restless shore...",
+            danger_level: 2,
+            color: ZoneColor::Cyan,
+        }
+    } else if has_exact_segment(path, "Desktop") {
+        Zone {
+            name: "The Surface",
+            description: "A calm desktop plain under a bright cursor sun...",
+            danger_level: 1,
+            color: ZoneColor::Green,
+        }
+    } else if has_exact_segment(path, "Documents") {
+        Zone {
+            name: "The Archives",
+            description: "Personal scrolls rest in orderly, quiet stacks...",
+            danger_level: 1,
+            color: ZoneColor::Green,
+        }
+    } else if has_exact_segment(path, "Pictures")
+        || has_exact_segment(path, "Music")
+        || has_exact_segment(path, "Videos")
+    {
+        Zone {
+            name: "The Gallery",
+            description: "Painted echoes and old songs shimmer on the walls...",
+            danger_level: 1,
+            color: ZoneColor::Blue,
+        }
+    } else if has_segment(path, "trash") || has_segment(path, ".Trash") {
+        Zone {
+            name: "The Refuse Pits",
+            description: "Discarded files skitter beneath cracked lids...",
+            danger_level: 3,
+            color: ZoneColor::Yellow,
         }
     } else if path
         == dirs::home_dir()
@@ -195,6 +362,160 @@ mod tests {
         let zone = zone_from_path("/home/user/project/tests/integration.rs");
         assert_eq!(zone.name, "The Proving Grounds");
         assert_eq!(zone.danger_level, 2);
+    }
+
+    #[test]
+    fn proc_maps_to_process_spires() {
+        let zone = zone_from_path("/proc/123/status");
+        assert_eq!(zone.name, "The Process Spires");
+        assert_eq!(zone.danger_level, 4);
+    }
+
+    #[test]
+    fn sys_maps_to_kernel_sanctum() {
+        let zone = zone_from_path("/sys/kernel/debug");
+        assert_eq!(zone.name, "The Kernel Sanctum");
+        assert_eq!(zone.danger_level, 5);
+    }
+
+    #[test]
+    fn root_maps_to_forbidden_throne() {
+        let zone = zone_from_path("/root/.profile");
+        assert_eq!(zone.name, "The Forbidden Throne");
+        assert_eq!(zone.danger_level, 5);
+    }
+
+    #[test]
+    fn boot_maps_to_ignition_vault() {
+        let zone = zone_from_path("/boot/loader");
+        assert_eq!(zone.name, "The Ignition Vault");
+        assert_eq!(zone.danger_level, 4);
+    }
+
+    #[test]
+    fn usr_bin_maps_to_binary_bastion() {
+        let zone = zone_from_path("/usr/local/bin/sq");
+        assert_eq!(zone.name, "The Binary Bastion");
+        assert_eq!(zone.danger_level, 3);
+    }
+
+    #[test]
+    fn ssh_maps_to_keyring_crypt() {
+        let zone = zone_from_path("/home/user/.ssh/id_ed25519");
+        assert_eq!(zone.name, "The Keyring Crypt");
+        assert_eq!(zone.danger_level, 5);
+    }
+
+    #[test]
+    fn config_maps_to_sigil_vault() {
+        let zone = zone_from_path("/home/user/.config/sq/config.json");
+        assert_eq!(zone.name, "The Sigil Vault");
+        assert_eq!(zone.danger_level, 3);
+    }
+
+    #[test]
+    fn cache_maps_to_forgotten_cache() {
+        let zone = zone_from_path("/home/user/.cache/shellquest");
+        assert_eq!(zone.name, "The Forgotten Cache");
+        assert_eq!(zone.danger_level, 2);
+    }
+
+    #[test]
+    fn vendor_maps_to_vendor_wastes() {
+        let zone = zone_from_path("/home/user/project/vendor/bundle");
+        assert_eq!(zone.name, "The Vendor Wastes");
+        assert_eq!(zone.danger_level, 4);
+    }
+
+    #[test]
+    fn dist_maps_to_distribution_expanse() {
+        let zone = zone_from_path("/home/user/project/dist/app.js");
+        assert_eq!(zone.name, "The Distribution Expanse");
+        assert_eq!(zone.danger_level, 2);
+    }
+
+    #[test]
+    fn cargo_maps_to_crate_caverns() {
+        let zone = zone_from_path("/home/user/.cargo/registry");
+        assert_eq!(zone.name, "The Crate Caverns");
+        assert_eq!(zone.danger_level, 2);
+    }
+
+    #[test]
+    fn pycache_maps_to_bytecode_bog() {
+        let zone = zone_from_path("/home/user/project/__pycache__/main.pyc");
+        assert_eq!(zone.name, "The Bytecode Bog");
+        assert_eq!(zone.danger_level, 3);
+    }
+
+    #[test]
+    fn gradle_maps_to_artifact_depths() {
+        let zone = zone_from_path("/home/user/.gradle/caches");
+        assert_eq!(zone.name, "The Artifact Depths");
+        assert_eq!(zone.danger_level, 3);
+    }
+
+    #[test]
+    fn downloads_maps_to_drift() {
+        let zone = zone_from_path("/home/user/Downloads/archive.zip");
+        assert_eq!(zone.name, "The Drift");
+        assert_eq!(zone.danger_level, 2);
+    }
+
+    #[test]
+    fn desktop_maps_to_surface() {
+        let zone = zone_from_path("/home/user/Desktop/note.txt");
+        assert_eq!(zone.name, "The Surface");
+        assert_eq!(zone.danger_level, 1);
+    }
+
+    #[test]
+    fn documents_maps_to_archives() {
+        let zone = zone_from_path("/home/user/Documents/readme.txt");
+        assert_eq!(zone.name, "The Archives");
+        assert_eq!(zone.danger_level, 1);
+    }
+
+    #[test]
+    fn pictures_maps_to_gallery() {
+        let zone = zone_from_path("/home/user/Pictures/photo.png");
+        assert_eq!(zone.name, "The Gallery");
+        assert_eq!(zone.danger_level, 1);
+    }
+
+    #[test]
+    fn log_maps_to_logfile_mire() {
+        let zone = zone_from_path("/home/user/log/app.log");
+        assert_eq!(zone.name, "The Logfile Mire");
+        assert_eq!(zone.danger_level, 3);
+    }
+
+    #[test]
+    fn backup_maps_to_vault_of_echoes() {
+        let zone = zone_from_path("/home/user/backup/save.json");
+        assert_eq!(zone.name, "The Vault of Echoes");
+        assert_eq!(zone.danger_level, 2);
+    }
+
+    #[test]
+    fn data_maps_to_data_wells() {
+        let zone = zone_from_path("/home/user/project/data/store.db");
+        assert_eq!(zone.name, "The Data Wells");
+        assert_eq!(zone.danger_level, 2);
+    }
+
+    #[test]
+    fn secrets_maps_to_shadow_vault() {
+        let zone = zone_from_path("/home/user/project/secrets/prod.env");
+        assert_eq!(zone.name, "The Shadow Vault");
+        assert_eq!(zone.danger_level, 5);
+    }
+
+    #[test]
+    fn trash_maps_to_refuse_pits() {
+        let zone = zone_from_path("/home/user/.Trash/old.tmp");
+        assert_eq!(zone.name, "The Refuse Pits");
+        assert_eq!(zone.danger_level, 3);
     }
 
     #[test]
