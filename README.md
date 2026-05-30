@@ -131,7 +131,7 @@ A full, code-backed RPG hiding inside your prompt:
 - **160 items** across 5 rarity tiers — Common (70%) · Uncommon (25%) · Rare (4%) · Epic (0.99%) · Legendary (0.01%). 8 items per slot, per rarity.
 - **40-monster bestiary** across 5 difficulty tiers — *Vermin → Bruiser → Hunter → Horror → Boss-adjacent* — that spawn by zone danger, so `$HOME` sees Symlink Slugs and `node_modules` sees Deadlock Dragons
 - **11 zones** mapped to your `$PWD` — `node_modules` is the Abyss (danger 5), `/tmp` is the Wasteland (danger 3), `$HOME` is safe. Danger scales which monsters spawn, plus loot and XP.
-- **30+ event handlers** — `git commit` crafts, `kill` banishes, `vim` meditates, `sudo` surges, `grep` scries, `man` reads ancient tomes, and every command has its own flavor
+- **140+ recognized commands across 30+ event handlers** — `git commit` crafts, `kill` banishes, `vim` meditates, `sudo` surges, `grep` scries, `sed`/`awk` transmute, `history` communes with your past, `systemctl` commands daemons, `dd` gambles with raw disk power, and nearly everything you type has its own flavor
 - **HP-pool multi-turn combat** — every monster has an HP bar; fights resolve over multiple swings inside a single command, with crits and class signatures firing on every turn
 - **Elite encounters** — rare *Enraged* variants get +60% attack, +50% HP, and 2× XP
 - **INT-scaled critical hits** — smarter heroes crit more often (threshold = `max(13, 20 − INT/8)`)
@@ -154,11 +154,11 @@ Each class earns **+50% XP** on its affinity commands and unlocks a unique **sig
 
 | Class | Affinity Commands | Signature | Flavor |
 |-------|-------------------|-----------|--------|
-| 🧙 **Wizard** | `python`, `node`, `ruby`, `vim`, `emacs`, `man` | **Arcane Burn** — always-on bonus damage of `+INT/5` | Grimoire-keeper. Knows 47 ways to open a file. |
-| ⚔️ **Warrior** | `cargo`, `make`, `cmake`, `gcc`, `ninja` | **Battle Frenzy** — `+STR/4` damage while below 60% HP | Compiler-whisperer. Builds things that actually run. |
-| 🗡️ **Rogue** | `grep`, `rg`, `ssh`, `find`, `ls` | **Shadow Strike** — survives the fumble; nat 1s still land | Lurks in pipes. Finds things that don't want to be found. |
-| 🏹 **Ranger** | `curl`, `wget`, `docker`, `kubectl`, `terraform` | **Mark Prey** — `+INT/3` damage on the opening strike | Tames the cloud. Mostly. |
-| 💀 **Necromancer** | `kill`, `pkill`, `rm`, `git`, `shred` | **Soul Drain** — heal `INT/3` HP every time you land a kill | Raises and destroys. Often the same operation. |
+| 🧙 **Wizard** | `python`, `node`, `ruby`, `vim`, `emacs`, `man`, `sed`, `awk`, `jq`, `history` | **Arcane Burn** — always-on bonus damage of `+INT/5` | Grimoire-keeper. Knows 47 ways to open a file. |
+| ⚔️ **Warrior** | `cargo`, `make`, `gcc`, `ninja`, `rustc`, `go`, `bazel`, `eslint`, `prettier` | **Battle Frenzy** — `+STR/4` damage while below 60% HP | Compiler-whisperer. Builds things that actually run. |
+| 🗡️ **Rogue** | `grep`, `rg`, `ssh`, `find`, `ls`, `sort`, `uniq`, `wc`, `diff`, `which` | **Shadow Strike** — survives the fumble; nat 1s still land | Lurks in pipes. Finds things that don't want to be found. |
+| 🏹 **Ranger** | `curl`, `wget`, `docker`, `kubectl`, `ping`, `dig`, `scp`, `nmap`, `nc` | **Mark Prey** — `+INT/3` damage on the opening strike | Tames the cloud. Mostly. |
+| 💀 **Necromancer** | `kill`, `pkill`, `rm`, `git`, `shred`, `systemctl`, `shutdown`, `dd` | **Soul Drain** — heal `INT/3` HP every time you land a kill | Raises and destroys. Often the same operation. |
 
 All combat messages — combat, craft, loot, meditation, death — are **rewritten per class**. A Wizard's victories sound like spellwork. A Necromancer's failed commands have *ironic backlash*. Your hero has a voice.
 

@@ -20,24 +20,27 @@ fn affinity_multiplier(class: &crate::character::Class, cmd: &str) -> f32 {
     let affinities: &[&str] = match class {
         Class::Wizard => &[
             "python", "python3", "node", "ruby", "vim", "nvim", "emacs", "man", "tldr", "jupyter",
+            "sed", "awk", "perl", "jq", "yq", "lua", "php", "r", "julia", "ghci", "history", "fc",
         ],
         Class::Warrior => &[
             "cargo", "make", "cmake", "gcc", "g++", "ninja", "meson", "mvn", "gradle",
+            "clang", "rustc", "go", "javac", "dotnet", "bazel", "buck", "xcodebuild",
+            "eslint", "prettier", "black", "ruff", "gofmt", "rustfmt", "clippy",
         ],
         Class::Rogue => &[
             "grep", "rg", "ag", "ssh", "find", "fd", "ls", "eza", "locate",
+            "sort", "uniq", "cut", "tr", "wc", "head", "tail", "which", "whereis", "tree",
+            "diff", "comm",
         ],
         Class::Ranger => &[
-            "curl",
-            "wget",
-            "http",
-            "docker",
-            "kubectl",
-            "ansible",
-            "terraform",
-            "helm",
+            "curl", "wget", "http", "docker", "kubectl", "ansible", "terraform", "helm",
+            "ping", "dig", "nslookup", "host", "traceroute", "scp", "sftp", "nc", "netcat",
+            "nmap", "netstat", "ss", "ifconfig", "ip", "vagrant", "packer",
         ],
-        Class::Necromancer => &["kill", "pkill", "killall", "rm", "del", "git", "shred"],
+        Class::Necromancer => &[
+            "kill", "pkill", "killall", "rm", "del", "git", "shred",
+            "systemctl", "service", "launchctl", "shutdown", "reboot", "halt", "dd", "wipe",
+        ],
     };
     if affinities
         .iter()
@@ -127,7 +130,7 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
         "docker" | "podman" | "docker-compose" => {
             if cmd_lower.contains("build") {
                 if rng.gen_ratio(1, 3) {
-                    handle_container_forge(state, &mut rng, cwd);
+                    handle_container_forge(state, &mut rng, cwd, &cmd_lower);
                 }
             } else if cmd_lower.contains("run") || cmd_lower.contains("exec") {
                 if rng.gen_ratio(1, 3) {
@@ -174,22 +177,22 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
         }
         "test" | "pytest" | "jest" | "vitest" | "mocha" => {
             if rng.gen_ratio(1, 4) {
-                handle_trial(state, &mut rng);
+                handle_trial(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "cp" | "mv" | "rsync" => {
             if rng.gen_ratio(1, 5) {
-                handle_telekinesis(state, &mut rng);
+                handle_telekinesis(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "chmod" | "chown" | "chgrp" => {
             if rng.gen_ratio(1, 4) {
-                handle_enchant(state, &mut rng);
+                handle_enchant(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "top" | "htop" | "btm" | "ps" => {
             if rng.gen_ratio(1, 5) {
-                handle_omniscience(state, &mut rng);
+                handle_omniscience(state, &mut rng, &zone, &cmd_lower);
             }
         }
         "kill" | "killall" | "pkill" => {
@@ -210,6 +213,121 @@ pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
         "man" | "tldr" | "help" => {
             if rng.gen_ratio(1, 4) {
                 handle_ancient_tome(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Text divination / data inspection -> Rogue/Ranger flavor
+        "sort" | "uniq" | "cut" | "tr" | "wc" | "head" | "tail" | "diff" | "comm"
+        | "nmap" | "netstat" | "ss" | "ifconfig" | "ip" => {
+            if rng.gen_ratio(1, 5) {
+                handle_omniscience(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Locating / mapping the filesystem -> Rogue
+        "which" | "whereis" | "tree" => {
+            if rng.gen_ratio(1, 5) {
+                handle_search_loot(state, &mut rng, cwd);
+            }
+        }
+        // Network reconnaissance / scrying -> Ranger
+        "ping" | "dig" | "nslookup" | "host" | "traceroute" => {
+            if rng.gen_ratio(1, 4) {
+                handle_portal(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Moving data across the wire -> Ranger
+        "scp" | "sftp" | "nc" | "netcat" => {
+            if rng.gen_ratio(1, 5) {
+                handle_telekinesis(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Provisioning images / machines -> Ranger
+        "vagrant" | "packer" => {
+            if rng.gen_ratio(1, 3) {
+                handle_container_forge(state, &mut rng, cwd, &cmd_lower);
+            }
+        }
+        // Transmutation: reshape text/data -> Wizard (CUSTOM flavor)
+        "sed" | "awk" | "perl" | "jq" | "yq" => {
+            if rng.gen_ratio(1, 4) {
+                handle_transmute(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Interpreted/arcane languages -> Wizard
+        "php" | "r" | "julia" | "ghci" | "perl6" | "raku" => {
+            if rng.gen_ratio(1, 5) {
+                handle_incantation(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Commune with your past -> Wizard (CUSTOM flavor)
+        "history" | "fc" => {
+            if rng.gen_ratio(1, 4) {
+                handle_commune(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Compilers / builders -> Warrior
+        "clang" | "rustc" | "go" | "javac" | "dotnet" | "bazel" | "buck" | "xcodebuild" => {
+            if rng.gen_ratio(1, 4) {
+                handle_forge(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Linters / formatters: prove your code -> Warrior
+        "eslint" | "prettier" | "black" | "ruff" | "gofmt" | "rustfmt" | "clippy" => {
+            if rng.gen_ratio(1, 4) {
+                handle_trial(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Command the daemons -> Necromancer (CUSTOM flavor)
+        "systemctl" | "service" | "launchctl" => {
+            if rng.gen_ratio(1, 3) {
+                handle_command_daemon(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Apocalyptic power -> Necromancer
+        "shutdown" | "reboot" | "halt" | "poweroff" => {
+            if rng.gen_ratio(1, 4) {
+                handle_power_surge(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Raw disk power: high risk -> Necromancer (CUSTOM flavor)
+        "dd" | "wipe" => {
+            if rng.gen_ratio(1, 3) {
+                handle_raw_power(state, &mut rng, cwd);
+            }
+        }
+        // Exploring volumes -> neutral
+        "df" | "du" | "free" | "mount" | "umount" | "lsblk" => {
+            if rng.gen_ratio(1, 4) {
+                handle_treasure_chest(state, &mut rng, cwd);
+            }
+        }
+        // Conjuring files into being -> neutral
+        "mkdir" | "rmdir" | "touch" | "ln" => {
+            if rng.gen_ratio(1, 6) {
+                handle_telekinesis(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Cleanse the screen -> neutral (CUSTOM flavor)
+        "clear" | "reset" | "tput" => {
+            if rng.gen_ratio(1, 8) {
+                handle_cleanse(state, &mut rng);
+            }
+        }
+        // Binding power to a name -> neutral
+        "alias" | "export" | "env" | "source" | "set" | "unset" => {
+            if rng.gen_ratio(1, 6) {
+                handle_enchant(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Splitting your focus -> neutral
+        "tmux" | "screen" | "zellij" => {
+            if rng.gen_ratio(1, 8) {
+                handle_meditation(state, &mut rng, &zone, &cmd_lower);
+            }
+        }
+        // Brewing packages -> neutral
+        "brew" | "apt" | "apt-get" | "dnf" | "yum" | "pacman" | "port" => {
+            if rng.gen_ratio(1, 4) {
+                handle_alchemy(state, &mut rng);
             }
         }
         _ => {
@@ -570,6 +688,107 @@ fn handle_alchemy(state: &mut GameState, rng: &mut impl Rng) {
     }
 }
 
+/// Transmutation: reshaping text/data with sed/awk/jq. Wizard-flavored. Loot or XP.
+fn handle_transmute(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    if rng.gen_ratio(1, 3) {
+        let item = roll_loot(zone.danger_level);
+        let msg = format!(
+            "Your transmutation reshapes the stream into: {} (+{} {}) [{}]",
+            item.name, item.power, item.slot, item.rarity
+        );
+        display::print_loot(&msg, &item.rarity);
+        state.add_journal(JournalEntry::new(EventType::Loot, msg));
+        add_to_inventory(state, item, false);
+    } else {
+        let base_xp = rng.gen_range(8..=16);
+        let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
+        let leveled = state.character.gain_xp(xp);
+        let tool = cmd.split_whitespace().next().unwrap_or("sed");
+        let (plain, colored) = crate::messages::transmute(&state.character.class, tool, xp);
+        display::print_discovery(&colored);
+        state.add_journal(JournalEntry::new(EventType::Discovery, plain));
+        check_level_up(state, leveled);
+    }
+}
+
+/// Commune with your past via `history`. Wizard-flavored. XP.
+fn handle_commune(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(10..=22);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
+    let leveled = state.character.gain_xp(xp);
+    let (plain, colored) = crate::messages::commune(&state.character.class, xp);
+    display::print_discovery(&colored);
+    state.add_journal(JournalEntry::new(EventType::Discovery, plain));
+    check_level_up(state, leveled);
+}
+
+/// Command a daemon (systemctl/service). Necromancer-flavored. Combat + gold.
+fn handle_command_daemon(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
+    let base_xp = rng.gen_range(15..=25);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
+    let gold = rng.gen_range(3..=10);
+    let leveled = state.character.gain_xp(xp);
+    state.character.gold += gold;
+    let drained = state.character.signature_on_kill();
+    let (plain, colored) = crate::messages::command_daemon(&state.character.class, xp, gold);
+    display::print_quest(&colored);
+    state.add_journal(JournalEntry::new(EventType::Quest, plain));
+    if drained > 0 {
+        display::print_soul_drain(drained, state.character.hp, state.character.max_hp);
+    }
+    check_level_up(state, leveled);
+}
+
+/// Raw disk power (dd/wipe): a gamble. Big loot, or it bites back. Necromancer-flavored.
+fn handle_raw_power(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
+    let zone = zone_from_path(cwd);
+    if rng.gen_ratio(1, 2) {
+        // The power answers: rare-tier loot from raw disk blocks.
+        let item = roll_loot(zone.danger_level + 1);
+        let item_desc = format!(
+            "{} (+{} {}) [{}]",
+            item.name, item.power, item.slot, item.rarity
+        );
+        let (plain, colored) =
+            crate::messages::raw_power_loot(&state.character.class, &item_desc);
+        display::print_loot(&colored, &item.rarity);
+        state.add_journal(JournalEntry::new(EventType::Loot, plain));
+        add_to_inventory(state, item, false);
+    } else {
+        // It bites back: 2-5% max-hp self-damage (never lethal here).
+        let dmg = ((state.character.max_hp as f32 * rng.gen_range(0.02..0.05)).round() as i32).max(1);
+        let dmg = dmg.min(state.character.hp - 1).max(0);
+        let _ = state.character.take_damage(dmg);
+        let (plain, colored) = crate::messages::raw_power_backfire(
+            &state.character.class,
+            dmg,
+            state.character.hp,
+            state.character.max_hp,
+        );
+        display::print_trap(&colored);
+        state.add_journal(JournalEntry::new(EventType::Combat, plain));
+    }
+}
+
+/// Cleanse the screen (clear/reset): a small restorative breath. Neutral.
+fn handle_cleanse(state: &mut GameState, rng: &mut impl Rng) {
+    let heal = rng.gen_range(1..=3);
+    state.character.heal(heal);
+    let (plain, colored) = crate::messages::cleanse(
+        &state.character.class,
+        heal,
+        state.character.hp,
+        state.character.max_hp,
+    );
+    display::print_familiar(&colored);
+    state.add_journal(JournalEntry::new(EventType::Discovery, plain));
+}
+
 fn handle_meditation(
     state: &mut GameState,
     rng: &mut impl Rng,
@@ -619,8 +838,9 @@ fn handle_scrying(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
     }
 }
 
-fn handle_trial(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(12..=25);
+fn handle_trial(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(12..=25);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
     let msgs = [
         "You enter the Proving Grounds! All assertions hold true!",
@@ -633,8 +853,14 @@ fn handle_trial(state: &mut GameState, rng: &mut impl Rng) {
     check_level_up(state, leveled);
 }
 
-fn handle_telekinesis(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(5..=12);
+fn handle_telekinesis(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
+    let base_xp = rng.gen_range(5..=12);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
     let msg = "You move files with the power of your mind! Bytes rearrange at your command!";
     let full_msg = format!("{} +{} XP", msg, xp);
@@ -643,8 +869,9 @@ fn handle_telekinesis(state: &mut GameState, rng: &mut impl Rng) {
     check_level_up(state, leveled);
 }
 
-fn handle_enchant(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(10..=20);
+fn handle_enchant(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+    let base_xp = rng.gen_range(10..=20);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
     let msgs = [
         "You enchant the file with new permissions! It glows with arcane authority!",
@@ -656,8 +883,14 @@ fn handle_enchant(state: &mut GameState, rng: &mut impl Rng) {
     check_level_up(state, leveled);
 }
 
-fn handle_omniscience(state: &mut GameState, rng: &mut impl Rng) {
-    let xp = rng.gen_range(5..=10);
+fn handle_omniscience(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
+    let base_xp = rng.gen_range(5..=10);
+    let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
     let leveled = state.character.gain_xp(xp);
     let msg = format!(
         "You peer into the process table... all running spirits are revealed to you! +{} XP",
@@ -722,7 +955,7 @@ fn handle_ancient_tome(
     check_level_up(state, leveled);
 }
 
-fn handle_container_forge(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
+fn handle_container_forge(state: &mut GameState, rng: &mut impl Rng, cwd: &str, cmd: &str) {
     let zone = zone_from_path(cwd);
     if rng.gen_ratio(1, 2) {
         let item = roll_loot(zone.danger_level + 1);
@@ -734,7 +967,8 @@ fn handle_container_forge(state: &mut GameState, rng: &mut impl Rng, cwd: &str) 
         state.add_journal(JournalEntry::new(EventType::Craft, msg));
         add_to_inventory(state, item, false);
     } else {
-        let xp = rng.gen_range(12..=25);
+        let base_xp = rng.gen_range(12..=25);
+        let xp = final_xp(base_xp, zone.danger_level, &state.character.class, cmd);
         let leveled = state.character.gain_xp(xp);
         let msg = format!(
             "The image builds layer by layer! Each instruction tempers your resolve! +{} XP",
@@ -1951,6 +2185,28 @@ mod tests {
     fn affinity_multiplier_warrior_no_affinity_returns_1_0() {
         use crate::character::Class;
         assert_eq!(affinity_multiplier(&Class::Warrior, "ls"), 1.0);
+    }
+
+    #[test]
+    fn affinity_multiplier_new_commands_by_class() {
+        use crate::character::Class;
+        // New affinity assignments from the expanded command set.
+        assert_eq!(affinity_multiplier(&Class::Wizard, "sed"), 1.5);
+        assert_eq!(affinity_multiplier(&Class::Wizard, "awk"), 1.5);
+        assert_eq!(affinity_multiplier(&Class::Wizard, "history"), 1.5);
+        assert_eq!(affinity_multiplier(&Class::Warrior, "rustc"), 1.5);
+        assert_eq!(affinity_multiplier(&Class::Warrior, "eslint"), 1.5);
+        assert_eq!(affinity_multiplier(&Class::Rogue, "sort"), 1.5);
+        assert_eq!(affinity_multiplier(&Class::Rogue, "diff"), 1.5);
+        assert_eq!(affinity_multiplier(&Class::Ranger, "ping"), 1.5);
+        assert_eq!(affinity_multiplier(&Class::Ranger, "scp"), 1.5);
+        assert_eq!(affinity_multiplier(&Class::Necromancer, "systemctl"), 1.5);
+        assert_eq!(affinity_multiplier(&Class::Necromancer, "dd"), 1.5);
+        // Neutral commands stay 1.0 for everyone.
+        assert_eq!(affinity_multiplier(&Class::Wizard, "df"), 1.0);
+        assert_eq!(affinity_multiplier(&Class::Rogue, "brew"), 1.0);
+        // Cross-class: sed is Wizard's, not Warrior's.
+        assert_eq!(affinity_multiplier(&Class::Warrior, "sed"), 1.0);
     }
 
     #[test]
