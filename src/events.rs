@@ -576,6 +576,9 @@ fn handle_void_encounter(
         state.character.total_prestiges,
     );
 
+    let (_intro_plain, intro_colored) =
+        crate::messages::void_mob_intro(&state.character.class, &mob.name);
+    eprintln!("{}", intro_colored);
     combat(
         state,
         rng,
@@ -621,12 +624,18 @@ fn handle_trap(state: &mut GameState, rng: &mut impl Rng) {
 
 fn handle_travel(state: &mut GameState, cwd: &str) {
     let zone = zone_from_path(cwd);
-    let plain = travel_message(&zone);
-    let colored = format!(
-        "You enter {}... {}",
-        display::color_zone(zone.name, &zone),
-        zone.description.italic().dimmed()
-    );
+    let (plain, colored) = if is_void_zone(&zone) {
+        let (p, c) = crate::messages::void_travel(&state.character.class);
+        (p, c)
+    } else {
+        let p = travel_message(&zone);
+        let c = format!(
+            "You enter {}... {}",
+            display::color_zone(zone.name, &zone),
+            zone.description.italic().dimmed()
+        );
+        (p, c)
+    };
     display::print_travel(&colored, &zone);
     state.add_journal(JournalEntry::new(EventType::Travel, plain));
 }
@@ -2935,6 +2944,57 @@ mod tests {
             (new_last - now).num_seconds()
         );
         assert_eq!(state.character.hp, starting_hp);
+    }
+
+    #[test]
+    fn void_travel_journal_contains_portal_flavor_not_generic() {
+        // RED before wiring: handle_travel into a Void zone must use void_travel()
+        // flavor (contains portal/rift tokens), NOT the generic travel_message text.
+        let mut state = make_state();
+        let void_cwd = "/home/user/.shellquest/the_void/ashen_gate";
+        handle_travel(&mut state, void_cwd);
+        let entry = state
+            .journal
+            .iter()
+            .find(|e| matches!(e.event_type, EventType::Travel))
+            .expect("handle_travel must add a Travel journal entry");
+        // void_travel() plain text contains 'portal' or 'rift'.
+        // Generic travel_message() produces 'You enter The Void...' which does NOT
+        // contain 'portal' or 'rift'. After wiring this must pass.
+        let msg_lower = entry.message.to_lowercase();
+        assert!(
+            msg_lower.contains("portal") || msg_lower.contains("rift"),
+            "Void zone travel journal must contain portal/rift flavor from void_travel(), got: {:?}",
+            entry.message
+        );
+    }
+
+    #[test]
+    fn void_mob_intro_returns_five_class_variants_with_void_token() {
+        // Behavioral: void_mob_intro must return (plain, colored) where plain
+        // contains a Void/portal/rift/hollow/static token for every class.
+        use crate::character::Class;
+        for class in [
+            Class::Wizard,
+            Class::Warrior,
+            Class::Rogue,
+            Class::Ranger,
+            Class::Necromancer,
+        ] {
+            let (plain, _colored) =
+                crate::messages::void_mob_intro(&class, "Null-Space Nightmare");
+            let lower = plain.to_lowercase();
+            assert!(
+                lower.contains("void")
+                    || lower.contains("portal")
+                    || lower.contains("rift")
+                    || lower.contains("hollow")
+                    || lower.contains("static"),
+                "void_mob_intro plain for {:?} must contain Void-framing token, got: {:?}",
+                class,
+                plain
+            );
+        }
     }
 }
 
