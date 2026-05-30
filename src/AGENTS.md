@@ -66,7 +66,8 @@ All Rust source code for the `sq` binary. Flat module structure — `main.rs` de
 - **MAX_LEVEL entrants get XP suppressed at the commit boundary** (`arena.rs:909`) — don't "fix" this; it's intentional.
 - **New save fields MUST be `#[serde(default)]`** (`character.rs:78` `enchant_level`, `state.rs:15`) or old `save.json` fails to load.
 - **Two-pass messages must stay in sync** — store `plain` in journal, print `colored`; never store ANSI text (it gets re-colored by `EventType` in `display.rs`).
-- **`tick` stays fast + silent**: no character → return silently (`main.rs:397`); save failure only logs to stderr, never panics.
+- **`tick` stays fast + silent**: no character → return silently (`main.rs:397`); save failure only logs to stderr, never panics. **Exception**: when `SQ_DEBUG` is set (dev/sim diagnostics; mirrors `SQ_NO_PACING`), `cmd_tick` logs load/save failures with context and exits non-zero. Default (unset) behavior is unchanged.
+- **Combat telemetry (`SQ_DEBUG`)**: `combat()` (`events.rs`) and `tick_boss()` (`boss.rs`) emit one `SQ_ENCOUNTER kind=… enemy=<hex> … outcome=… dmg_dealt=… dmg_taken=… xp=… gold=…` line to **stderr** per resolved fight **only when `SQ_DEBUG` is set** (the balance sim parses these). Default (unset) behavior is unchanged — no extra output. Boss per-fight damage totals accumulate in `Boss.dmg_dealt_total`/`dmg_taken_total` (serde-default) since a boss fight spans many ticks. The shared emit helper + hex name encoder live in `src/telemetry.rs`.
 - **All game output is `eprintln!` (stderr)** so piped stdout stays clean.
 - `sq tournament` is **deprecated** — a real subcommand that forwards to `arena` with a warning, not a clap alias.
 

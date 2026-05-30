@@ -33,7 +33,7 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - Save data lives at `~/.shellquest/save.json` (atomic write via temp file + rename)
 - Shell hook uses `precmd`/`PROMPT_COMMAND`/`fish_postexec` to call `sq tick` synchronously after every command
 - All game output goes to **stderr** (`eprintln!`) so it doesn't interfere with piped stdout
-- The `tick` subcommand must remain fast and silent on error (no character = silent return)
+- The `tick` subcommand must remain fast and silent on error (no character = silent return) — **unless `SQ_DEBUG` is set** (dev/sim diagnostics), in which case tick logs load/save failures with context and exits non-zero. Default behavior (SQ_DEBUG unset) is unchanged.
 
 ### Testing Requirements
 - `cargo build` to verify compilation (`cargo clippy` is not installed in the current toolchain — skip it)
@@ -83,7 +83,7 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - `release-notes/` is the canonical source. Re-sync GitHub at any time: `gh release edit vX.Y.Z --notes-file release-notes/vX.Y.Z.md`. See `release-notes/README.md` for the voice rules.
 
 ### Balance Tuning
-- Gameplay numbers are validated empirically by the simulator in `dev-tools/balance-sim/` (Python, dev-only). Use `just sim-*` recipes to run sweeps before/after a balance change; never tune by feel alone.
+- Gameplay numbers are validated empirically by the simulator in `dev-tools/balance-sim/` (Python, dev-only). Each simulated character runs in its own Docker container (`just sim-*` recipes; one container per character for filesystem isolation). Use `just sim-*` to run sweeps before/after a balance change; never tune by feel alone.
 
 ## Dependencies
 

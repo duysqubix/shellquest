@@ -1,30 +1,41 @@
 # balance-sim — shellquest balance simulator
 
 A "Black Mirror Hang the DJ" style simulator that runs thousands of compressed
-shellquest playthroughs in parallel and persists every interesting metric to
+shellquest playthroughs in parallel — **each character in its own Docker container**
+for true filesystem isolation — and persists every interesting metric to
 SQLite. Use it to validate balance changes before shipping them.
 
 **Not part of shellquest core. Dev-only tool.**
 
 ## What it does
 
-For each simulated character, the harness:
+`runner.py` runs on the host and launches **one Docker container per simulated
+character** (`docker run --rm --network=none`, image `shellquest-sim`). The `sq`
+binary mounts read-only at `/opt/sq`, the sim code at `/sim`, and a read-write
+`/out` dir receives that character's SQLite shard. Host root is never mounted —
+that container is the filesystem jail (`sq` is expected to gain real-filesystem
+reach, so a tempdir `$HOME` is no longer enough isolation).
 
-1. Creates an isolated `HOME=/tmp/sq-bench-{run_id}/`
-2. Initializes a fresh character (class × race × strategy)
-3. Drives an AI player through their entire lifetime:
+Inside each container, `container_main.py` drives one AI lifetime:
+
+1. Initializes a fresh character (class × race × strategy)
+2. Drives the AI player through their entire lifetime:
    - Tick the game (vary `cwd` to hit different danger zones, vary `cmd` to
      trigger crafts / fights / traps)
    - Auto-equip dropped loot when it's an upgrade
    - Visit the shop periodically, buy upgrades, enchant
    - Run the highest unlocked arena tier when affordable
-4. Snapshots full character state at intervals into SQLite
-5. Logs every action, every arena attempt, every item event
+3. Snapshots full character state at intervals into the shard
+4. Logs every action, every arena attempt, every item event, **every raw `sq`
+   invocation** (argv/stdout/stderr/exit_code) for post-mortem diagnosis, and
+   **every resolved overworld/boss fight** (`overworld_encounter`: enemy, dmg dealt/taken,
+   outcome) parsed from the game's `SQ_ENCOUNTER` diagnostic lines
 
-Then the reporter queries SQLite to produce comparative reports:
+The host merges all shards into `runs.db`. Then the reporter queries it to produce comparative reports:
 
 - Time-to-level distributions across class × strategy
 - Arena win rate per tier per character build
+- Boss encounters & outcomes (win/loss/flee), total mobs encountered, and damage dealt/taken split overworld-mob vs boss
 - Gear progression heatmaps
 - Gold accumulation curves
 - "Which tuning_label gives the best player retention?"
@@ -32,19 +43,29 @@ Then the reporter queries SQLite to produce comparative reports:
 ## Usage
 
 ```bash
-# Run a single character lifetime (smoke test)
-python3 runner.py --runs 1 --classes Warrior --strategies greedy --tuning-label smoke
+# Smoke test: 1 Warrior to L20, in a container (builds image + linux sq first)
+# No label = auto-labeled 'sim-quick-<timestamp>'; runs accumulate separately in runs.db.
+just sim-quick
 
-# Full Black Mirror sweep: 100 lives per (class × strategy) combo
-python3 runner.py --runs 100 --tuning-label v1.24-soft
+# Name/group a run by passing the label POSITIONALLY (not label=NAME):
+just sim-quick my-baseline
 
-# Generate markdown report from the database
-python3 report.py --tuning-label v1.24-soft --output reports/v1.24-soft.md
+# Full sweep: many lives per (class × race × strategy) combo, one container each
+just sim-full v1.24-soft 5
 
-# Generate interactive HTML dashboard (open file:// in browser)
-python3 dashboard.py
-python3 dashboard.py --primary v1.24-soft         # pick a specific tuning_label
+# Generate markdown report (no arg = most recent label; or pass one positionally)
+just report
+just report v1.24-soft
+
+# Generate interactive HTML dashboard (host-native; open file:// in browser)
+# Lists every label in runs.db in the primary/compare dropdowns.
+just dashboard
 ```
+
+Every `sim-*` recipe is **Docker-only** and depends on `just sim-image` (the python
+sim image) plus `just sim-sq-linux` (extracts a Linux `sq` — a macOS `cargo build`
+produces a Mach-O binary that can't run in the Linux container). `report` /
+`dashboard` / `watch` stay host-native (read-only on `runs.db`).
 
 ## Dashboard
 
@@ -72,16 +93,20 @@ dev-tools/balance-sim/
 ├── README.md                  this file
 ├── schema.sql                 SQLite DDL
 ├── simulator/
-│   ├── db.py                  SQLite connection + insert/query
-│   ├── driver.py              sq CLI command wrappers (tick, shop, arena)
+│   ├── db.py                  SQLite connection + insert/query/merge
+│   ├── driver.py              sq CLI command wrappers + invocation capture
+│   ├── container_main.py      in-container entrypoint (one lifetime → shard)
 │   ├── strategies.py          decision strategies (greedy/balanced/conservative)
 │   └── player.py              SimPlayer lifecycle class
-├── runner.py                  parallel run orchestrator (CLI)
+├── runner.py                  host orchestrator: docker run per character (CLI)
 ├── report.py                  markdown report generator (CLI)
+├── Dockerfile                 the shellquest-sim image (python-slim + zone dirs)
 ├── runs.db                    SQLite output (gitignored)
+├── .sq-linux/                 extracted Linux sq binary (gitignored)
 └── reports/                   generated reports (gitignored)
 ```
 
 ## Dependencies
 
-Python 3.10+, stdlib only. No external packages required.
+Python 3.10+, stdlib only. No external packages required. Containers are launched
+via stdlib `subprocess` + `docker run` (deliberately not docker-py). Requires Docker.

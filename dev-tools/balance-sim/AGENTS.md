@@ -4,45 +4,62 @@
 # dev-tools/balance-sim
 
 ## Purpose
-Dev-only "black-mirror" balance simulator. Runs many compressed shellquest lifetimes in parallel, drives the real `sq` binary as a subprocess (tick → equip → enchant → arena), and persists every metric to SQLite for tuning analysis. **Python 3.10+, stdlib only — no external deps.** Not shipped in the `sq` binary.
+Dev-only "black-mirror" balance simulator. Runs many compressed shellquest lifetimes in parallel; **each simulated character runs inside its own Docker container** (image `shellquest-sim`) for true OS-level filesystem isolation. Inside each container the harness drives the real `sq` binary as a subprocess (tick → equip → enchant → arena) and persists every metric — plus every raw `sq` invocation — to a per-character SQLite shard, which the host merges into `runs.db` for tuning analysis. **Python 3.10+, stdlib only — no external deps** (containers are launched via stdlib `subprocess` + `docker run`, deliberately not docker-py). Not shipped in the `sq` binary.
+
+**Why containers?** `sq` is expected to gain real-filesystem reach (events that read/write/traverse arbitrary host paths). A tempdir `$HOME` no longer isolates that — a container is a true filesystem jail. The container **never mounts host root**; that is the whole point.
 
 ## Layout
 
 ```
 balance-sim/
 ├── runner.py       # CLI orchestrator: builds class×race×strategy job matrix, multiprocessing.Pool.imap_unordered, merges per-worker DBs
-├── report.py       # CLI → markdown report (lifetime summary, arena summary, time-to-level histograms)
+├── report.py       # CLI → markdown report (lifetime, arena, boss/mob/damage combat summaries, time-to-level histograms)
 ├── dashboard.py    # CLI → single self-contained Chart.js dashboard.html
 ├── watch.py        # live `runs.db` tail/monitor (polling)
 ├── schema.sql      # SQLite schema + indexes (WAL, foreign keys)
 └── simulator/
-    ├── player.py     # one simulated lifetime: temp HOME, seed save.json, strategy loop, snapshots
-    ├── driver.py     # `sq` wrapper: save.json read/write, command families, PTY-driven arena automation + output parsing
-    ├── strategies.py # greedy / balanced / conservative decision policies
-    └── db.py         # SQLite open/init/insert/merge (ATTACH + run-id remap)
+    ├── player.py        # one simulated lifetime: temp HOME, seed save.json, strategy loop, snapshots
+    ├── driver.py        # `sq` wrapper: save.json read/write, command families, PTY-driven arena automation + output parsing; records every sq invocation
+    ├── container_main.py # in-container entrypoint: runs one SimPlayer lifetime, writes a shard to /out, prints one JSON result line to stdout
+    ├── strategies.py    # greedy / balanced / conservative decision policies
+    └── db.py            # SQLite open/init/insert/merge (ATTACH + run-id remap)
 ```
+
+## Container Model
+`runner.py` stays on the **host** (keeps its `multiprocessing.Pool`). Each worker does **one `docker run --rm --network=none` per simulated character** instead of calling `simulate_one` in-process. Mounts: the `sq` binary read-only at `/opt/sq`, the sim code read-only at `/sim`, and a read-write `/out` dir for that character's SQLite shard. The container `$HOME` is disposable; **host root is never mounted**. `container_main.py` runs the full `SimPlayer` lifetime and prints exactly one JSON result line to stdout (`{"ok":true,run_id,ended_reason,final_state,ticks}` or `{"ok":false,error,...}`); the host parses it for progress and merges the shard via `db.merge_dbs`. runner.py honours env overrides `SQ_BIN_HOST` / `SIM_DIR_HOST` / `SIM_IMAGE`.
 
 ## Run It (via root justfile)
 ```bash
-just sim-quick label=smoke          # 1 Warrior to L20 (smoke test)
-just sim-pit label=x runs=N parallel=4
+just sim-image                     # build the python sim image (shellquest-sim)
+just sim-sq-linux                  # extract a LINUX sq binary for the containers (see gotcha below)
+just sim-quick                     # 1 Warrior to L20 (smoke test) — auto-labels 'sim-quick-<timestamp>'
+just sim-quick my-run              # … or pass a label POSITIONALLY to name/group the run
+just sim-pit my-run 3 4            # positional args: label, runs, parallel
 just sim-gauntlet / sim-colosseum / sim-abyssal / sim-endgame
-just sim-full label=x runs=N        # full class×race×strategy sweep to L60
-just watch                          # live DB tail
-just report label=x                 # → dev-tools/balance-sim/reports/x.md
-just dashboard label=x              # → dashboard.html
-just clean-sims                     # wipe runs.db / dashboards / worker DBs
+just sim-full my-run 5             # full class×race×strategy sweep to L60
+just watch                         # live DB tail (host-native, read-only)
+just report                        # → report for the most recent label (host-native)
+just report my-run                 # → dev-tools/balance-sim/reports/my-run.md
+just dashboard                     # → dashboard.html, most recent label (host-native)
+just dashboard my-run              # → dashboard focused on a specific label
+just clean-sims                     # wipe runs.db / dashboards / worker DBs / .sq-linux
 ```
-The justfile auto-selects `uv run --script` when `uv` is installed (scripts are uv-runnable), else `python3`. Direct: `python3 runner.py …`, `report.py …`, `dashboard.py …`. Release recipe: `just ship version=patch`.
+Every `sim-*` recipe is **Docker-only**: it declares `sim-image` + `sim-sq-linux` as prerequisites and runs one container per character. `report` / `dashboard` / `watch` stay host-native (they only read `runs.db`). Direct host invocation still works for the orchestrator: `python3 runner.py …`. Release recipe: `just ship version=patch`.
+
+**Labels & persistence**: every `sim-*` run is APPENDED into the shared `runs.db` (merge, never overwrite). With no positional label, each run auto-labels as `<recipe>-<YYYYMMDD-HHMMSS>` so repeated/different sims stay separate and individually selectable in the dashboard dropdown. Pass a positional label (`just sim-quick my-run` — NOT `label=my-run`, which `just` would pass literally) to name or intentionally group runs. `just clean-sims` is the only thing that wipes `runs.db`.
 
 ## Data Model (SQLite)
-5 tables: `run` (one per lifetime: seed/class/race/strategy/tuning_label + final stats + end reason), `tick_snapshot` (per-tick char state), `action_log` (per-tick action + JSON details), `arena_attempt` (tier/rounds/outcome/damage/crits/swings), `item_event` (equip/enchant). WAL mode + FKs. Parallelism is **DB-per-worker, merged at the end** via `ATTACH` + run-id remap.
+7 tables: `run` (one per lifetime: seed/class/race/strategy/tuning_label + final stats + end reason), `tick_snapshot` (per-tick char state), `action_log` (per-tick action + JSON details), `arena_attempt` (tier/rounds/outcome/damage/crits/swings), `item_event` (equip/enchant), `sq_invocation` (every `sq` subprocess call: argv, cwd, exit_code, stdout, stderr, duration_ms — for post-mortem diagnosis of binary bugs), and `overworld_encounter` (one row per resolved overworld/boss fight: kind mob|boss, enemy_name, elite, dmg_dealt, dmg_taken, outcome kill|death|draw|win|loss|flee, xp/gold). WAL mode + FKs. Parallelism is **shard-per-character, merged at the end** via `ATTACH` + run-id remap.
 
 ## Conventions & Gotchas
-- **Hardcoded ABSOLUTE binary path**: `driver.py:13` → `SQ_BIN = "/home/duys/.repos/shellquest/target/debug/sq"`. Run `just build` first; **edit `SQ_BIN` if the repo ever moves** or sims silently fail to find `sq`.
-- **Isolated HOME per run**: each lifetime sets `HOME=/tmp/sq-bench-{seed}-…` and reads/writes that copy of `.shellquest/save.json`. Never points at your real `~`.
+- **`SQ_BIN` is env-overridable** (`driver.py`: `os.environ.get("SQ_BIN", "/opt/sq")`). In a container it resolves to the read-only mount at `/opt/sq`; no absolute host path is baked in. (The old hardcoded `/home/duys/...` path is gone.)
+- **Linux binary required**: a macOS host `cargo build` produces a Mach-O `sq` that **cannot** run in the Linux sim container. `just sim-sq-linux` extracts a Linux ELF `sq` from the game `Dockerfile` to `.sq-linux/sq`; the `sim-*` recipes mount that via `SQ_BIN_HOST`.
+- **Diagnostics capture**: each container sets `RUST_BACKTRACE=full` and `SQ_DEBUG=1`, and `driver.py` records every `sq` invocation (argv/cwd/stdout/stderr/exit_code/duration) into the `sq_invocation` table. When a bug surfaces in `sq` mid-sim, the evidence survives the disposable container in `runs.db`. (`SQ_DEBUG` makes `sq`'s `cmd_tick` log previously-swallowed load/save failures and exit non-zero — see `src/AGENTS.md`.)
+- **Container FS isolation per character**: each lifetime runs in its own `docker run --rm --network=none` with a disposable `$HOME`; only a **per-character** `/out` dir (the shard) is a writable host mount — sim code is read-only at `/sim`, the `sq` binary read-only at `/opt/sq`, and **host root is never mounted**. The container cannot touch host paths outside its own `/out`. (Inside the container, `SimPlayer` uses a temp `HOME` under `/sim-home/sq-bench-{seed}-…` for the save file — deliberately **not** under `/tmp`, since a `/tmp` segment would mis-map the home to the Wasteland zone.)
+- **Zone cwds are container-relative** (`driver.cwd_for_danger(danger, home)`): danger 1=the actual per-character `$HOME` (maps to Home Village only via exact `dirs::home_dir()` match in `src/zones.rs`), 2=`/zones/src`, 3=`/tmp`, 4=`/dev`, 5=`/zones/node_modules` (zone danger is matched by path *segment* in `src/zones.rs`; the `/zones/*` dirs live **outside** `/sim` so the read-only sim-code bind-mount can't hide them). Note: a prior latent bug used `node_modules-fake`, which has no `node_modules` segment and so mapped to The Wilds (danger 2) — meaning danger-5 (the Abyss) was never actually exercised before this fix.
+- **Combat telemetry (`overworld_encounter`)**: under `SQ_DEBUG`, the `sq` game emits one machine-parseable line per resolved fight to **stderr**: `SQ_ENCOUNTER kind=<mob|boss> enemy=<lowercase-hex-utf8> elite=<0|1> dmg_dealt=<int> dmg_taken=<int> outcome=<kill|death|draw|win|loss|flee> xp=<int> gold=<int>` (emitted from `combat()` in `src/events.rs` and `tick_boss()` in `src/boss.rs`; enemy name is hex-encoded to dodge quoting). `driver.parse_encounter_lines()` decodes these from each tick's stderr and `player.py` inserts an `overworld_encounter` row. This is how boss encounters/outcomes, total mobs encountered, and damage dealt/taken (split mob-vs-boss) are captured — `report`/`dashboard` surface them as Boss Performance / Mob Encounters / Damage Summary. Bosses spawn 1/500 ticks, so short sweeps may have zero boss rows.
 - **`SQ_NO_PACING=1`** is set for all sims — arena's 1.5s pacing must be off or runs hang.
 - **Arena automation needs a PTY** + prompt matching (it's not a plain `subprocess.run`). Touch `driver.py` arena parsing carefully.
 - **No shared writable DB during a sweep** — don't expect to query `runs.db` mid-run except via `watch.py` (read-only tail).
-- `runs.db`, `dashboard.html`, and `*-worker-*.db` are **disposable artifacts** — `just clean-sims` before a fresh sweep; keep them out of commits.
+- `runs.db`, `dashboard.html`, `runs-w*.db` shards, and `.sq-linux/` are **disposable artifacts** — `just clean-sims` before a fresh sweep; keep them out of commits.
 - Validate balance changes here **before** shipping a tuning release (see parent `AGENTS.md` → Balance Tuning).
