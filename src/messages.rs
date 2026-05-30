@@ -2182,3 +2182,112 @@ pub fn quest_reward(class: &Class, item_name: &str, xp: u32, gold: u32) -> Msg {
         ),
     }
 }
+
+pub fn void_travel(class: &Class) -> Msg {
+    match class {
+        Class::Wizard => (
+            "The portal tears open. Arcane geometry folds around you. You step into The Void.".to_string(),
+            format!(
+                "The {} tears open. {} folds around you. You step into {}.",
+                "portal".magenta().bold(),
+                "Arcane geometry".blue().bold(),
+                "The Void".magenta().bold()
+            ),
+        ),
+        Class::Warrior => (
+            "The rift splits the air. You charge through. The Void swallows the sound of your boots.".to_string(),
+            format!(
+                "The {} splits the air. You charge through. {} swallows the sound of your boots.",
+                "rift".magenta().bold(),
+                "The Void".magenta().bold()
+            ),
+        ),
+        Class::Rogue => (
+            "You slip through the portal before it notices you. The Void doesn't know you're here yet.".to_string(),
+            format!(
+                "You slip through the {} before it notices you. {} doesn't know you're here yet.",
+                "portal".magenta().bold(),
+                "The Void".magenta().bold()
+            ),
+        ),
+        Class::Ranger => (
+            "The portal opens like a wound in the air. You mark your entry point and step through.".to_string(),
+            format!(
+                "The {} opens like a wound in the air. You mark your entry point and step through.",
+                "portal".magenta().bold()
+            ),
+        ),
+        Class::Necromancer => (
+            "The rift recognizes you. The Void parts like a curtain of dead static.".to_string(),
+            format!(
+                "The {} recognizes you. {} parts like a curtain of {}.",
+                "rift".magenta().bold(),
+                "The Void".magenta().bold(),
+                "dead static".magenta().dimmed()
+            ),
+        ),
+    }
+}
+
+pub fn void_mob_intro(class: &Class, mob_name: &str) -> Msg {
+    let m = color_monster(mob_name);
+    match class {
+        Class::Wizard => (
+            format!(
+                "Something stirs in the hollow dark. A {} coalesces from the Void's static.",
+                mob_name
+            ),
+            format!(
+                "Something stirs in the {}. A {} coalesces from the {}.",
+                "hollow dark".magenta().dimmed(),
+                m,
+                "Void's static".magenta().bold()
+            ),
+        ),
+        Class::Warrior => (
+            format!(
+                "The Void spits out a {}. It wants a fight.",
+                mob_name
+            ),
+            format!(
+                "The {} spits out a {}. It wants a fight.",
+                "Void".magenta().bold(),
+                m
+            ),
+        ),
+        Class::Rogue => (
+            format!(
+                "A {} detaches from the shadows of the Void. It spotted you first.",
+                mob_name
+            ),
+            format!(
+                "A {} detaches from the {} of the Void. It spotted you first.",
+                m,
+                "shadows".yellow().dimmed()
+            ),
+        ),
+        Class::Ranger => (
+            format!(
+                "A {} emerges from the rift-walls. No terrain to use here.",
+                mob_name
+            ),
+            format!(
+                "A {} emerges from the {}. No terrain to use here.",
+                m,
+                "rift-walls".magenta().dimmed()
+            ),
+        ),
+        Class::Necromancer => (
+            format!(
+                "A {} rises from the Void's residue. You feel its hollow hunger.",
+                mob_name
+            ),
+            format!(
+                "A {} rises from the {}. You feel its {}.",
+                m,
+                "Void's residue".magenta().bold(),
+                "hollow hunger".magenta().dimmed()
+            ),
+        ),
+    }
+}

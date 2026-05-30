@@ -40,6 +40,7 @@ pub const CANONICAL_TOPIC_ORDER: &[&str] = &[
     "update",
     "arena",
     "tournament",
+    "quest",
 ];
 
 const TOPICS: &[HelpTopic] = &[
@@ -296,6 +297,19 @@ const TOPICS: &[HelpTopic] = &[
         details: "Deprecated alias kept only for backwards compatibility with older muscle memory and scripts. Running `sq tournament` prints a yellow `⚠️  The `tournament` command is deprecated. Use `sq arena` instead.` notice and then routes through the exact same flow as `sq arena`: same TTY requirement on stdin and stdout, same tier selection, same entry-fee confirmation prompt, same per-round continue-or-cash-out loop, and the same atomic-rollback semantics on interruption. There is no separate tournament feature, no different reward table, and no plan to keep this command around indefinitely — treat it strictly as a redirect and prefer `sq arena` directly. See `sq help arena` for the full behavioral contract.",
         examples: &["sq tournament"],
         related: &["arena"],
+    },
+    HelpTopic {
+        name: "quest",
+        aliases: &["quests", "void"],
+        summary: "Daily Void quest — find the hidden scroll and claim your reward.",
+        usage: "sq quest  |  sq quest answer <phrase>",
+        details: "Each UTC day a quest-giver opens a portal in your home directory into The Void — a procedurally generated maze of directories that reshuffles at midnight. Running `sq quest` from your home directory reveals the quest and the portal entrance; it also hides a scroll somewhere deep in the maze. Navigate into ~/.shellquest/the_void/ and explore the directories until you find a file named lost_scroll_NNNN.txt. Read it to get the secret phrase, then return home and run `sq quest answer <phrase>` to claim your reward. Rewards are always Rare or better loot plus bonus XP and gold. You can only claim once per day — the quest resets at UTC midnight along with the maze. Danger scales by depth: rooms deeper in The Void are more hazardous, so bring your best gear. The maze is acyclic (symlink rifts may loop back to earlier rooms, but the real directory tree is bounded to 7 levels deep). If you miss a day the old maze is swept away and a fresh one opens. The portal is home-directory-gated: `sq quest` and `sq quest answer` both require you to be standing in your home directory.",
+        examples: &[
+            "cd ~ && sq quest",
+            "cat ~/.shellquest/the_void/ashen_gate/null_gallery/lost_scroll_4271.txt",
+            "cd ~ && sq quest answer \"the prompt flickers\"",
+        ],
+        related: &["journal", "status", "shop"],
     },
 ];
 
@@ -718,6 +732,25 @@ mod tests {
             out.contains(INDEX_FOOTER),
             "index must end with the exact footer line; got:\n{}",
             out
+        );
+    }
+
+    #[test]
+    fn quest_topic_resolves_by_canonical_name() {
+        assert_found("quest", "quest");
+    }
+
+    #[test]
+    fn quest_topic_resolves_by_aliases() {
+        assert_found("quests", "quest");
+        assert_found("void", "quest");
+    }
+
+    #[test]
+    fn quest_topic_appears_in_canonical_order() {
+        assert!(
+            CANONICAL_TOPIC_ORDER.contains(&"quest"),
+            "'quest' must be in CANONICAL_TOPIC_ORDER"
         );
     }
 }

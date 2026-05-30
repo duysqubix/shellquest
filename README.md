@@ -130,7 +130,7 @@ A full, code-backed RPG hiding inside your prompt:
 - **150 levels**, scaling XP curve, **15 progression titles** from *Terminal Novice* to *Root Overlord*
 - **160 items** across 5 rarity tiers — Common (70%) · Uncommon (25%) · Rare (4%) · Epic (0.99%) · Legendary (0.01%). 8 items per slot, per rarity.
 - **40-monster bestiary** across 5 difficulty tiers — *Vermin → Bruiser → Hunter → Horror → Boss-adjacent* — that spawn by zone danger, so `$HOME` sees Symlink Slugs and `node_modules` sees Deadlock Dragons
-- **33 zones** mapped to your `$PWD` — from safe `$HOME`, Desktop, Documents, and media galleries to `/proc`, `/sys`, `.ssh`, secrets, caches, build artifacts, backups, trash, and the Abyss of `node_modules`. Danger scales which monsters spawn, plus loot and XP.
+- **34 zones** mapped to your `$PWD` — from safe `$HOME`, Desktop, Documents, and media galleries to `/proc`, `/sys`, `.ssh`, secrets, caches, build artifacts, backups, trash, and the Abyss of `node_modules`. Danger scales which monsters spawn, plus loot and XP.
 - **140+ recognized commands across 30+ event handlers** — `git commit` crafts, `kill` banishes, `vim` meditates, `sudo` surges, `grep` scries, `sed`/`awk` transmute, `history` communes with your past, `systemctl` commands daemons, `dd` gambles with raw disk power, and nearly everything you type has its own flavor
 - **HP-pool multi-turn combat** — every monster has an HP bar; fights resolve over multiple swings inside a single command, with crits and class signatures firing on every turn
 - **Elite encounters** — rare *Enraged* variants get +60% attack, +50% HP, and 2× XP
@@ -145,6 +145,7 @@ A full, code-backed RPG hiding inside your prompt:
 - **Prestige system** — reset at 150, keep your gear, choose a subclass, go again stronger
 - **Permadeath mode** — opt in at character creation. You get an **eulogy**. The save file is deleted. *Roll a new hero, adventurer.*
 - **Sage update notifier** — an in-world herald checks crates.io and announces new versions in-character
+- **Daily Void quest** — a portal opens in your home directory each UTC day into The Void, a procedurally generated maze. Find the hidden scroll, read the phrase, speak it back with `sq quest answer` for a guaranteed Rare+ reward. Reshuffles at midnight.
 
 ---
 
@@ -324,6 +325,7 @@ Level 150. You can stop. You won't.
 | `sq update` | Update via cargo |
 | `sq reset` | Delete your character (permanent) |
 | `sq tournament` | Deprecated — use `sq arena` |
+| 🏠 `sq quest` / `sq quest answer <phrase>` | Daily Void quest — open the portal, find the scroll, claim your reward |
 | `sq tick --cmd ...` | Internal — called by the shell hook on every command |
 
 > 🏠 = must be in your `$HOME` directory. Shops don't follow you into the dungeon. (Wizards enchant anywhere.)

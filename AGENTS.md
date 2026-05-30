@@ -3,7 +3,7 @@
 # shellquest
 
 ## Purpose
-A passive RPG that lives in your terminal. Every shell command you run triggers game events — combat encounters, loot drops, zone travel, XP gains, and more. Installed as the `sq` CLI binary, it hooks into your shell's prompt to intercept commands via `sq tick` and progresses your character automatically. Published to crates.io, GitHub releases, and Docker Hub.
+A passive RPG that lives in your terminal. Every shell command you run triggers game events — combat encounters, loot drops, zone travel, XP gains, and more. Installed as the `sq` CLI binary, it hooks into your shell's prompt to intercept commands via `sq tick` and progresses your character automatically. Features 34 zones, a daily Void quest (portal opens at `$HOME`, maze reshuffles at UTC midnight), and a 5-tier arena gauntlet. Published to crates.io, GitHub releases, and Docker Hub.
 
 ## Key Files
 
@@ -56,6 +56,13 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
   - Test enchant: `cd ~ && sq enchant <equipped item>` — verify +1 power, gold deducted, `[Enchanted +N]` tag (max +5). Wizards can enchant from any directory; other classes only from `$HOME`.
   - Test identify: `sq id <name>` from any directory — read-only card, no save write, no tick consumed.
   - Test junk sweep: `cd ~ && sq sell junk` — sells all Common + Uncommon, never Rare and up.
+  - **Void quest QA**:
+    - `cd ~ && sq quest` — should reveal the quest and open the portal (creates `~/.shellquest/the_void/`).
+    - Navigate into the maze, find `lost_scroll_NNNN.txt`, read the phrase.
+    - `cd ~ && sq quest answer <phrase>` — should claim reward (Rare+ loot, XP, gold) and remove the scroll.
+    - `cd ~ && sq quest answer wrongphrase` — should reject with a hint.
+    - Run `sq quest` again same day — should show quest already completed.
+    - Set `quest_refreshed` to yesterday in save.json, run `sq quest` — should reshuffle the maze.
   - **Arena QA** (combat is paced ~1.5s/line + wave-escalating since v1.24):
     - `sq arena` (interactive) — verify tier selection, paced combat loop, banked-gold preview, and cash-out.
     - `SQ_NO_PACING=1 sq arena` — disables the 1.5s pacing for fast manual QA (combat resolves instantly).

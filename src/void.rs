@@ -470,3 +470,88 @@ mod tests {
         println!("VOID_ROOT={}", root.display());
     }
 }
+
+#[cfg(test)]
+mod reshuffle_tests {
+    use super::*;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NEXT_RESHUFFLE_ID: AtomicUsize = AtomicUsize::new(0);
+
+    struct TempSaveRoot {
+        path: PathBuf,
+    }
+
+    impl TempSaveRoot {
+        fn new() -> Self {
+            let unique = NEXT_RESHUFFLE_ID.fetch_add(1, Ordering::SeqCst);
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "shellquest_reshuffle_test_{}_{}_{}",
+                std::process::id(),
+                nanos,
+                unique
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempSaveRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn seeded_rng() -> StdRng {
+        StdRng::seed_from_u64(0xDA117EED)
+    }
+
+    #[test]
+    fn double_generate_leaves_exactly_one_void_dir_no_orphans() {
+        let save_root = TempSaveRoot::new();
+        let mut rng = seeded_rng();
+
+        // First daily reshuffle
+        let root1 = generate_void_in(save_root.path(), &mut rng).unwrap();
+        assert!(root1.exists(), "first void must exist after generation");
+
+        // Second daily reshuffle (simulates UTC-midnight rollover)
+        let root2 = generate_void_in(save_root.path(), &mut rng).unwrap();
+        assert!(root2.exists(), "second void must exist after regeneration");
+
+        // Both calls return the same canonical path (the_void under save_root)
+        assert_eq!(
+            root1, root2,
+            "both reshuffles must produce the same root path"
+        );
+
+        // Exactly one the_void directory exists — no orphan siblings
+        let void_siblings: Vec<_> = fs::read_dir(save_root.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with(VOID_DIR_NAME)
+            })
+            .collect();
+        assert_eq!(
+            void_siblings.len(),
+            1,
+            "expected exactly 1 the_void dir after two reshuffles, found {}: {:?}",
+            void_siblings.len(),
+            void_siblings.iter().map(|e| e.path()).collect::<Vec<_>>()
+        );
+    }
+}
