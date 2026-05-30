@@ -11,3 +11,8 @@ dev-tools/balance-sim/reports/
 dev-tools/balance-sim/__pycache__/
 dev-tools/balance-sim/simulator/__pycache__/
 dev-tools/balance-sim/dashboard.html
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
