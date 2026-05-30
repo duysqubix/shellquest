@@ -328,14 +328,15 @@ fn handle_forge(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::
 }
 
 fn handle_angry_spirit(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
-    let (name, atk, hp, xp) = random_monster_for_zone(rng, zone);
+    let (name, atk, hp, xp, tier) = random_monster_for_zone(rng, zone);
+    let enemy_dex_mod = tier_dex_mod(tier) + state.character.total_prestiges as i32;
     let profile = if rng.gen_ratio(1, 8) {
         apply_elite_pressure(&name, atk, hp, xp, zone.danger_level)
     } else {
         EncounterProfile { name, attack: atk, hp, xp, elite: false }
     };
 
-    combat(state, rng, zone, cmd, &profile.name, profile.attack, profile.hp, profile.xp, profile.elite);
+    combat(state, rng, zone, cmd, &profile.name, profile.attack, profile.hp, profile.xp, profile.elite, enemy_dex_mod);
 }
 
 fn handle_familiar(state: &mut GameState, rng: &mut impl Rng) {
@@ -684,13 +685,14 @@ fn handle_random_encounter(state: &mut GameState, rng: &mut impl Rng, zone: &cra
 
     match roll {
         1..=40 => {
-            let (name, base_atk, base_hp, base_xp) = random_monster_for_zone(rng, zone);
+            let (name, base_atk, base_hp, base_xp, tier) = random_monster_for_zone(rng, zone);
+            let enemy_dex_mod = tier_dex_mod(tier) + state.character.total_prestiges as i32;
             let profile = if rng.gen_ratio(1, 8) {
                 apply_elite_pressure(&name, base_atk, base_hp, base_xp, zone.danger_level)
             } else {
                 EncounterProfile { name, attack: base_atk, hp: base_hp, xp: base_xp, elite: false }
             };
-            combat(state, rng, zone, cmd, &profile.name, profile.attack, profile.hp, profile.xp, profile.elite);
+            combat(state, rng, zone, cmd, &profile.name, profile.attack, profile.hp, profile.xp, profile.elite, enemy_dex_mod);
         }
         41..=65 => {
             // Find loot
@@ -852,6 +854,16 @@ pub fn tiers_for_danger(danger_level: u32) -> &'static [MonsterTier] {
     }
 }
 
+pub fn tier_dex_mod(tier: MonsterTier) -> i32 {
+    match tier {
+        MonsterTier::Vermin => 0,
+        MonsterTier::Bruiser => 2,
+        MonsterTier::Hunter => 4,
+        MonsterTier::Horror => 6,
+        MonsterTier::BossAdjacent => 8,
+    }
+}
+
 fn random_monster_in_tiers(rng: &mut impl Rng, allowed: &[MonsterTier]) -> Option<&'static MonsterEntry> {
     let pool: Vec<&MonsterEntry> = MONSTER_POOL
         .iter()
@@ -864,14 +876,14 @@ fn random_monster_in_tiers(rng: &mut impl Rng, allowed: &[MonsterTier]) -> Optio
     }
 }
 
-fn random_monster_for_zone(rng: &mut impl Rng, zone: &crate::zones::Zone) -> (String, i32, i32, u32) {
+fn random_monster_for_zone(rng: &mut impl Rng, zone: &crate::zones::Zone) -> (String, i32, i32, u32, MonsterTier) {
     let entry = random_monster_in_tiers(rng, tiers_for_danger(zone.danger_level))
         .or_else(|| random_monster_in_tiers(rng, &[MonsterTier::Hunter, MonsterTier::Bruiser, MonsterTier::Vermin]))
         .expect("MONSTER_POOL must contain at least one entry");
     let scale = encounter_scale_for_danger(zone.danger_level);
     let atk = ((entry.attack as f32 * scale).round() as i32).max(1);
     let xp = ((entry.xp as f32 * scale).round() as u32).max(5);
-    (entry.name.to_string(), atk, entry.hp, xp)
+    (entry.name.to_string(), atk, entry.hp, xp, entry.tier)
 }
 
 const COMBAT_MAX_TURNS: u32 = 30;
@@ -886,6 +898,7 @@ fn combat(
     monster_hp_initial: i32,
     xp_reward: u32,
     is_elite: bool,
+    enemy_dex_mod: i32,
 ) {
     let mut monster_hp = monster_hp_initial.max(1);
     let mut total_damage_taken: i32 = 0;
@@ -952,7 +965,7 @@ fn combat(
 
         let player_defense = state.character.defense();
         let dodge_roll: i32 = rng.gen_range(1..=20);
-        if dodge_roll > (8 + player_defense / 2) {
+        if crate::character::attack_lands(dodge_roll, enemy_dex_mod, state.character.dex_mod()) {
             let damage = (monster_atk - player_defense / 3).max(1);
             total_damage_taken += damage;
             let gold_before = state.character.gold;
@@ -1073,7 +1086,7 @@ mod tests {
             .map(|m| ((m.attack as f32 * encounter_scale_for_danger(1)).round() as i32).max(1))
             .collect();
         for _ in 0..100 {
-            let (_name, atk, _hp, _xp) = random_monster_for_zone(&mut rng, &zone);
+            let (_name, atk, _hp, _xp, _tier) = random_monster_for_zone(&mut rng, &zone);
             assert!(
                 vermin_attacks.contains(&atk),
                 "danger-1 zone must only produce Vermin-tier monster ATK (got {})",
@@ -1092,7 +1105,7 @@ mod tests {
         };
         let mut rng = rand::thread_rng();
         for _ in 0..50 {
-            let (_name, atk, hp, _xp) = random_monster_for_zone(&mut rng, &zone);
+            let (_name, atk, hp, _xp, _tier) = random_monster_for_zone(&mut rng, &zone);
             assert!(atk >= 1, "fallback must still produce a valid monster");
             assert!(hp >= 1, "fallback monster must have positive HP");
         }
@@ -1300,6 +1313,15 @@ mod tests {
     }
 
     #[test]
+    fn tier_dex_mod_scales_with_tier() {
+        assert_eq!(tier_dex_mod(MonsterTier::Vermin), 0);
+        assert_eq!(tier_dex_mod(MonsterTier::Bruiser), 2);
+        assert_eq!(tier_dex_mod(MonsterTier::Hunter), 4);
+        assert_eq!(tier_dex_mod(MonsterTier::Horror), 6);
+        assert_eq!(tier_dex_mod(MonsterTier::BossAdjacent), 8);
+    }
+
+    #[test]
     fn combat_multi_turn_against_high_hp_monster_increments_kill_and_grants_xp() {
         let mut state = make_state();
         state.character.hp = state.character.max_hp;
@@ -1313,7 +1335,7 @@ mod tests {
             color: crate::zones::ZoneColor::Red,
         };
         let mut rng = rand::thread_rng();
-        combat(&mut state, &mut rng, &zone, "rm", "Test Hunter", 12, 100, 25, false);
+        combat(&mut state, &mut rng, &zone, "rm", "Test Hunter", 12, 100, 25, false, 4);
         let killed = state.character.kills > kills_before;
         let leveled_or_died = state.character.level != level_before
             || state.character.hp < state.character.max_hp / 2;
@@ -1342,7 +1364,7 @@ mod tests {
         let mut hits_landing_no_damage = 0;
         for _ in 0..20 {
             state.character.hp = initial_hp;
-            combat(&mut state, &mut rng, &zone, "rm", "Test Vermin", 2, 1, 4, false);
+            combat(&mut state, &mut rng, &zone, "rm", "Test Vermin", 2, 1, 4, false, 0);
             if state.character.hp == initial_hp {
                 hits_landing_no_damage += 1;
             }
@@ -1350,6 +1372,35 @@ mod tests {
         assert!(
             hits_landing_no_damage >= 1,
             "vs 1-HP vermin a level-1 warrior should sometimes one-shot before the monster swings"
+        );
+    }
+
+    #[test]
+    fn high_armor_low_dex_player_can_still_be_hit_overworld() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+        let mut state = make_state();
+        state.character.dexterity = 8;
+        state.character.max_hp = 1000;
+        state.character.hp = 1000;
+        state.character.equip(Item {
+            name: "Bastion Plate".to_string(),
+            slot: ItemSlot::Armor,
+            power: 100,
+            rarity: Rarity::Legendary,
+            enchant_level: 0,
+        });
+        let zone = crate::zones::Zone {
+            name: "Test Abyss",
+            description: "test",
+            danger_level: 4,
+            color: crate::zones::ZoneColor::Red,
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+        combat(&mut state, &mut rng, &zone, "rm", "Test Hunter", 12, 500, 25, false, 6);
+        assert!(
+            state.character.hp < 1000,
+            "high-armor low-dex player must still take hits under the dex-vs-dex dodge model (was un-hittable before)"
         );
     }
 
@@ -1368,6 +1419,7 @@ mod tests {
             xp_reward: 100,
             gold_reward: 50,
             spawned_at: chrono::Utc::now(),
+            dex_mod: 6,
         }
     }
 

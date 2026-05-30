@@ -12,21 +12,23 @@ pub struct Boss {
     pub xp_reward: u32,
     pub gold_reward: u32,
     pub spawned_at: DateTime<Utc>,
+    #[serde(default)]
+    pub dex_mod: i32,
 }
 
-pub const BOSS_ROSTER: &[(&str, i32, i32, u32, u32)] = &[
-    ("The Kernel Panic", 100, 22, 900, 350),
-    ("Lord of /dev/null", 85, 18, 700, 280),
-    ("SIGKILL Supreme", 90, 25, 800, 320),
-    ("The Infinite Loop", 110, 15, 950, 300),
-    ("The Memory Corruption", 95, 20, 850, 310),
+pub const BOSS_ROSTER: &[(&str, i32, i32, u32, u32, i32)] = &[
+    ("The Kernel Panic", 100, 22, 900, 350, 6),
+    ("Lord of /dev/null", 85, 18, 700, 280, 8),
+    ("SIGKILL Supreme", 90, 25, 800, 320, 9),
+    ("The Infinite Loop", 110, 15, 950, 300, 5),
+    ("The Memory Corruption", 95, 20, 850, 310, 7),
 ];
 
 pub fn spawn_boss() -> Boss {
     use rand::Rng;
 
     let mut rng = rand::thread_rng();
-    let (name, hp, attack, xp_reward, gold_reward) =
+    let (name, hp, attack, xp_reward, gold_reward, dex_mod) =
         BOSS_ROSTER[rng.gen_range(0..BOSS_ROSTER.len())];
 
     Boss {
@@ -37,6 +39,7 @@ pub fn spawn_boss() -> Boss {
         xp_reward,
         gold_reward,
         spawned_at: Utc::now(),
+        dex_mod,
     }
 }
 
@@ -128,6 +131,7 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     let boss_hp_after = state.active_boss.as_ref().unwrap().hp;
     let boss_max_hp = state.active_boss.as_ref().unwrap().max_hp;
     let boss_atk = state.active_boss.as_ref().unwrap().attack;
+    let boss_dex_mod = state.active_boss.as_ref().unwrap().dex_mod;
     let boss_name = state.active_boss.as_ref().unwrap().name.clone();
     let boss_xp = state.active_boss.as_ref().unwrap().xp_reward;
     let boss_gold = state.active_boss.as_ref().unwrap().gold_reward;
@@ -171,7 +175,8 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     }
 
     let dodge_roll: i32 = rng.gen_range(1..=20);
-    let boss_dmg = if dodge_roll > 10 + player_defense {
+    let boss_attack_mod = boss_dex_mod + state.character.total_prestiges as i32;
+    let boss_dmg = if crate::character::attack_lands(dodge_roll, boss_attack_mod, state.character.dex_mod()) {
         let dmg = (boss_atk - player_defense).max(1);
         let gold_before = state.character.gold;
         let died = state.character.take_damage(dmg);
@@ -231,7 +236,7 @@ mod tests {
 
     #[test]
     fn all_bosses_have_positive_hp_and_attack() {
-        for (_, hp, atk, _, _) in BOSS_ROSTER.iter() {
+        for (_, hp, atk, _, _, _) in BOSS_ROSTER.iter() {
             assert!(*hp > 0);
             assert!(*atk > 0);
         }
@@ -279,5 +284,57 @@ mod tests {
         let mut boss = spawn_boss();
         boss.spawned_at = Utc::now() - chrono::Duration::hours(25);
         assert!(boss.is_stale());
+    }
+
+    #[test]
+    fn boss_roster_dex_mods_are_varied_and_in_range() {
+        let mods: Vec<i32> = BOSS_ROSTER.iter().map(|b| b.5).collect();
+        assert_eq!(mods.len(), 5);
+        for m in &mods {
+            assert!((5..=9).contains(m), "boss dex_mod {} out of 5..=9", m);
+        }
+        let distinct = mods.iter().collect::<std::collections::HashSet<_>>().len();
+        assert!(distinct >= 2, "boss dex_mods should vary by power");
+    }
+
+    #[test]
+    fn high_armor_low_dex_player_can_be_hit_by_boss() {
+        use crate::character::{Character, Class, Item, ItemSlot, Race, Rarity};
+        use crate::state::GameState;
+
+        let mut state =
+            GameState::new(Character::new("T".to_string(), Class::Warrior, Race::Human));
+        state.character.dexterity = 8;
+        state.character.max_hp = 100_000;
+        state.character.hp = 100_000;
+        state.character.equip(Item {
+            name: "Bastion Plate".to_string(),
+            slot: ItemSlot::Armor,
+            power: 100,
+            rarity: Rarity::Legendary,
+            enchant_level: 0,
+        });
+        state.active_boss = Some(Boss {
+            name: "Test Colossus".to_string(),
+            hp: 100_000,
+            max_hp: 100_000,
+            attack: 20,
+            xp_reward: 900,
+            gold_reward: 350,
+            spawned_at: Utc::now(),
+            dex_mod: 8,
+        });
+
+        let hp0 = state.character.hp;
+        for _ in 0..100 {
+            if state.active_boss.is_none() {
+                break;
+            }
+            tick_boss(&mut state);
+        }
+        assert!(
+            state.character.hp < hp0,
+            "a boss must be able to land hits on a high-armor low-dex player (was un-hittable before)"
+        );
     }
 }

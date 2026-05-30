@@ -493,9 +493,6 @@ pub struct ArenaCombatTuning {
     pub enemy_attack_power_divisor: i32,
     pub enemy_attack_per_prestige: i32,
     pub player_dmg_power_divisor: i32,
-    pub enemy_hit_threshold_base: i32,
-    pub enemy_hit_defense_divisor: i32,
-    pub enemy_hit_crit: i32,
     pub enemy_dmg_defense_divisor: i32,
     pub recovery_base: i32,
     pub recovery_max_hp_divisor: i32,
@@ -557,24 +554,22 @@ pub fn compute_player_hit(
     }
 }
 
-pub const ENEMY_DEX_DODGE_DIVISOR: i32 = 5;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ArenaWave {
     pub hp_multiplier: f32,
-    pub hit_threshold_cap: i32,
+    pub enemy_dex_mod: i32,
     pub enemy_crit_chance_pct: u32,
 }
 
 pub fn arena_wave(round: u32) -> ArenaWave {
     match round {
-        1..=3 => ArenaWave { hp_multiplier: 1.0, hit_threshold_cap: 18, enemy_crit_chance_pct: 0 },
-        4..=6 => ArenaWave { hp_multiplier: 1.4, hit_threshold_cap: 17, enemy_crit_chance_pct: 3 },
-        7..=9 => ArenaWave { hp_multiplier: 2.0, hit_threshold_cap: 15, enemy_crit_chance_pct: 6 },
-        10..=15 => ArenaWave { hp_multiplier: 3.0, hit_threshold_cap: 14, enemy_crit_chance_pct: 8 },
-        16..=25 => ArenaWave { hp_multiplier: 4.5, hit_threshold_cap: 12, enemy_crit_chance_pct: 12 },
-        26..=40 => ArenaWave { hp_multiplier: 6.5, hit_threshold_cap: 10, enemy_crit_chance_pct: 18 },
-        _ => ArenaWave { hp_multiplier: 9.0, hit_threshold_cap: 8, enemy_crit_chance_pct: 22 },
+        1..=3 => ArenaWave { hp_multiplier: 1.0, enemy_dex_mod: 0, enemy_crit_chance_pct: 0 },
+        4..=6 => ArenaWave { hp_multiplier: 1.4, enemy_dex_mod: 2, enemy_crit_chance_pct: 3 },
+        7..=9 => ArenaWave { hp_multiplier: 2.0, enemy_dex_mod: 4, enemy_crit_chance_pct: 6 },
+        10..=15 => ArenaWave { hp_multiplier: 3.0, enemy_dex_mod: 6, enemy_crit_chance_pct: 8 },
+        16..=25 => ArenaWave { hp_multiplier: 4.5, enemy_dex_mod: 9, enemy_crit_chance_pct: 12 },
+        26..=40 => ArenaWave { hp_multiplier: 6.5, enemy_dex_mod: 13, enemy_crit_chance_pct: 18 },
+        _ => ArenaWave { hp_multiplier: 9.0, enemy_dex_mod: 18, enemy_crit_chance_pct: 22 },
     }
 }
 
@@ -601,17 +596,13 @@ pub enum EnemyHitOutcome {
 
 pub fn compute_enemy_hit_at_round(
     dodge_roll: i32,
-    defense: i32,
-    dexterity: i32,
+    player_dexterity: i32,
     round: u32,
+    prestige: u32,
 ) -> EnemyHitOutcome {
-    let t = &ARENA_TUNING;
-    let wave = arena_wave(round);
-    let threshold = (t.enemy_hit_threshold_base
-        + defense / t.enemy_hit_defense_divisor
-        + dexterity / ENEMY_DEX_DODGE_DIVISOR)
-        .min(wave.hit_threshold_cap);
-    if dodge_roll > threshold || dodge_roll == t.enemy_hit_crit {
+    let enemy_dex_mod = arena_wave(round).enemy_dex_mod + prestige as i32;
+    let player_dex_mod = crate::character::dex_modifier(player_dexterity);
+    if crate::character::attack_lands(dodge_roll, enemy_dex_mod, player_dex_mod) {
         EnemyHitOutcome::Hit
     } else {
         EnemyHitOutcome::Miss
@@ -628,9 +619,6 @@ pub const ARENA_TUNING: ArenaCombatTuning = ArenaCombatTuning {
     enemy_attack_power_divisor: 2,
     enemy_attack_per_prestige: 8,
     player_dmg_power_divisor: 2,
-    enemy_hit_threshold_base: 8,
-    enemy_hit_defense_divisor: 2,
-    enemy_hit_crit: 20,
     enemy_dmg_defense_divisor: 3,
     recovery_base: 4,
     recovery_max_hp_divisor: 10,
@@ -823,7 +811,7 @@ fn run_compact_combat(
 
         let player_defense = entry.defense;
         let dodge_roll: i32 = rng.gen_range(1..=20);
-        match compute_enemy_hit_at_round(dodge_roll, player_defense, entry.dexterity, round) {
+        match compute_enemy_hit_at_round(dodge_roll, entry.dexterity, round, entry.prestige) {
             EnemyHitOutcome::Hit => {
                 let base_dmg = (enemy.attack - player_defense / t.enemy_dmg_defense_divisor).max(1);
                 let crit_roll: u32 = rng.gen_range(0..100);
@@ -1643,54 +1631,58 @@ mod tests {
     }
 
     #[test]
-    fn enemy_misses_against_low_defense_low_dex_low_roll() {
-        assert_eq!(compute_enemy_hit_at_round(5, 10, 0, 1), EnemyHitOutcome::Miss);
+    fn enemy_misses_average_dex_player_on_low_roll() {
+        assert_eq!(compute_enemy_hit_at_round(5, 10, 1, 0), EnemyHitOutcome::Miss);
     }
 
     #[test]
-    fn enemy_hits_against_low_defense_low_dex_high_roll() {
-        assert_eq!(compute_enemy_hit_at_round(17, 10, 0, 1), EnemyHitOutcome::Hit);
+    fn enemy_hits_average_dex_player_on_high_roll() {
+        assert_eq!(compute_enemy_hit_at_round(17, 10, 1, 0), EnemyHitOutcome::Hit);
     }
 
     #[test]
     fn high_player_dex_makes_enemy_miss_mid_roll() {
-        let with_low_dex = compute_enemy_hit_at_round(15, 10, 0, 1);
-        let with_high_dex = compute_enemy_hit_at_round(15, 10, 25, 1);
-        assert_eq!(with_low_dex, EnemyHitOutcome::Hit);
-        assert_eq!(with_high_dex, EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit_at_round(12, 10, 1, 0), EnemyHitOutcome::Hit);
+        assert_eq!(compute_enemy_hit_at_round(12, 30, 1, 0), EnemyHitOutcome::Miss);
     }
 
     #[test]
-    fn nat_twenty_always_hits_through_dex_and_defense() {
-        assert_eq!(compute_enemy_hit_at_round(20, 200, 200, 1), EnemyHitOutcome::Hit);
+    fn nat_twenty_always_hits_even_against_max_dex() {
+        assert_eq!(compute_enemy_hit_at_round(20, 200, 1, 0), EnemyHitOutcome::Hit);
     }
 
     #[test]
-    fn enemy_dodge_threshold_uses_strict_greater_than() {
-        let threshold = ARENA_TUNING.enemy_hit_threshold_base
-            + 10 / ARENA_TUNING.enemy_hit_defense_divisor
-            + 0 / ENEMY_DEX_DODGE_DIVISOR;
-        assert_eq!(threshold, 13);
-        assert_eq!(compute_enemy_hit_at_round(13, 10, 0, 1), EnemyHitOutcome::Miss);
-        assert_eq!(compute_enemy_hit_at_round(14, 10, 0, 1), EnemyHitOutcome::Hit);
+    fn nat_one_always_misses_even_against_low_dex() {
+        assert_eq!(compute_enemy_hit_at_round(1, 1, 50, 9), EnemyHitOutcome::Miss);
     }
 
     #[test]
-    fn enemy_hit_threshold_caps_at_eighteen_for_high_defense() {
-        assert_eq!(compute_enemy_hit_at_round(18, 200, 200, 1), EnemyHitOutcome::Miss);
-        assert_eq!(compute_enemy_hit_at_round(19, 200, 200, 1), EnemyHitOutcome::Hit);
-        assert_eq!(compute_enemy_hit_at_round(20, 200, 200, 1), EnemyHitOutcome::Hit);
+    fn enemy_dodge_uses_strict_greater_than() {
+        assert_eq!(compute_enemy_hit_at_round(10, 10, 1, 0), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit_at_round(11, 10, 1, 0), EnemyHitOutcome::Hit);
     }
 
     #[test]
-    fn enemy_hit_threshold_cap_preserves_low_defense_dynamic_range() {
-        let low_def_threshold = ARENA_TUNING.enemy_hit_threshold_base
-            + 4 / ARENA_TUNING.enemy_hit_defense_divisor
-            + 10 / ENEMY_DEX_DODGE_DIVISOR;
-        assert_eq!(low_def_threshold, 12);
-        assert!(low_def_threshold < arena_wave(1).hit_threshold_cap);
-        assert_eq!(compute_enemy_hit_at_round(12, 4, 10, 1), EnemyHitOutcome::Miss);
-        assert_eq!(compute_enemy_hit_at_round(13, 4, 10, 1), EnemyHitOutcome::Hit);
+    fn high_armor_low_dex_player_can_still_be_hit_in_arena() {
+        assert_eq!(compute_enemy_hit_at_round(12, 8, 1, 0), EnemyHitOutcome::Hit);
+    }
+
+    #[test]
+    fn high_dex_player_still_hittable_in_endgame_waves() {
+        assert_eq!(compute_enemy_hit_at_round(19, 30, 1, 0), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit_at_round(13, 30, 50, 0), EnemyHitOutcome::Hit);
+    }
+
+    #[test]
+    fn later_rounds_land_more_against_same_player() {
+        assert_eq!(compute_enemy_hit_at_round(14, 20, 1, 0), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit_at_round(14, 20, 26, 0), EnemyHitOutcome::Hit);
+    }
+
+    #[test]
+    fn prestige_makes_enemies_more_accurate() {
+        assert_eq!(compute_enemy_hit_at_round(14, 20, 1, 0), EnemyHitOutcome::Miss);
+        assert_eq!(compute_enemy_hit_at_round(14, 20, 1, 5), EnemyHitOutcome::Hit);
     }
 
     #[test]
@@ -1738,14 +1730,14 @@ mod tests {
     }
 
     #[test]
-    fn enemy_hit_cap_grows_stricter_in_later_waves() {
-        let early = arena_wave(1).hit_threshold_cap;
-        let mid = arena_wave(10).hit_threshold_cap;
-        let late = arena_wave(25).hit_threshold_cap;
-        let endgame = arena_wave(50).hit_threshold_cap;
-        assert!(mid < early, "round 10 cap {} should be < round 1 cap {}", mid, early);
-        assert!(late < mid, "round 25 cap {} should be < round 10 cap {}", late, mid);
-        assert!(endgame < late, "round 50 cap {} should be < round 25 cap {}", endgame, late);
+    fn enemy_dex_mod_grows_in_later_waves() {
+        let early = arena_wave(1).enemy_dex_mod;
+        let mid = arena_wave(10).enemy_dex_mod;
+        let late = arena_wave(25).enemy_dex_mod;
+        let endgame = arena_wave(50).enemy_dex_mod;
+        assert!(mid > early, "round 10 mod {} should be > round 1 mod {}", mid, early);
+        assert!(late > mid, "round 25 mod {} should be > round 10 mod {}", late, mid);
+        assert!(endgame > late, "round 50 mod {} should be > round 25 mod {}", endgame, late);
     }
 
     #[test]
@@ -1784,23 +1776,21 @@ mod tests {
     }
 
     #[test]
-    fn high_defense_player_takes_more_hits_in_late_rounds_than_early() {
-        let high_def = 200;
-        let dex = 0;
+    fn player_takes_more_hits_in_late_rounds_than_early() {
+        let dexterity = 20;
         let early_landing_rolls: i32 = (2..=20)
             .filter(|&roll| {
-                compute_enemy_hit_at_round(roll, high_def, dex, 1) == EnemyHitOutcome::Hit
+                compute_enemy_hit_at_round(roll, dexterity, 1, 0) == EnemyHitOutcome::Hit
             })
             .count() as i32;
         let late_landing_rolls: i32 = (2..=20)
             .filter(|&roll| {
-                compute_enemy_hit_at_round(roll, high_def, dex, 25) == EnemyHitOutcome::Hit
+                compute_enemy_hit_at_round(roll, dexterity, 25, 0) == EnemyHitOutcome::Hit
             })
             .count() as i32;
         assert!(
             late_landing_rolls > early_landing_rolls,
-            "round 25 should land more often than round 1 against high-defense; \
-             early={} late={}",
+            "round 25 should land more often than round 1; early={} late={}",
             early_landing_rolls, late_landing_rolls
         );
     }

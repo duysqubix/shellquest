@@ -209,6 +209,18 @@ impl fmt::Display for Subclass {
 
 pub const MAX_LEVEL: u32 = 150;
 
+pub fn dex_modifier(dexterity: i32) -> i32 {
+    (dexterity - 10) / 2
+}
+
+pub fn attack_lands(d20_roll: i32, attacker_dex_mod: i32, defender_dex_mod: i32) -> bool {
+    match d20_roll {
+        20 => true,
+        1 => false,
+        r => r + attacker_dex_mod > 10 + defender_dex_mod,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Character {
     pub name: String,
@@ -288,6 +300,10 @@ impl Character {
             .as_ref()
             .map_or(0, |w| w.power + w.enchant_level as i32);
         base + weapon_bonus
+    }
+
+    pub fn dex_mod(&self) -> i32 {
+        dex_modifier(self.dexterity)
     }
 
     pub fn defense(&self) -> i32 {
@@ -713,6 +729,53 @@ mod tests {
         c.equip(armor);
         c.equip(ring);
         assert_eq!(c.defense(), 9 / 3 + (5 + 2) + (3 + 1));
+    }
+
+    #[test]
+    fn dex_mod_is_dnd_style_modifier() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        c.dexterity = 10;
+        assert_eq!(c.dex_mod(), 0);
+        c.dexterity = 16;
+        assert_eq!(c.dex_mod(), 3);
+        c.dexterity = 20;
+        assert_eq!(c.dex_mod(), 5);
+        c.dexterity = 8;
+        assert_eq!(c.dex_mod(), -1);
+    }
+
+    #[test]
+    fn dex_mod_armor_does_not_change_it() {
+        let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
+        c.dexterity = 14;
+        let before = c.dex_mod();
+        c.equip(make_item(ItemSlot::Armor, 99, Rarity::Legendary));
+        c.equip(make_item(ItemSlot::Ring, 99, Rarity::Legendary));
+        assert_eq!(c.dex_mod(), before, "dodge stat must come from DEX only, not gear");
+    }
+
+    #[test]
+    fn attack_lands_nat_twenty_always_hits() {
+        assert!(attack_lands(20, 0, 100));
+    }
+
+    #[test]
+    fn attack_lands_nat_one_always_misses() {
+        assert!(!attack_lands(1, 100, 0));
+    }
+
+    #[test]
+    fn attack_lands_compares_mods_across_the_roll() {
+        assert!(attack_lands(11, 0, 0));
+        assert!(!attack_lands(10, 0, 0));
+        assert!(attack_lands(6, 5, 0));
+        assert!(!attack_lands(15, 0, 8));
+    }
+
+    #[test]
+    fn attack_lands_strict_greater_than_at_boundary() {
+        assert!(!attack_lands(10, 3, 3));
+        assert!(attack_lands(11, 3, 3));
     }
 
     #[test]
