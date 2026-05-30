@@ -11,6 +11,7 @@ dev-tools/balance-sim/reports/
 dev-tools/balance-sim/__pycache__/
 dev-tools/balance-sim/simulator/__pycache__/
 dev-tools/balance-sim/dashboard.html
+dev-tools/balance-sim/.sq-linux/
 
 # Beads / Dolt files (added by bd init)
 .dolt/
