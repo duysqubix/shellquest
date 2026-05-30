@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import sqlite3
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -243,6 +244,49 @@ def time_to_level(conn, tuning_label: str, threshold: int = 25) -> str:
     return "\n".join(lines)
 
 
+def final_loadout_summary(conn, tuning_label: str) -> str:
+    """End-state gear/inventory rollup per class × strategy: avg equipped
+    effective power, avg held-inventory size, and equipped Rare+ count.
+    Guarded against an old DB that predates the final_item table."""
+    try:
+        rows = conn.execute(
+            """
+            SELECT r.class, r.strategy,
+                   COUNT(DISTINCT r.id) AS n_runs,
+                   AVG(CASE WHEN fi.equipped=1 THEN fi.power + fi.enchant_level END) AS avg_eq_power,
+                   SUM(CASE WHEN fi.equipped=1 THEN 1 ELSE 0 END) AS eq_count,
+                   SUM(CASE WHEN fi.equipped=0 THEN 1 ELSE 0 END) AS inv_count,
+                   SUM(CASE WHEN fi.equipped=1 AND fi.rarity IN ('Rare','Epic','Legendary')
+                            THEN 1 ELSE 0 END) AS eq_rare_plus
+              FROM final_item fi JOIN run r ON r.id = fi.run_id
+             WHERE r.tuning_label = ?
+             GROUP BY r.class, r.strategy
+             ORDER BY r.class, r.strategy
+            """, (tuning_label,)
+        ).fetchall()
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e).lower():
+            return "(no final_item data — re-run sims to populate end-state loadout)"
+        raise
+    if not rows:
+        return "(no final_item data for this tuning_label)"
+
+    def fmt(v):
+        return f"{v:.1f}" if v is not None else "—"
+
+    lines = ["| Class | Strategy | Runs | Avg Equipped Power | Avg Inv Size | Equipped Rare+ |",
+             "|---|---|---|---|---|---|"]
+    for r in rows:
+        n = r["n_runs"] or 1
+        lines.append(
+            f"| {r['class']} | {r['strategy']} | {r['n_runs']} "
+            f"| {fmt(r['avg_eq_power'])} "
+            f"| {r['inv_count'] / n:.1f} "
+            f"| {r['eq_rare_plus']} |"
+        )
+    return "\n".join(lines)
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--tuning-label", required=True)
@@ -277,6 +321,10 @@ def main() -> int:
         time_to_level(conn, args.tuning_label, 25),
         "",
         time_to_level(conn, args.tuning_label, 60),
+        "",
+        "## Final Loadout (end-state equipped gear + inventory)",
+        "",
+        final_loadout_summary(conn, args.tuning_label),
         "",
     ]
     text = "\n".join(out_lines)

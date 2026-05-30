@@ -104,6 +104,13 @@ def merge_dbs(target_path: Path, source_paths: list[Path]) -> int:
                     "dmg_taken, outcome, xp_earned, gold_earned FROM src.overworld_encounter WHERE run_id = ?",
                     (new_id, src_id),
                 )
+                target.execute(
+                    "INSERT INTO final_item (run_id, slot, equipped, name, rarity, "
+                    "power, enchant_level) "
+                    "SELECT ?, slot, equipped, name, rarity, power, enchant_level "
+                    "FROM src.final_item WHERE run_id = ?",
+                    (new_id, src_id),
+                )
             merged_runs += len(id_map)
             target.commit()
         finally:
@@ -294,6 +301,23 @@ def insert_overworld_encounter(
          enc["dmg_dealt"], enc["dmg_taken"], enc["outcome"],
          enc["xp_earned"], enc["gold_earned"]),
     )
+
+
+def insert_final_items(
+    conn: sqlite3.Connection, run_id: int, items: list[dict]
+) -> None:
+    """Persist a run's END-STATE items (see player.extract_final_items).
+    One INSERT per item; the equipped flag is supplied by the caller."""
+    for it in items:
+        conn.execute(
+            """
+            INSERT INTO final_item
+            (run_id, slot, equipped, name, rarity, power, enchant_level)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (run_id, it["slot"], 1 if it.get("equipped") else 0,
+             it["name"], it["rarity"], it["power"], it["enchant_level"]),
+        )
 
 
 def commit(conn: sqlite3.Connection) -> None:

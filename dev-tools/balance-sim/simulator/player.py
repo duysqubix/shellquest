@@ -70,6 +70,38 @@ def starter_save(cls: str, race: str, seed: int) -> dict[str, Any]:
     }
 
 
+def extract_final_items(save: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten a save's END-STATE gear + held inventory into final_item rows.
+
+    Returns one dict per item with keys slot/equipped/name/rarity/power/
+    enchant_level. The three equipped slots (weapon/armor/ring) get
+    equipped=1 (null gear skipped); every inventory item gets equipped=0
+    keeping its own slot (potions included). Null-safe against a missing
+    character, missing gear, or missing item fields.
+    """
+    character = (save or {}).get("character") or {}
+
+    def _row(item: dict[str, Any], equipped: int) -> dict[str, Any]:
+        return {
+            "slot": item.get("slot") or "Unknown",
+            "equipped": equipped,
+            "name": item.get("name") or "Unknown",
+            "rarity": item.get("rarity") or "Common",
+            "power": int(item.get("power") or 0),
+            "enchant_level": int(item.get("enchant_level") or 0),
+        }
+
+    items: list[dict[str, Any]] = []
+    for slot_key in ("weapon", "armor", "ring"):
+        gear = character.get(slot_key)
+        if gear:
+            items.append(_row(gear, 1))
+    for inv_item in character.get("inventory") or []:
+        if inv_item:
+            items.append(_row(inv_item, 0))
+    return items
+
+
 class SimPlayer:
     def __init__(
         self,
@@ -256,6 +288,7 @@ class SimPlayer:
             ended_reason = f"error: {type(e).__name__}: {e}"
         save, final_state = self._read()
         self._snapshot(final_state)
+        db.insert_final_items(self.conn, self.run_id, extract_final_items(save))
         db.finalize_run(self.conn, self.run_id,
                         final_state=final_state,
                         total_ticks=self.tick_no,

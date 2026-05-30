@@ -118,6 +118,17 @@ CREATE TABLE IF NOT EXISTS overworld_encounter (
     gold_earned INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS final_item (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+    slot TEXT NOT NULL,            -- Weapon|Armor|Ring|Potion (inventory keeps its slot)
+    equipped INTEGER NOT NULL,     -- 1 if equipped weapon/armor/ring, 0 if in inventory
+    name TEXT NOT NULL,
+    rarity TEXT NOT NULL,
+    power INTEGER NOT NULL,
+    enchant_level INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_run_class_strategy
     ON run(class, strategy, tuning_label);
 CREATE INDEX IF NOT EXISTS idx_run_tuning
@@ -134,3 +145,5 @@ CREATE INDEX IF NOT EXISTS idx_sq_invocation_run
     ON sq_invocation(run_id, tick_no);
 CREATE INDEX IF NOT EXISTS idx_overworld_encounter_run
     ON overworld_encounter(run_id, kind);
+CREATE INDEX IF NOT EXISTS idx_final_item_run
+    ON final_item(run_id, equipped);

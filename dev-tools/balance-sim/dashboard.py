@@ -251,6 +251,28 @@ def time_to_level(conn: sqlite3.Connection, label: str, threshold: int) -> list[
     return out
 
 
+def final_loadout(conn: sqlite3.Connection, label: str) -> list[dict]:
+    """Every end-state item (equipped gear + held inventory) for a label,
+    joined to its run's metadata. Powers the Loadout tab's per-run drill-down
+    AND its aggregates (the JS groups these rows by run_id). Guarded against
+    an old DB that predates the final_item table (returns [])."""
+    try:
+        return [dict(r) for r in conn.execute(
+            """
+            SELECT fi.run_id, r.class, r.race, r.strategy, r.seed,
+                   fi.slot, fi.equipped, fi.name, fi.rarity,
+                   fi.power, fi.enchant_level
+              FROM final_item fi JOIN run r ON r.id = fi.run_id
+             WHERE r.tuning_label = ?
+             ORDER BY fi.run_id, fi.equipped DESC, fi.slot
+            """, (label,)
+        )]
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e).lower():
+            return []
+        raise
+
+
 def build_label_payload(conn: sqlite3.Connection, label: str) -> dict:
     run_count = conn.execute(
         "SELECT COUNT(*) FROM run WHERE tuning_label = ?", (label,)
@@ -267,6 +289,7 @@ def build_label_payload(conn: sqlite3.Connection, label: str) -> dict:
         "time_to_l25": time_to_level(conn, label, 25),
         "time_to_l40": time_to_level(conn, label, 40),
         "time_to_l60": time_to_level(conn, label, 60),
+        "loadout": final_loadout(conn, label),
     }
 
 
@@ -338,6 +361,7 @@ th {{ color: var(--muted); font-weight: 500; }}
     <button class=\"tab\" data-tab=\"progression\">Progression</button>
     <button class=\"tab\" data-tab=\"arena\">Arena</button>
     <button class=\"tab\" data-tab=\"combat\">Combat</button>
+    <button class=\"tab\" data-tab=\"loadout\">Loadout</button>
     <button class=\"tab\" data-tab=\"items\">Items</button>
     <button class=\"tab\" data-tab=\"bestiary\">Bestiary</button>
     <button class=\"tab\" data-tab=\"ab\">A/B Compare</button>
@@ -398,6 +422,32 @@ th {{ color: var(--muted); font-weight: 500; }}
         <div id=\"boss-table\"></div></div>
       <div class=\"card\"><h2>Mob encounters table</h2>
         <div id=\"mob-table\"></div></div>
+    </div>
+  </section>
+
+  <section id=\"tab-loadout\" class=\"tab-content\">
+    <div class=\"card\"><h2>Per-run final loadout</h2>
+      <div class=\"desc\">The END-STATE gear a single run was wearing plus the inventory it was holding when the sim ended (from the <code>final_item</code> table). Pick a run below.</div>
+      <div class=\"controls\" style=\"margin:0 0 12px\">
+        <label>run: <select id=\"loadout-run-select\"></select></label>
+      </div>
+      <div id=\"loadout-drilldown\"></div></div>
+    <div class=\"grid\">
+      <div class=\"card\"><h2>Avg equipped gear power by class</h2>
+        <div class=\"desc\">Effective power (base + enchant) of the weapon/armor/ring runs ended with, averaged by class.</div>
+        <canvas id=\"chart-loadout-power\"></canvas></div>
+      <div class=\"card\"><h2>Equipped rarity distribution by class</h2>
+        <div class=\"desc\">Rarity of every equipped slot a run ended with, stacked per class.</div>
+        <canvas id=\"chart-loadout-rarity\"></canvas></div>
+      <div class=\"card\"><h2>Avg inventory size by class</h2>
+        <div class=\"desc\">Number of held (non-equipped) items at run end, averaged by class.</div>
+        <canvas id=\"chart-loadout-invsize\"></canvas></div>
+      <div class=\"card\"><h2>Most common ending weapons</h2>
+        <div id=\"loadout-top-weapon\"></div></div>
+      <div class=\"card\"><h2>Most common ending armor</h2>
+        <div id=\"loadout-top-armor\"></div></div>
+      <div class=\"card\"><h2>Most common ending rings</h2>
+        <div id=\"loadout-top-ring\"></div></div>
     </div>
   </section>
 
@@ -746,6 +796,112 @@ function renderCombat(payload) {{
   document.getElementById('mob-table').innerHTML = tableHTML(mob, mobCols, mobHeaders);
 }}
 
+function renderLoadout(payload) {{
+  const rows = payload.loadout || [];
+  ['chart-loadout-power','chart-loadout-rarity','chart-loadout-invsize'].forEach(id => {{
+    if (chartsByLabel[id]) {{ chartsByLabel[id].destroy(); delete chartsByLabel[id]; }}
+  }});
+  const sel = document.getElementById('loadout-run-select');
+  const drill = document.getElementById('loadout-drilldown');
+
+  // group flat rows by run_id
+  const runs = {{}};
+  rows.forEach(r => {{
+    if (!runs[r.run_id]) runs[r.run_id] = {{
+      run_id: r.run_id, class: r.class, race: r.race,
+      strategy: r.strategy, seed: r.seed, equipped: [], inventory: [],
+    }};
+    (r.equipped ? runs[r.run_id].equipped : runs[r.run_id].inventory).push(r);
+  }});
+  const runIds = Object.keys(runs).sort((a, b) => a - b);
+
+  // per-run drill-down + selector
+  sel.innerHTML = '';
+  if (!runIds.length) {{
+    drill.innerHTML = '<div class=\"empty\">(no final-loadout data for this label)</div>';
+  }} else {{
+    runIds.forEach(rid => {{
+      const r = runs[rid];
+      sel.add(new Option(`${{r.class}} ${{r.race}} · ${{r.strategy}} · seed ${{r.seed}} (run ${{rid}})`, rid));
+    }});
+    const drawDrill = (rid) => {{
+      const r = runs[rid];
+      if (!r) {{ drill.innerHTML = ''; return; }}
+      const slotRow = (slot) => {{
+        const it = r.equipped.find(x => x.slot === slot);
+        if (!it) return `<tr><td>${{slot}}</td><td colspan=\"4\" class=\"empty\">(none)</td></tr>`;
+        return `<tr><td>${{slot}}</td><td>${{it.name}}</td><td>${{it.rarity}}</td><td>${{it.power}}</td><td>+${{it.enchant_level}}</td></tr>`;
+      }};
+      const eq = `<table><thead><tr><th>Slot</th><th>Name</th><th>Rarity</th><th>Power</th><th>Enchant</th></tr></thead><tbody>${{['Weapon','Armor','Ring'].map(slotRow).join('')}}</tbody></table>`;
+      const inv = r.inventory.length
+        ? `<table><thead><tr><th>Slot</th><th>Name</th><th>Rarity</th><th>Power</th><th>Enchant</th></tr></thead><tbody>${{r.inventory.map(it => `<tr><td>${{it.slot}}</td><td>${{it.name}}</td><td>${{it.rarity}}</td><td>${{it.power}}</td><td>+${{it.enchant_level}}</td></tr>`).join('')}}</tbody></table>`
+        : '<div class=\"empty\">(empty inventory)</div>';
+      drill.innerHTML = `<h2 style=\"margin:6px 0\">Equipped</h2>${{eq}}<h2 style=\"margin:14px 0 6px\">Inventory (${{r.inventory.length}})</h2>${{inv}}`;
+    }};
+    sel.onchange = () => drawDrill(sel.value);
+    drawDrill(runIds[0]);
+  }}
+
+  // aggregates by class
+  const classes = [...new Set(rows.map(r => r.class))].sort();
+  const eqRows = rows.filter(r => r.equipped);
+
+  const avgPower = classes.map(cls => {{
+    const subset = eqRows.filter(r => r.class === cls);
+    if (!subset.length) return null;
+    return +(subset.reduce((s, r) => s + r.power + r.enchant_level, 0) / subset.length).toFixed(1);
+  }});
+  chartsByLabel['chart-loadout-power'] = setupChart(
+    document.getElementById('chart-loadout-power'), 'bar',
+    {{ labels: classes, datasets: [{{ label: 'avg effective power', data: avgPower,
+       backgroundColor: classes.map(c => getColor(c, 0.7)) }}] }},
+    {{ plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true,
+      title: {{ display: true, text: 'avg equipped power', color: '#8b949e' }} }} }} }});
+
+  chartsByLabel['chart-loadout-rarity'] = setupChart(
+    document.getElementById('chart-loadout-rarity'), 'bar',
+    {{ labels: classes, datasets: RARITY_ORDER.map(rar => ({{
+      label: rar,
+      data: classes.map(cls => eqRows.filter(r => r.class === cls && r.rarity === rar).length),
+      backgroundColor: RARITY_COLOR[rar] || '#8b949e',
+    }})) }},
+    {{ scales: {{ x: {{ stacked: true }}, y: {{ stacked: true, beginAtZero: true,
+      title: {{ display: true, text: 'equipped items', color: '#8b949e' }} }} }} }});
+
+  const invByRun = {{}};
+  rows.forEach(r => {{ if (!r.equipped) invByRun[r.run_id] = (invByRun[r.run_id] || 0) + 1; }});
+  const avgInv = classes.map(cls => {{
+    const rids = runIds.filter(rid => runs[rid].class === cls);
+    if (!rids.length) return null;
+    return +(rids.reduce((s, rid) => s + (invByRun[rid] || 0), 0) / rids.length).toFixed(1);
+  }});
+  chartsByLabel['chart-loadout-invsize'] = setupChart(
+    document.getElementById('chart-loadout-invsize'), 'bar',
+    {{ labels: classes, datasets: [{{ label: 'avg inventory size', data: avgInv,
+       backgroundColor: classes.map(c => getColor(c, 0.7)) }}] }},
+    {{ plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true,
+      title: {{ display: true, text: 'avg items held', color: '#8b949e' }} }} }} }});
+
+  const topTable = (slot, elId) => {{
+    const counts = {{}};
+    eqRows.filter(r => r.slot === slot).forEach(r => {{
+      const k = r.name + '|' + r.rarity;
+      counts[k] = (counts[k] || 0) + 1;
+    }});
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const el = document.getElementById(elId);
+    if (!sorted.length) {{ el.innerHTML = '<div class=\"empty\">(none equipped)</div>'; return; }}
+    const body = sorted.map(([k, n]) => {{
+      const parts = k.split('|');
+      return `<tr><td>${{parts[0]}}</td><td>${{parts[1]}}</td><td>${{n}}</td></tr>`;
+    }}).join('');
+    el.innerHTML = `<table><thead><tr><th>Name</th><th>Rarity</th><th>Count</th></tr></thead><tbody>${{body}}</tbody></table>`;
+  }};
+  topTable('Weapon', 'loadout-top-weapon');
+  topTable('Armor', 'loadout-top-armor');
+  topTable('Ring', 'loadout-top-ring');
+}}
+
 function renderItems() {{
   const cat = DATA.catalog;
   const unavail = document.getElementById('items-unavailable');
@@ -1039,6 +1195,7 @@ function render(primaryLabel, compareLabel) {{
   renderProgression(primary);
   renderArena(primary);
   renderCombat(primary);
+  renderLoadout(primary);
   renderAB(primary, compareLabel ? currentPayload(compareLabel) : null);
 }}
 
