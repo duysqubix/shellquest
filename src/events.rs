@@ -2049,7 +2049,11 @@ mod tests {
             danger_level: 3,
             color: crate::zones::ZoneColor::Red,
         };
-        let mut rng = rand::thread_rng();
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+        // Seeded so the multi-turn fight deterministically resolves (kill or
+        // player downed) rather than flaking into a 30-turn draw under thread_rng.
+        let mut rng = StdRng::seed_from_u64(1);
         combat(
             &mut state,
             &mut rng,
