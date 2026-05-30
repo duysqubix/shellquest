@@ -10,6 +10,7 @@ mod messages;
 mod sage;
 mod state;
 mod telemetry;
+pub mod void;
 mod zones;
 
 use character::{Class, Race};
