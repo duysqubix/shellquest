@@ -1,4 +1,4 @@
-<!-- Generated: 2026-04-09 | Updated: 2026-04-09 -->
+<!-- Generated: 2026-04-09 | Updated: 2026-05-29 -->
 
 # shellquest
 
@@ -9,10 +9,11 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 
 | File | Description |
 |------|-------------|
-| `Cargo.toml` | Package manifest — binary is `sq`, deps: clap, colored, dirs, rand, serde, serde_json, chrono |
+| `Cargo.toml` | Package manifest — binary is `sq`, deps: clap, colored, dirs, rand, serde, serde_json, chrono, ureq, strsim |
 | `Dockerfile` | Multi-stage build: rust builder + debian-slim runtime with tini entrypoint |
 | `install.sh` | Curl-pipe installer: clones repo, `cargo install`, auto-installs shell hook |
-| `publish.sh` | Release script: version bump, git push, `gh release`, `cargo publish` |
+| `publish.sh` | Release script: version bump, commit, push, `gh release` (notes from `release-notes/vX.Y.Z.md`), `cargo publish` |
+| `justfile` | Task runner — `just build`/`test`/`ship` + `just sim-*` recipes that drive the balance simulator |
 | `README.md` | User-facing documentation |
 | `LICENSE` | MIT license |
 
@@ -21,6 +22,9 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 | Directory | Purpose |
 |-----------|---------|
 | `src/` | All Rust source code (see `src/AGENTS.md`) |
+| `dev-tools/balance-sim/` | Dev-only Python balance simulator (see its `AGENTS.md`) — NOT shipped in the binary |
+| `release-notes/` | One `vX.Y.Z.md` per release; canonical source for GitHub release notes (see `release-notes/README.md`) |
+| `docs/` | Balance analysis + research notes (`balance-analysis.md`, `docs/research/`) — design rationale, not code |
 
 ## For AI Agents
 
@@ -47,8 +51,12 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
   - Test class messages: run `sq tick --cmd "git commit" --cwd "." --exit-code 0` then `sq journal` — message should reflect your class flavor (Wizard: grimoire/arcane, Warrior: battle-scroll, etc.)
   - Test zone XP scaling: run ticks from `$HOME` (danger 1) vs `/tmp` (danger 3) — XP in journal should be ~1.5× higher in /tmp
   - Test sage update notification: set `"last_announced_version": null` in save.json and `"latest_version": "99.0.0"` — sage should appear on next tick guaranteed (without the 1/50 random gate)
-  - **Arena QA**:
-    - `sq arena` (interactive) — verify tier selection, combat loop, and cash-out.
+  - Test enchant: `cd ~ && sq enchant <equipped item>` — verify +1 power, gold deducted, `[Enchanted +N]` tag (max +5). Wizards can enchant from any directory; other classes only from `$HOME`.
+  - Test identify: `sq id <name>` from any directory — read-only card, no save write, no tick consumed.
+  - Test junk sweep: `cd ~ && sq sell junk` — sells all Common + Uncommon, never Rare and up.
+  - **Arena QA** (combat is paced ~1.5s/line + wave-escalating since v1.24):
+    - `sq arena` (interactive) — verify tier selection, paced combat loop, banked-gold preview, and cash-out.
+    - `SQ_NO_PACING=1 sq arena` — disables the 1.5s pacing for fast manual QA (combat resolves instantly).
     - `echo "y" | sq arena` — verify rejection of non-interactive input (should fail if not a TTY).
     - `sq arena` -> select tier -> cash out at Round 1 — verify gold/XP gain and journal entry.
     - `sq arena` -> get KO'd — verify loss of entry fee, HP set to 25% of max HP at entry, "Knocked out" CLI summary, and journal entry "Arena KO in {tier} after N rounds. Fee: N gold."
@@ -70,6 +78,13 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - **Anti-pattern**: 7 releases in one session (as happened during the v1.18→v1.22 balance overhaul). That cadence felt fragmented; future overhauls should ship as 1-2 atomic releases per arc, not 5-7.
 - **Conventional commits remain unchanged** — every commit is still atomic and properly typed (`feat:`, `fix:`, etc). The change is purely about *when* to invoke `publish.sh`, not how to structure individual commits on master.
 
+### Release Notes Workflow
+- Write `release-notes/vX.Y.Z.md` **before** running `./publish.sh`. The script auto-detects it via the convention path and passes it to `gh release create --notes-file`; missing file → falls back to `--generate-notes` and warns.
+- `release-notes/` is the canonical source. Re-sync GitHub at any time: `gh release edit vX.Y.Z --notes-file release-notes/vX.Y.Z.md`. See `release-notes/README.md` for the voice rules.
+
+### Balance Tuning
+- Gameplay numbers are validated empirically by the simulator in `dev-tools/balance-sim/` (Python, dev-only). Use `just sim-*` recipes to run sweeps before/after a balance change; never tune by feel alone.
+
 ## Dependencies
 
 ### External
@@ -79,5 +94,7 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - `rand` 0.8.x — RNG for combat, loot, and event probabilities
 - `serde` / `serde_json` 1.x — Save file serialization
 - `chrono` 0.4.x — Timestamps for journal entries and last tick tracking
+- `ureq` 2.x — Blocking HTTP client for the sage's crates.io version check
+- `strsim` 0.11.x — Fuzzy string matching for item-name lookup (`equip`/`sell`/`identify`)
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
