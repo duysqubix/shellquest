@@ -1,4 +1,4 @@
-<!-- Generated: 2026-04-09 | Updated: 2026-05-29 -->
+<!-- Generated: 2026-04-09 | Updated: 2026-05-30 -->
 
 # shellquest
 
@@ -34,6 +34,8 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - Shell hook uses `precmd`/`PROMPT_COMMAND`/`fish_postexec` to call `sq tick` synchronously after every command
 - All game output goes to **stderr** (`eprintln!`) so it doesn't interfere with piped stdout
 - The `tick` subcommand must remain fast and silent on error (no character = silent return) — **unless `SQ_DEBUG` is set** (dev/sim diagnostics), in which case tick logs load/save failures with context and exits non-zero. Default behavior (SQ_DEBUG unset) is unchanged.
+- **Read-only catalog commands**: `sq items --json` and `sq bestiary --json` dump the static loot tables / boss roster + monster bestiary as JSON (no save access, any cwd, exit 0). The balance-sim dashboard consumes them for its Items/Bestiary tabs. Source of truth = `loot.rs` / `boss.rs` / `events.rs` const data.
+- **Combat telemetry**: under `SQ_DEBUG`, `combat()` and `tick_boss()` emit one `SQ_ENCOUNTER` line per resolved fight to stderr (`src/telemetry.rs` owns the helper). The sim parses these. Silent when `SQ_DEBUG` unset.
 
 ### Testing Requirements
 - `cargo build` to verify compilation (`cargo clippy` is not installed in the current toolchain — skip it)

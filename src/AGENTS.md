@@ -1,34 +1,35 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-04-09 | Updated: 2026-05-29 -->
+<!-- Generated: 2026-04-09 | Updated: 2026-05-30 -->
 
 # src
 
 ## Purpose
-All Rust source code for the `sq` binary. Flat module structure — `main.rs` declares every module (no `lib.rs`) and implements CLI commands; each module owns a distinct game domain. ~12.7k lines across 13 modules. Overworld combat lives in `events.rs`; the arena is a separate, larger combat system in `arena.rs`.
+All Rust source code for the `sq` binary. Flat module structure — `main.rs` declares every module (no `lib.rs`) and implements CLI commands; each module owns a distinct game domain. ~16.8k lines across 14 modules. Overworld combat lives in `events.rs`; the arena is a separate, larger combat system in `arena.rs`; `telemetry.rs` carries the `SQ_DEBUG` diagnostics channel.
 
 ## Key Files
 
 | File | Lines | Description |
 |------|------:|-------------|
-| `main.rs` | 2689 | Entry point: clap `Commands` enum (22 subcommands), handlers, shell-hook codegen/install. Home-dir guards for `shop`/`buy`/`sell`/`enchant`. `cmd_tick` is silent if no save. |
-| `arena.rs` | 2636 | Arena system: 5 tiers, `ArenaCombatTuning`, wave escalation (`arena_wave`), DEX-driven miss math (`compute_player_hit`/`compute_enemy_hit_at_round`), 1.5s pacing (`SQ_NO_PACING` opt-out), transactional commit + chest overflow. Owns its own combat math, separate from `events.rs`. |
-| `events.rs` | 1647 | Overworld engine: `tick()` routes 30+ command handlers; HP-pool **multi-turn** combat (≤30 turns/tick); `MonsterTier` enum + 40-monster `MONSTER_POOL`; `tiers_for_danger()` zone gating; `scaled_xp`/affinity XP multipliers. Boss hooks via `boss::maybe_spawn`/`tick_boss`. |
-| `display.rs` | 1111 | Terminal rendering (all `eprintln!`): color helpers, rarity-tiered loot boxes, status sheet with ATK/DEF gear breakdown, inventory grouped by slot, journal re-coloring by `EventType`. |
-| `character.rs` | 1065 | Core data model: `Character`, `Class`(5), `Race`(5), `Subclass`(15), `Item`(+`enchant_level`), `ItemSlot`, `Rarity`. Stat/attack/defense math, XP curve (`MAX_LEVEL` 150), prestige, `signature_bonus` (class passives). |
-| `messages.rs` | 875 | Class-flavored message templates. `type Msg = (String, String)` — every fn returns `(plain, colored)`. 5 class variants per event. |
-| `help.rs` | 731 | In-game manual: topic registry, fuzzy topic lookup, rendered `sq help [topic]` pages. |
-| `loot.rs` | 623 | Loot tables: **160 items** (5 rarities × 32; 8 per slot). Drop weights 70/25/4/0.99/0.01. Power multipliers 5/8/13/22/35. `item_price = (power+1)×multiplier`. Enchant math. |
-| `boss.rs` | 283 | 5-boss roster, `maybe_spawn()` (**1/500** per tick), `tick_boss()` HP-pool combat. Shares crit formula `max(13, 20−INT/8)`. |
-| `sage.rs` | 223 | Update notifier: crates.io check every 24h (via `ureq`), guaranteed once on first new-version tick, then 1/50 random (max 3×/day). |
-| `state.rs` | 215 | `GameState` (character + journal + caches + `active_boss` + `permadeath`). Atomic save: temp-file + rename to `~/.shellquest/save.json`. |
-| `zones.rs` | 538 | Path→zone mapping (33 themed filesystem zones, from `$HOME`=Home Village to `node_modules`=Abyss) with danger levels + colors. |
+| `arena.rs` | 2831 | Arena system: 5 tiers, `ArenaCombatTuning`, wave escalation (`arena_wave`), DEX-driven miss math (`compute_player_hit`/`compute_enemy_hit_at_round`), 1.5s pacing (`SQ_NO_PACING` opt-out), transactional commit + chest overflow. Owns its own combat math, separate from `events.rs`. |
+| `main.rs` | 2792 | Entry point: clap `Commands` enum (**24** subcommands incl. read-only `Items {--json}` / `Bestiary {--json}` catalog dumps), handlers, shell-hook codegen/install. Home-dir guards for `shop`/`buy`/`sell`/`enchant`. `cmd_tick` is silent if no save (logs + exits non-zero under `SQ_DEBUG`). |
+| `events.rs` | 2733 | Overworld engine: `tick()` routes **~39 command arms / 37 handlers** (first word, lowercased) over ~140 recognized commands; `affinity_multiplier()` per-class +50% XP; HP-pool **multi-turn** combat (≤30 turns/tick); `MonsterTier` + 40-monster `MONSTER_POOL`; `tiers_for_danger()` gating; `monster_bestiary()`/`tier_danger()`/`elite_modifiers()` feed `sq bestiary`. Emits `SQ_ENCOUNTER` per fight under `SQ_DEBUG`. Boss hooks via `boss::maybe_spawn`/`tick_boss`. |
+| `messages.rs` | 2067 | Class-flavored message templates. `type Msg = (String, String)` — every fn returns `(plain, colored)`. 5 class variants per event. |
+| `loot.rs` | 1516 | Loot tables: **160 items** (5 rarities × 32; 8 per slot). Drop weights 70/25/4/0.99/0.01. Power mults 5/8/13/22/35. `item_price=(power+1)×mult`. `catalog()`/`CatalogEntry`/`rarity_weights()`/`rarity_multiplier()` feed `sq items --json`. |
+| `display.rs` | 1360 | Terminal rendering (all `eprintln!`): color helpers, rarity-tiered loot boxes, status sheet with ATK/DEF gear breakdown, inventory grouped by slot, journal re-coloring by `EventType`. |
+| `character.rs` | 1163 | Core data model: `Character`, `Class`(5), `Race`(5), `Subclass`(15), `Item`(+`enchant_level`), `ItemSlot`, `Rarity`. Stat/attack/defense math, XP curve (`MAX_LEVEL` 150), prestige, `signature_bonus` (class passives). |
+| `help.rs` | 723 | In-game manual: topic registry, fuzzy topic lookup, rendered `sq help [topic]` pages. |
+| `zones.rs` | 538 | Path→zone mapping (**33 themed zones**, `$HOME`=Home Village .. `node_modules`=Abyss) with danger levels + colors. `has_segment` (case-insensitive) vs `has_exact_segment` (case-sensitive, for capitalized user dirs like `Documents`). `zone_from_path()` is the entry point. |
+| `boss.rs` | 470 | 5-boss roster (`BOSS_ROSTER`, HP **200–240** post-rebalance), `maybe_spawn()` (**1/500**/tick = `BOSS_SPAWN_RATE`), `tick_boss()` HP-pool combat (one exchange/tick; `dmg_dealt_total`/`dmg_taken_total` accumulate across ticks, emit `SQ_ENCOUNTER` at win/loss/flee). `BossInfo`/`boss_roster()` feed `sq bestiary`. |
+| `sage.rs` | 230 | Update notifier: crates.io check every 24h (via `ureq`), guaranteed once on first new-version tick, then 1/50 random (max 3×/day). |
+| `state.rs` | 212 | `GameState` (character + journal + caches + `active_boss` + `permadeath`). Atomic save: temp-file + rename to `~/.shellquest/save.json`. |
+| `telemetry.rs` | 98 | **`SQ_DEBUG` diagnostics channel** (declared `mod telemetry` in `main.rs`). `sq_debug_enabled()`, `emit_encounter()` (prints one `SQ_ENCOUNTER` line per resolved fight to stderr, only when `SQ_DEBUG` set), hex enemy-name encoder. Consumed by the balance sim. |
 | `journal.rs` | 73 | `JournalEntry` + `EventType` enum (Combat/Loot/Travel/Discovery/LevelUp/Death/Quest/Craft/Tournament), capped at 100. |
 
 ## For AI Agents
 
 ### Working In This Directory
 - All modules declared in `main.rs` with `mod` — no `lib.rs` or nested modules
-- Hotspots (by size/complexity): `main.rs` (2689), `arena.rs` (2636), `events.rs` (1647), `display.rs` (1111), `character.rs` (1065)
+- Hotspots (by size/complexity): `arena.rs` (2831), `main.rs` (2792), `events.rs` (2733), `messages.rs` (2067), `loot.rs` (1516)
 - Display uses a two-pass pattern: a `plain` string for journal storage, a `colored` string for terminal output — both must stay in sync or journal history and screen diverge
 - Loot tables in `loot.rs` are `const` arrays — add items by appending to the right rarity tier (keep 8-per-slot symmetry)
 - `tick()` in `events.rs` matches on the base command name (first word, lowercased) and routes to handlers
@@ -38,14 +39,14 @@ All Rust source code for the `sq` binary. Flat module structure — `main.rs` de
 - **Arena Transactions**: built as an `ArenaCommit`, applied in one atomic save. Runs are not resumable; `Ctrl+C` mid-run = full rollback (including entry fee).
 
 ### Key Public Types (know these before editing)
-- `MonsterTier` (`events.rs:785`) — Vermin/Bruiser/Hunter/Horror/BossAdjacent
+- `MonsterTier` (`events.rs:1197`) — Vermin/Bruiser/Hunter/Horror/BossAdjacent
 - `ArenaTier` (`arena.rs:12`) + `ArenaCombatTuning` (`arena.rs:486`) — tier table + all arena combat constants
 - `Class`/`Race`/`Subclass`/`Rarity`/`ItemSlot`/`Character` (`character.rs:5-244`) — shared data model
 - `GameState` (`state.rs:10`) — the persisted save root
 
 ### Testing Requirements
 - Tests are **in-file** `#[cfg(test)] mod tests` — no top-level `tests/` integration dir.
-- **404 `#[test]` total after the expanded-zone branch.** Heaviest coverage remains arena, main, character, and events; `zones.rs` now has 35 in-file tests covering the expanded map.
+- **405 `#[test]` total.** Heaviest coverage: arena ~103, main ~67, character ~63, events ~49; `zones.rs` has 35 (expanded map), `telemetry.rs` 2. Add a guard test when adding a balance constant.
 - `cargo build` (or `cargo build --bin sq`) to compile; `cargo test` for the suite. `cargo clippy` is **not** installed in this toolchain — skip it.
 - Cargo cache quirk + full CLI/Arena manual-QA checklist live in the parent `../AGENTS.md` — don't duplicate here. Arena tests rely on seeded `StdRng`; combat fns take `&mut impl Rng` so they're deterministic in tests.
 - When adding a balance constant, add or update its guard test in `arena.rs` `mod tests` (the wave/tuning invariants are pinned there).

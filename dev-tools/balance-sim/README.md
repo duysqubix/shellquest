@@ -73,18 +73,25 @@ produces a Mach-O binary that can't run in the Linux container). `report` /
 file next to `runs.db`. Open it locally in any browser (`file:///.../dashboard.html`).
 
 The dashboard pulls every `tuning_label` from the database and gives you
-four tabs:
+seven tabs:
 
 - **Summary** — overview tiles + lifetime stats table (class × strategy)
 - **Progression** — line charts of level / attack / defense / gold over tick number
 - **Arena** — survival rate, average rounds reached, damage taken, enemy crit
   rate, all bucketed by tier × class
+- **Combat** — boss win/loss/flee rate, mob outcomes, and damage dealt/taken
+  split overworld-mob vs boss (from the `overworld_encounter` telemetry)
+- **Items** — static item-catalog distributions (rarity, power, slot, price)
+  sourced from `sq items --json`; renders even with no sim data
+- **Bestiary** — static monster bestiary (by tier) + boss roster, tier→danger
+  gating and elite modifiers, sourced from `sq bestiary --json`
 - **A/B Compare** — pick a second `tuning_label` in the header dropdown to
   diff two tuning configs side-by-side (the "did v1.25 actually improve
   over v1.24?" view)
 
 Charts use Chart.js loaded from CDN — no other JS deps. Refresh the dashboard
-after new sims by re-running `python3 dashboard.py`.
+after new sims by re-running `just dashboard` (the Items/Bestiary tabs need a
+built `sq` binary; `cargo build --bin sq` first).
 
 ## Layout
 
