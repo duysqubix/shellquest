@@ -30,14 +30,16 @@ pub fn group_inventory_by_slot(items: &[Item]) -> Vec<InventoryGroup<'_>> {
     DISPLAY_ORDER
         .iter()
         .map(|slot| {
-            let mut bucket: Vec<&Item> =
-                items.iter().filter(|i| i.slot == *slot).collect();
+            let mut bucket: Vec<&Item> = items.iter().filter(|i| i.slot == *slot).collect();
             bucket.sort_by(|a, b| {
                 rarity_rank(&b.rarity)
                     .cmp(&rarity_rank(&a.rarity))
                     .then(b.power.cmp(&a.power))
             });
-            InventoryGroup { slot: *slot, items: bucket }
+            InventoryGroup {
+                slot: *slot,
+                items: bucket,
+            }
         })
         .filter(|g| !g.items.is_empty())
         .collect()
@@ -45,24 +47,46 @@ pub fn group_inventory_by_slot(items: &[Item]) -> Vec<InventoryGroup<'_>> {
 
 // ── Rich inline color helpers (MUD-style) ──
 
-pub fn color_damage(n: i32) -> String { format!("{}", format!("{}", n).red().bold()) }
-pub fn color_xp(n: u32) -> String { format!("+{} {}", format!("{}", n).cyan().bold(), "XP".cyan()) }
-pub fn color_gold(n: u32) -> String { format!("+{} {}", format!("{}", n).yellow().bold(), "gold".yellow()) }
+pub fn color_damage(n: i32) -> String {
+    format!("{}", format!("{}", n).red().bold())
+}
+pub fn color_xp(n: u32) -> String {
+    format!("+{} {}", format!("{}", n).cyan().bold(), "XP".cyan())
+}
+pub fn color_gold(n: u32) -> String {
+    format!("+{} {}", format!("{}", n).yellow().bold(), "gold".yellow())
+}
 pub fn color_hp(hp: i32, max_hp: i32) -> String {
     let pct = hp as f32 / max_hp as f32;
     let hp_str = format!("{}/{}", hp, max_hp);
-    if pct > 0.6 { format!("{}: {}", "HP".bold(), hp_str.green()) }
-    else if pct > 0.3 { format!("{}: {}", "HP".bold(), hp_str.yellow()) }
-    else { format!("{}: {}", "HP".bold(), hp_str.red().bold()) }
+    if pct > 0.6 {
+        format!("{}: {}", "HP".bold(), hp_str.green())
+    } else if pct > 0.3 {
+        format!("{}: {}", "HP".bold(), hp_str.yellow())
+    } else {
+        format!("{}: {}", "HP".bold(), hp_str.red().bold())
+    }
 }
-pub fn color_monster(name: &str) -> String { format!("{}", name.red().bold()) }
+pub fn color_monster(name: &str) -> String {
+    format!("{}", name.red().bold())
+}
 pub fn color_item_inline(name: &str, rarity: &Rarity) -> String {
     match rarity {
         Rarity::Common => format!("{}", name.white()),
         Rarity::Uncommon => format!("{}", name.dimmed().bold()),
         Rarity::Rare => format!("{}", name.green().bold()),
-        Rarity::Epic => format!("{}{}{}", "★".magenta(), name.magenta().bold(), "★".magenta()),
-        Rarity::Legendary => format!("{}{}{}", "✦".yellow().bold(), name.yellow().bold().on_black(), "✦".yellow().bold()),
+        Rarity::Epic => format!(
+            "{}{}{}",
+            "★".magenta(),
+            name.magenta().bold(),
+            "★".magenta()
+        ),
+        Rarity::Legendary => format!(
+            "{}{}{}",
+            "✦".yellow().bold(),
+            name.yellow().bold().on_black(),
+            "✦".yellow().bold()
+        ),
     }
 }
 pub fn color_zone(name: &str, zone: &Zone) -> String {
@@ -132,25 +156,50 @@ pub fn print_loot(msg: &str, rarity: &Rarity) {
             eprintln!("{} {} {}", "📦".bold(), "~".dimmed(), msg.dimmed().bold());
         }
         Rarity::Rare => {
-            eprintln!("{} {} {} {}", "📦".bold(), "~~".green().bold(), msg.green().bold(), "~~".green().bold());
+            eprintln!(
+                "{} {} {} {}",
+                "📦".bold(),
+                "~~".green().bold(),
+                msg.green().bold(),
+                "~~".green().bold()
+            );
         }
         Rarity::Epic => {
-            eprintln!("{} {} {} {}", "💎".bold(), "★·.·".magenta(), msg.magenta().bold().italic(), "·.·★".magenta());
+            eprintln!(
+                "{} {} {} {}",
+                "💎".bold(),
+                "★·.·".magenta(),
+                msg.magenta().bold().italic(),
+                "·.·★".magenta()
+            );
         }
         Rarity::Legendary => {
-            eprintln!("{}", "╔═══════════════════════════════════════════╗".yellow().bold());
-            eprintln!("{} {} {} {}", "║".yellow().bold(), "✦✦✦".yellow().bold().on_black(), msg.yellow().bold().on_black(), "✦✦✦".yellow().bold().on_black());
-            eprintln!("{}", "╚═══════════════════════════════════════════╝".yellow().bold());
+            eprintln!(
+                "{}",
+                "╔═══════════════════════════════════════════╗"
+                    .yellow()
+                    .bold()
+            );
+            eprintln!(
+                "{} {} {} {}",
+                "║".yellow().bold(),
+                "✦✦✦".yellow().bold().on_black(),
+                msg.yellow().bold().on_black(),
+                "✦✦✦".yellow().bold().on_black()
+            );
+            eprintln!(
+                "{}",
+                "╚═══════════════════════════════════════════╝"
+                    .yellow()
+                    .bold()
+            );
         }
     }
 }
 
 fn format_item_rarity(name: &str, rarity: &Rarity) -> (String, String) {
     match rarity {
-        Rarity::Common => (
-            name.white().to_string(),
-            "[Common]".dimmed().to_string(),
-        ),
+        Rarity::Common => (name.white().to_string(), "[Common]".dimmed().to_string()),
         Rarity::Uncommon => (
             name.dimmed().bold().to_string(),
             "[Uncommon]".dimmed().to_string(),
@@ -160,11 +209,21 @@ fn format_item_rarity(name: &str, rarity: &Rarity) -> (String, String) {
             format!("{}", "[Rare]".green().bold()),
         ),
         Rarity::Epic => (
-            format!("{}{}{}", "★ ".magenta(), name.magenta().bold().italic(), " ★".magenta()),
+            format!(
+                "{}{}{}",
+                "★ ".magenta(),
+                name.magenta().bold().italic(),
+                " ★".magenta()
+            ),
             format!("{}", "[Epic]".magenta().bold()),
         ),
         Rarity::Legendary => (
-            format!("{}{}{}", "✦ ".yellow().bold(), name.yellow().bold().on_black(), " ✦".yellow().bold()),
+            format!(
+                "{}{}{}",
+                "✦ ".yellow().bold(),
+                name.yellow().bold().on_black(),
+                " ✦".yellow().bold()
+            ),
             format!("{}", "[LEGENDARY]".yellow().bold().on_black()),
         ),
     }
@@ -239,12 +298,19 @@ pub fn print_status(char: &Character, permadeath: bool) {
     let race_colored = format!("{}", char.race).magenta();
 
     println!();
-    println!("{}", "┌──────────────────────────────────────────┐".dimmed());
+    println!(
+        "{}",
+        "┌──────────────────────────────────────────┐".dimmed()
+    );
     let subclass_str = char.subclass.as_ref().map_or(String::from(" "), |s| {
         format!(" {} ", format!("{}", s).magenta().bold())
     });
     let prestige_str = if char.prestige > 0 {
-        format!(" [{}{}]", "P".yellow().bold(), format!("{}", char.prestige).yellow().bold())
+        format!(
+            " [{}{}]",
+            "P".yellow().bold(),
+            format!("{}", char.prestige).yellow().bold()
+        )
     } else {
         String::new()
     };
@@ -273,10 +339,7 @@ pub fn print_status(char: &Character, permadeath: bool) {
     } else {
         "red"
     };
-    let bar = format!("{}{}",
-        "█".repeat(filled),
-        "░".repeat(empty)
-    );
+    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
     let bar_colored = match hp_color {
         "green" => bar.green(),
         "yellow" => bar.yellow(),
@@ -295,10 +358,7 @@ pub fn print_status(char: &Character, permadeath: bool) {
     let xp_pct = char.xp as f32 / char.xp_to_next as f32;
     let xp_filled = ((xp_pct * bar_len as f32) as usize).min(bar_len);
     let xp_empty = bar_len - xp_filled;
-    let xp_bar = format!("{}{}",
-        "█".repeat(xp_filled),
-        "░".repeat(xp_empty)
-    );
+    let xp_bar = format!("{}{}", "█".repeat(xp_filled), "░".repeat(xp_empty));
     println!(
         "{}  {} {} {}/{}",
         "│".dimmed(),
@@ -343,21 +403,48 @@ pub fn print_status(char: &Character, permadeath: bool) {
     println!("{}", "│".dimmed());
 
     // Equipment
-    let weapon_str = char.weapon.as_ref().map_or("(none)".dimmed().to_string(), |w| {
-        let (name, rarity) = format_item_rarity(&w.name, &w.rarity);
-        let eff = w.power + w.enchant_level as i32;
-        format!("{} (+{}) {}{}", name, eff, rarity, enchant_tag(w.enchant_level))
-    });
-    let armor_str = char.armor.as_ref().map_or("(none)".dimmed().to_string(), |a| {
-        let (name, rarity) = format_item_rarity(&a.name, &a.rarity);
-        let eff = a.power + a.enchant_level as i32;
-        format!("{} (+{}) {}{}", name, eff, rarity, enchant_tag(a.enchant_level))
-    });
-    let ring_str = char.ring.as_ref().map_or("(none)".dimmed().to_string(), |r| {
-        let (name, rarity) = format_item_rarity(&r.name, &r.rarity);
-        let eff = r.power + r.enchant_level as i32;
-        format!("{} (+{}) {}{}", name, eff, rarity, enchant_tag(r.enchant_level))
-    });
+    let weapon_str = char
+        .weapon
+        .as_ref()
+        .map_or("(none)".dimmed().to_string(), |w| {
+            let (name, rarity) = format_item_rarity(&w.name, &w.rarity);
+            let eff = w.power + w.enchant_level as i32;
+            format!(
+                "{} (+{}) {}{}",
+                name,
+                eff,
+                rarity,
+                enchant_tag(w.enchant_level)
+            )
+        });
+    let armor_str = char
+        .armor
+        .as_ref()
+        .map_or("(none)".dimmed().to_string(), |a| {
+            let (name, rarity) = format_item_rarity(&a.name, &a.rarity);
+            let eff = a.power + a.enchant_level as i32;
+            format!(
+                "{} (+{}) {}{}",
+                name,
+                eff,
+                rarity,
+                enchant_tag(a.enchant_level)
+            )
+        });
+    let ring_str = char
+        .ring
+        .as_ref()
+        .map_or("(none)".dimmed().to_string(), |r| {
+            let (name, rarity) = format_item_rarity(&r.name, &r.rarity);
+            let eff = r.power + r.enchant_level as i32;
+            format!(
+                "{} (+{}) {}{}",
+                name,
+                eff,
+                rarity,
+                enchant_tag(r.enchant_level)
+            )
+        });
 
     println!("{}  {} {}", "│".dimmed(), "Weapon:".bold(), weapon_str);
     println!("{}  {} {}", "│".dimmed(), "Armor: ".bold(), armor_str);
@@ -414,9 +501,17 @@ pub fn print_status(char: &Character, permadeath: bool) {
         );
     }
     if permadeath {
-        println!("{}  {} {}", "│".dimmed(), "Mode:".bold(), "☠ PERMADEATH".red().bold());
+        println!(
+            "{}  {} {}",
+            "│".dimmed(),
+            "Mode:".bold(),
+            "☠ PERMADEATH".red().bold()
+        );
     }
-    println!("{}", "└──────────────────────────────────────────┘".dimmed());
+    println!(
+        "{}",
+        "└──────────────────────────────────────────┘".dimmed()
+    );
     println!();
 }
 
@@ -469,21 +564,13 @@ pub fn render_item_detail(item: &Item, source: ItemSource) -> String {
 
     let (name_styled, _) = format_item_rarity(&item.name, &item.rarity);
     let rarity_styled = rarity_label(&item.rarity);
-    out.push_str(&format!(
-        "  {}        {}\n",
-        "Name:".bold(),
-        name_styled
-    ));
+    out.push_str(&format!("  {}        {}\n", "Name:".bold(), name_styled));
     out.push_str(&format!(
         "  {}        {}\n",
         "Slot:".bold(),
         format!("{}", item.slot)
     ));
-    out.push_str(&format!(
-        "  {}      {}\n",
-        "Rarity:".bold(),
-        rarity_styled
-    ));
+    out.push_str(&format!("  {}      {}\n", "Rarity:".bold(), rarity_styled));
 
     let is_potion = matches!(item.slot, ItemSlot::Potion);
 
@@ -493,11 +580,7 @@ pub fn render_item_detail(item: &Item, source: ItemSource) -> String {
             ItemSlot::Armor | ItemSlot::Ring => "defense",
             ItemSlot::Potion => unreachable!(),
         };
-        out.push_str(&format!(
-            "  {}     {}\n",
-            "Affects:".bold(),
-            affects.cyan()
-        ));
+        out.push_str(&format!("  {}     {}\n", "Affects:".bold(), affects.cyan()));
     }
 
     if is_potion {
@@ -682,79 +765,140 @@ pub fn print_journal(entries: &[JournalEntry]) {
 
 pub fn print_boss_spawn(boss: &crate::boss::Boss) {
     eprintln!();
-    eprintln!("{}", "╔══════════════════════════════════════════════╗".red().bold());
-    eprintln!("{} {} {}",
+    eprintln!(
+        "{}",
+        "╔══════════════════════════════════════════════╗"
+            .red()
+            .bold()
+    );
+    eprintln!(
+        "{} {} {}",
         "║".red().bold(),
-        format!("⚠️  WORLD BOSS: {} HAS APPEARED!", boss.name).red().bold(),
-        "║".red().bold());
-    eprintln!("{} {} {}",
+        format!("⚠️  WORLD BOSS: {} HAS APPEARED!", boss.name)
+            .red()
+            .bold(),
+        "║".red().bold()
+    );
+    eprintln!(
+        "{} {} {}",
         "║".red().bold(),
-        format!("   HP: {}  ATK: {}  — Defeat it for legendary rewards!", boss.max_hp, boss.attack).red(),
-        "║".red().bold());
-    eprintln!("{}", "╚══════════════════════════════════════════════╝".red().bold());
+        format!(
+            "   HP: {}  ATK: {}  — Defeat it for legendary rewards!",
+            boss.max_hp, boss.attack
+        )
+        .red(),
+        "║".red().bold()
+    );
+    eprintln!(
+        "{}",
+        "╚══════════════════════════════════════════════╝"
+            .red()
+            .bold()
+    );
     eprintln!();
 }
 
-pub fn print_boss_tick(boss: &crate::boss::Boss, player_dmg: Option<(i32, bool)>, boss_dmg: Option<i32>) {
+pub fn print_boss_tick(
+    boss: &crate::boss::Boss,
+    player_dmg: Option<(i32, bool)>,
+    boss_dmg: Option<i32>,
+) {
     if let Some((dmg, is_crit)) = player_dmg {
         if is_crit {
-            eprintln!("{} {} {} You strike for {}! (HP: {}/{})",
+            eprintln!(
+                "{} {} {} You strike for {}! (HP: {}/{})",
                 "💀".bold(),
                 "CRITICAL!".yellow().bold(),
                 format!("[BOSS] {}!", boss.name).red().bold(),
                 format!("{}", dmg).yellow().bold(),
-                boss.hp.max(0), boss.max_hp);
+                boss.hp.max(0),
+                boss.max_hp
+            );
         } else {
-            eprintln!("{} {} You strike for {}! (HP: {}/{})",
+            eprintln!(
+                "{} {} You strike for {}! (HP: {}/{})",
                 "💀".bold(),
                 format!("[BOSS] {}!", boss.name).red().bold(),
                 format!("{}", dmg).green().bold(),
-                boss.hp.max(0), boss.max_hp);
+                boss.hp.max(0),
+                boss.max_hp
+            );
         }
     } else {
-        eprintln!("{} {} You swing and miss!",
+        eprintln!(
+            "{} {} You swing and miss!",
             "💀".bold(),
-            format!("[BOSS] {}!", boss.name).red().dimmed());
+            format!("[BOSS] {}!", boss.name).red().dimmed()
+        );
     }
     if let Some(dmg) = boss_dmg {
-        eprintln!("   {} {}",
+        eprintln!(
+            "   {} {}",
             "It retaliates —".red(),
-            format!("took {} damage.", dmg).red().bold());
+            format!("took {} damage.", dmg).red().bold()
+        );
     }
 }
 
 pub fn print_boss_victory(boss: &crate::boss::Boss, xp: u32, gold: u32) {
     eprintln!();
-    eprintln!("{}", "╔══════════════════════════════════════════════╗".yellow().bold());
-    eprintln!("{} {} {}",
+    eprintln!(
+        "{}",
+        "╔══════════════════════════════════════════════╗"
+            .yellow()
+            .bold()
+    );
+    eprintln!(
+        "{} {} {}",
         "║".yellow().bold(),
-        format!("🏆  {} HAS BEEN DEFEATED!", boss.name).yellow().bold(),
-        "║".yellow().bold());
-    eprintln!("{} {} {}",
+        format!("🏆  {} HAS BEEN DEFEATED!", boss.name)
+            .yellow()
+            .bold(),
+        "║".yellow().bold()
+    );
+    eprintln!(
+        "{} {} {}",
         "║".yellow().bold(),
         format!("   +{} XP  +{} gold  — Loot awaits!", xp, gold).yellow(),
-        "║".yellow().bold());
-    eprintln!("{}", "╚══════════════════════════════════════════════╝".yellow().bold());
+        "║".yellow().bold()
+    );
+    eprintln!(
+        "{}",
+        "╚══════════════════════════════════════════════╝"
+            .yellow()
+            .bold()
+    );
     eprintln!();
 }
 
 pub fn print_soul_drain(hp_restored: i32, hp: i32, max_hp: i32) {
-    eprintln!("   {} {} {}",
+    eprintln!(
+        "   {} {} {}",
         "🩸".bold(),
-        format!("Soul drained — +{} HP", hp_restored).magenta().bold(),
-        format!("(HP: {}/{})", hp, max_hp).magenta().dimmed());
+        format!("Soul drained — +{} HP", hp_restored)
+            .magenta()
+            .bold(),
+        format!("(HP: {}/{})", hp, max_hp).magenta().dimmed()
+    );
 }
 
 pub fn print_boss_flee(boss_name: &str, reason: &str) {
-    eprintln!("{} {} {}",
+    eprintln!(
+        "{} {} {}",
         "👻".bold(),
         "[BOSS]".red().dimmed(),
-        format!("{} {}.", boss_name, reason).dimmed().italic());
+        format!("{} {}.", boss_name, reason).dimmed().italic()
+    );
 }
 
 pub fn print_permadeath_eulogy(char: &Character, killer: &str) {
     eprintln!();
-    eprintln!("{}", "☠  ═══════════════════════════════════════════  ☠".red().bold());
+    eprintln!(
+        "{}",
+        "☠  ═══════════════════════════════════════════  ☠"
+            .red()
+            .bold()
+    );
     eprintln!();
     eprintln!("       {}", "Y O U   H A V E   D I E D".red().bold());
     eprintln!();
@@ -764,10 +908,9 @@ pub fn print_permadeath_eulogy(char: &Character, killer: &str) {
         format!("{}", char.race).magenta(),
         format!("{}", char.class).cyan().bold()
     );
-    let subclass_str = char
-        .subclass
-        .as_ref()
-        .map_or(String::new(), |s| format!("{}", s).magenta().bold().to_string());
+    let subclass_str = char.subclass.as_ref().map_or(String::new(), |s| {
+        format!("{}", s).magenta().bold().to_string()
+    });
     if !subclass_str.is_empty() {
         eprintln!("  Known also as the {}.", subclass_str);
     }
@@ -799,7 +942,12 @@ pub fn print_permadeath_eulogy(char: &Character, killer: &str) {
             .dimmed()
             .italic()
     );
-    eprintln!("{}", "☠  ═══════════════════════════════════════════  ☠".red().bold());
+    eprintln!(
+        "{}",
+        "☠  ═══════════════════════════════════════════  ☠"
+            .red()
+            .bold()
+    );
     eprintln!();
 }
 
@@ -809,7 +957,13 @@ mod tests {
     use crate::character::{Item, ItemSlot, Rarity};
 
     fn make_item(name: &str, slot: ItemSlot, power: i32, rarity: Rarity) -> Item {
-        Item { name: name.to_string(), slot, power, rarity, enchant_level: 0 }
+        Item {
+            name: name.to_string(),
+            slot,
+            power,
+            rarity,
+            enchant_level: 0,
+        }
     }
 
     #[test]
@@ -840,7 +994,12 @@ mod tests {
         let slots: Vec<ItemSlot> = groups.iter().map(|g| g.slot).collect();
         assert_eq!(
             slots,
-            vec![ItemSlot::Weapon, ItemSlot::Armor, ItemSlot::Ring, ItemSlot::Potion]
+            vec![
+                ItemSlot::Weapon,
+                ItemSlot::Armor,
+                ItemSlot::Ring,
+                ItemSlot::Potion
+            ]
         );
     }
 
@@ -918,36 +1077,79 @@ mod tests {
         let t3 = enchant_tag(3);
         let t4 = enchant_tag(4);
         let t5 = enchant_tag(5);
-        let distinct = std::collections::HashSet::from([t1.clone(), t2.clone(), t3.clone(), t4.clone(), t5.clone()]);
-        assert_eq!(distinct.len(), 5, "all five tag styles should be visually distinct");
+        let distinct = std::collections::HashSet::from([
+            t1.clone(),
+            t2.clone(),
+            t3.clone(),
+            t4.clone(),
+            t5.clone(),
+        ]);
+        assert_eq!(
+            distinct.len(),
+            5,
+            "all five tag styles should be visually distinct"
+        );
     }
 
-    fn item_with(name: &str, slot: ItemSlot, power: i32, rarity: Rarity, enchant_level: u32) -> Item {
-        Item { name: name.to_string(), slot, power, rarity, enchant_level }
+    fn item_with(
+        name: &str,
+        slot: ItemSlot,
+        power: i32,
+        rarity: Rarity,
+        enchant_level: u32,
+    ) -> Item {
+        Item {
+            name: name.to_string(),
+            slot,
+            power,
+            rarity,
+            enchant_level,
+        }
     }
 
     #[test]
     fn render_item_detail_common_weapon_shows_core_fields() {
         colored::control::set_override(false);
         let it = item_with("Iron Sword", ItemSlot::Weapon, 5, Rarity::Common, 0);
-        let out = render_item_detail(&it, ItemSource::Inventory { index: 3, total: 12 });
+        let out = render_item_detail(
+            &it,
+            ItemSource::Inventory {
+                index: 3,
+                total: 12,
+            },
+        );
         assert!(out.contains("🔍 Item Details"), "header missing:\n{out}");
         assert!(out.contains("Name:"));
         assert!(out.contains("Iron Sword"));
         assert!(out.contains("Slot:"));
         assert!(out.contains("Weapon"));
         assert!(out.contains("Rarity:"));
-        assert!(out.contains("Common"), "rarity word 'Common' must appear:\n{out}");
-        assert!(!out.contains("[Common]"), "rarity should render as plain word, not as bracketed tag:\n{out}");
+        assert!(
+            out.contains("Common"),
+            "rarity word 'Common' must appear:\n{out}"
+        );
+        assert!(
+            !out.contains("[Common]"),
+            "rarity should render as plain word, not as bracketed tag:\n{out}"
+        );
         assert!(out.contains("Base power:"));
         assert!(out.contains("+5"));
         assert!(out.contains("Buy price:"));
         assert!(out.contains("Sell value:"));
         assert!(out.contains("Source:"));
         assert!(out.contains("Inventory slot 3 of 12"));
-        assert!(!out.contains("Enchant:"), "common item should not show Enchant line:\n{out}");
-        assert!(!out.contains("Effective:"), "common item should not show Effective line:\n{out}");
-        assert!(!out.contains("Heals:"), "weapon should not show Heals line:\n{out}");
+        assert!(
+            !out.contains("Enchant:"),
+            "common item should not show Enchant line:\n{out}"
+        );
+        assert!(
+            !out.contains("Effective:"),
+            "common item should not show Effective line:\n{out}"
+        );
+        assert!(
+            !out.contains("Heals:"),
+            "weapon should not show Heals line:\n{out}"
+        );
     }
 
     #[test]
@@ -957,7 +1159,10 @@ mod tests {
         let out = render_item_detail(&it, ItemSource::Equipped);
         assert!(out.contains("Ring of Fortune"));
         assert!(out.contains("Epic"));
-        assert!(!out.contains("[Epic]"), "rarity should render as plain word, not as bracketed tag:\n{out}");
+        assert!(
+            !out.contains("[Epic]"),
+            "rarity should render as plain word, not as bracketed tag:\n{out}"
+        );
         assert!(out.contains("Base power:"));
         assert!(out.contains("+12"));
         assert!(out.contains("Enchant:"));
@@ -976,7 +1181,13 @@ mod tests {
     fn render_item_detail_potion_shows_heals_not_enchant() {
         colored::control::set_override(false);
         let it = item_with("Common Potion", ItemSlot::Potion, 5, Rarity::Common, 0);
-        let out = render_item_detail(&it, ItemSource::Inventory { index: 7, total: 20 });
+        let out = render_item_detail(
+            &it,
+            ItemSource::Inventory {
+                index: 7,
+                total: 20,
+            },
+        );
         assert!(out.contains("Common Potion"));
         assert!(out.contains("Slot:"));
         assert!(out.contains("Potion"));
@@ -984,10 +1195,22 @@ mod tests {
         assert!(out.contains("Buy price:"));
         assert!(out.contains("Sell value:"));
         assert!(out.contains("Inventory slot 7 of 20"));
-        assert!(!out.contains("Base power:"), "potion should not show Base power:\n{out}");
-        assert!(!out.contains("Enchant:"), "potion should not show Enchant:\n{out}");
-        assert!(!out.contains("Effective:"), "potion should not show Effective:\n{out}");
-        assert!(!out.contains("Affects:"), "potion has no affects line (single-use):\n{out}");
+        assert!(
+            !out.contains("Base power:"),
+            "potion should not show Base power:\n{out}"
+        );
+        assert!(
+            !out.contains("Enchant:"),
+            "potion should not show Enchant:\n{out}"
+        );
+        assert!(
+            !out.contains("Effective:"),
+            "potion should not show Effective:\n{out}"
+        );
+        assert!(
+            !out.contains("Affects:"),
+            "potion has no affects line (single-use):\n{out}"
+        );
     }
 
     #[test]
@@ -995,8 +1218,14 @@ mod tests {
         colored::control::set_override(false);
         let it = item_with("Iron Sword", ItemSlot::Weapon, 5, Rarity::Common, 0);
         let out = render_item_detail(&it, ItemSource::Equipped);
-        assert!(out.contains("Affects:"), "weapon must show Affects line:\n{out}");
-        assert!(out.contains("attack_power"), "weapon affects attack_power:\n{out}");
+        assert!(
+            out.contains("Affects:"),
+            "weapon must show Affects line:\n{out}"
+        );
+        assert!(
+            out.contains("attack_power"),
+            "weapon affects attack_power:\n{out}"
+        );
     }
 
     #[test]
@@ -1004,7 +1233,10 @@ mod tests {
         colored::control::set_override(false);
         let it = item_with("Plate Mail", ItemSlot::Armor, 5, Rarity::Common, 0);
         let out = render_item_detail(&it, ItemSource::Equipped);
-        assert!(out.contains("Affects:"), "armor must show Affects line:\n{out}");
+        assert!(
+            out.contains("Affects:"),
+            "armor must show Affects line:\n{out}"
+        );
         assert!(out.contains("defense"), "armor affects defense:\n{out}");
     }
 
@@ -1013,7 +1245,10 @@ mod tests {
         colored::control::set_override(false);
         let it = item_with("Ring of Vigor", ItemSlot::Ring, 5, Rarity::Common, 0);
         let out = render_item_detail(&it, ItemSource::Equipped);
-        assert!(out.contains("Affects:"), "ring must show Affects line:\n{out}");
+        assert!(
+            out.contains("Affects:"),
+            "ring must show Affects line:\n{out}"
+        );
         assert!(out.contains("defense"), "ring affects defense:\n{out}");
     }
 
@@ -1047,7 +1282,10 @@ mod tests {
         assert!(b.attack_breakdown.contains("weapon 10 +3 enchant"));
         assert!(b.defense_breakdown.contains("armor 8 +2 enchant"));
         assert!(b.defense_breakdown.contains("ring 4"));
-        assert!(!b.defense_breakdown.contains("ring 4 +0"), "no-enchant ring should not show enchant note");
+        assert!(
+            !b.defense_breakdown.contains("ring 4 +0"),
+            "no-enchant ring should not show enchant note"
+        );
     }
 
     #[test]
@@ -1056,7 +1294,9 @@ mod tests {
         let weapon = item_with("Pike", ItemSlot::Weapon, 6, Rarity::Common, 0);
         let armor = item_with("Plate", ItemSlot::Armor, 6, Rarity::Common, 0);
         let ring = item_with("Band", ItemSlot::Ring, 6, Rarity::Common, 0);
-        assert!(render_item_detail(&weapon, ItemSource::Equipped).contains("Equipped (Weapon slot)"));
+        assert!(
+            render_item_detail(&weapon, ItemSource::Equipped).contains("Equipped (Weapon slot)")
+        );
         assert!(render_item_detail(&armor, ItemSource::Equipped).contains("Equipped (Armor slot)"));
         assert!(render_item_detail(&ring, ItemSource::Equipped).contains("Equipped (Ring slot)"));
     }
@@ -1082,8 +1322,8 @@ mod tests {
                 if let Some(idx) = line.find(label) {
                     let after_label = idx + label.len();
                     let trimmed_tail = &line[after_label..];
-                    let value_col = after_label
-                        + trimmed_tail.chars().take_while(|c| *c == ' ').count();
+                    let value_col =
+                        after_label + trimmed_tail.chars().take_while(|c| *c == ' ').count();
                     assert_eq!(
                         value_col, 15,
                         "label {:?} should align its value at column 15, got col {} on line:\n{}",
@@ -1104,8 +1344,17 @@ mod tests {
         let base = buy / 2;
         let bonus = 2 * (buy / 5);
         assert_eq!(base + bonus, total, "test fixture sanity");
-        assert!(out.contains(&format!("{} gold base", base)), "missing base sell:\n{out}");
-        assert!(out.contains(&format!("{} gold enchant", bonus)), "missing bonus sell:\n{out}");
-        assert!(out.contains(&format!("= {} gold", total)), "missing total sell:\n{out}");
+        assert!(
+            out.contains(&format!("{} gold base", base)),
+            "missing base sell:\n{out}"
+        );
+        assert!(
+            out.contains(&format!("{} gold enchant", bonus)),
+            "missing bonus sell:\n{out}"
+        );
+        assert!(
+            out.contains(&format!("= {} gold", total)),
+            "missing total sell:\n{out}"
+        );
     }
 }

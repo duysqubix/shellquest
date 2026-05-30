@@ -163,10 +163,7 @@ mod tests {
     fn add_journal_caps_at_100_entries() {
         let mut state = GameState::new(make_character());
         for i in 0..=110 {
-            state.add_journal(JournalEntry::new(
-                EventType::Travel,
-                format!("entry {}", i),
-            ));
+            state.add_journal(JournalEntry::new(EventType::Travel, format!("entry {}", i)));
         }
         assert_eq!(state.journal.len(), 100);
         // The oldest entries were pruned; last entry should be the most recent

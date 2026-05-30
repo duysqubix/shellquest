@@ -56,10 +56,7 @@ pub fn force_show_sage(state: &mut GameState) {
     // Try a real version check, but show regardless
     let _ = check_for_update(state);
 
-    let latest = state
-        .latest_version
-        .as_deref()
-        .unwrap_or("?.?.?");
+    let latest = state.latest_version.as_deref().unwrap_or("?.?.?");
 
     let messages = [
         format!(
@@ -187,14 +184,24 @@ fn print_sage(message: &str) {
         );
     }
     eprintln!("  {}", format!("└{}┘", border).cyan().dimmed());
-    eprintln!("  {}",  "  \\".cyan().dimmed());
+    eprintln!("  {}", "  \\".cyan().dimmed());
     eprintln!("   {}", r"          __/\__".magenta());
-    eprintln!("   {}{}{}",  r"      .".magenta(), "_".yellow().bold(), r"  \\''//".magenta());
-    eprintln!("   {}{}{}",  r"     -(".magenta(), " ".yellow().bold(), r")-/_||_\".magenta());
-    eprintln!("   {}",  r"      .'. \_()_/".magenta());
-    eprintln!("   {}",  r"       |   | . \".magenta());
-    eprintln!("   {}",  r"       |   | .  \".magenta());
-    eprintln!("   {}",  r"      .'. ,\_____'.".magenta());
+    eprintln!(
+        "   {}{}{}",
+        r"      .".magenta(),
+        "_".yellow().bold(),
+        r"  \\''//".magenta()
+    );
+    eprintln!(
+        "   {}{}{}",
+        r"     -(".magenta(),
+        " ".yellow().bold(),
+        r")-/_||_\".magenta()
+    );
+    eprintln!("   {}", r"      .'. \_()_/".magenta());
+    eprintln!("   {}", r"       |   | . \".magenta());
+    eprintln!("   {}", r"       |   | .  \".magenta());
+    eprintln!("   {}", r"      .'. ,\_____'.".magenta());
     eprintln!("   {}", "    ~ The New Age Sage ~".cyan().italic().dimmed());
     eprintln!();
 }

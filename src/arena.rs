@@ -54,10 +54,7 @@ pub const TIER_GAUNTLET: ArenaTier = ArenaTier {
     min_level: 25,
     min_prestige: 1,
     or_unlock: true,
-    reward_bands: &[
-        (5, 35, 22),
-        (10, 145, 90),
-    ],
+    reward_bands: &[(5, 35, 22), (10, 145, 90)],
     chest_milestones: &[(5, 2), (10, 4)],
     awards_crown: false,
 };
@@ -69,11 +66,7 @@ pub const TIER_COLOSSEUM: ArenaTier = ArenaTier {
     min_level: 60,
     min_prestige: 1,
     or_unlock: true,
-    reward_bands: &[
-        (5, 30, 20),
-        (10, 90, 55),
-        (15, 185, 120),
-    ],
+    reward_bands: &[(5, 30, 20), (10, 90, 55), (15, 185, 120)],
     chest_milestones: &[(5, 4), (10, 4), (15, 6)],
     awards_crown: false,
 };
@@ -391,7 +384,10 @@ pub(crate) fn render_arena_deferred_output(items: &[ArenaDeferredOutput]) {
                     crate::display::color_item_inline(new_name, new_rarity),
                 );
             }
-            ArenaDeferredOutput::OverflowConverted { item_name, sell_value } => {
+            ArenaDeferredOutput::OverflowConverted {
+                item_name,
+                sell_value,
+            } => {
                 eprintln!(
                     "   {} Arena chest item {} converted to {} gold (inventory full).",
                     "💰".yellow(),
@@ -563,13 +559,41 @@ pub struct ArenaWave {
 
 pub fn arena_wave(round: u32) -> ArenaWave {
     match round {
-        1..=3 => ArenaWave { hp_multiplier: 1.0, enemy_dex_mod: 0, enemy_crit_chance_pct: 0 },
-        4..=6 => ArenaWave { hp_multiplier: 1.4, enemy_dex_mod: 2, enemy_crit_chance_pct: 3 },
-        7..=9 => ArenaWave { hp_multiplier: 2.0, enemy_dex_mod: 4, enemy_crit_chance_pct: 6 },
-        10..=15 => ArenaWave { hp_multiplier: 3.0, enemy_dex_mod: 6, enemy_crit_chance_pct: 8 },
-        16..=25 => ArenaWave { hp_multiplier: 4.5, enemy_dex_mod: 9, enemy_crit_chance_pct: 12 },
-        26..=40 => ArenaWave { hp_multiplier: 6.5, enemy_dex_mod: 13, enemy_crit_chance_pct: 18 },
-        _ => ArenaWave { hp_multiplier: 9.0, enemy_dex_mod: 18, enemy_crit_chance_pct: 22 },
+        1..=3 => ArenaWave {
+            hp_multiplier: 1.0,
+            enemy_dex_mod: 0,
+            enemy_crit_chance_pct: 0,
+        },
+        4..=6 => ArenaWave {
+            hp_multiplier: 1.4,
+            enemy_dex_mod: 2,
+            enemy_crit_chance_pct: 3,
+        },
+        7..=9 => ArenaWave {
+            hp_multiplier: 2.0,
+            enemy_dex_mod: 4,
+            enemy_crit_chance_pct: 6,
+        },
+        10..=15 => ArenaWave {
+            hp_multiplier: 3.0,
+            enemy_dex_mod: 6,
+            enemy_crit_chance_pct: 8,
+        },
+        16..=25 => ArenaWave {
+            hp_multiplier: 4.5,
+            enemy_dex_mod: 9,
+            enemy_crit_chance_pct: 12,
+        },
+        26..=40 => ArenaWave {
+            hp_multiplier: 6.5,
+            enemy_dex_mod: 13,
+            enemy_crit_chance_pct: 18,
+        },
+        _ => ArenaWave {
+            hp_multiplier: 9.0,
+            enemy_dex_mod: 18,
+            enemy_crit_chance_pct: 22,
+        },
     }
 }
 
@@ -730,8 +754,7 @@ fn run_compact_combat(
         let landed = !matches!(outcome, PlayerHitOutcome::Miss);
         if landed {
             let mut raw_dmg = rng.gen_range(
-                (player_power / t.player_dmg_power_divisor).max(1)
-                    ..=player_power.max(1),
+                (player_power / t.player_dmg_power_divisor).max(1)..=player_power.max(1),
             );
             let (sig_bonus, sig_label) = crate::character::signature_bonus(
                 class,
@@ -779,8 +802,7 @@ fn run_compact_combat(
                 turn_lines.push(CombatExchange { colored: line });
             }
         } else {
-            let (_plain, colored) =
-                crate::messages::tournament_player_miss(class, &enemy.name);
+            let (_plain, colored) = crate::messages::tournament_player_miss(class, &enemy.name);
             turn_lines.push(CombatExchange { colored });
         }
 
@@ -795,7 +817,9 @@ fn run_compact_combat(
                         "   {} {} {}",
                         "🩸".bold(),
                         format!("Soul drained — +{} HP", restored).magenta().bold(),
-                        format!("(HP: {}/{})", player_hp, entry.max_hp).magenta().dimmed()
+                        format!("(HP: {}/{})", player_hp, entry.max_hp)
+                            .magenta()
+                            .dimmed()
                     );
                     turn_lines.push(CombatExchange { colored: line });
                 }
@@ -882,9 +906,9 @@ fn build_commit(
     let (gold_reward, xp_reward, items, kills) = match outcome {
         ArenaOutcome::Defeat { .. } => (0, 0, Vec::new(), 0),
         _ => {
-            let (g, x) = run
-                .tier
-                .compute_rewards(run.entry_fee, run.entry.xp_to_next, run.rounds_cleared);
+            let (g, x) =
+                run.tier
+                    .compute_rewards(run.entry_fee, run.entry.xp_to_next, run.rounds_cleared);
             let chests = run.tier.collect_chests(run.rounds_cleared);
             let mut chest_items = Vec::new();
             for chest in &chests {
@@ -1085,12 +1109,12 @@ pub fn run_arena_session(
 
         let mut enemy = generate_enemy(round, &entry, &mut rng);
 
-        let (_plain, colored) =
-            crate::messages::tournament_round_intro(&class, round, &enemy.name);
+        let (_plain, colored) = crate::messages::tournament_round_intro(&class, round, &enemy.name);
         eprintln!("{} {}", "⚔️".bold(), colored);
         eprintln!("{}", "─".repeat(40).dimmed());
 
-        let combat = run_compact_combat(&entry, run.current_hp, &mut enemy, &class, round, &mut rng);
+        let combat =
+            run_compact_combat(&entry, run.current_hp, &mut enemy, &class, round, &mut rng);
         run.current_hp = combat.final_player_hp;
 
         for ex in &combat.exchanges {
@@ -1100,8 +1124,7 @@ pub fn run_arena_session(
 
         if !combat.player_won {
             eprintln!("{}", "─".repeat(40).dimmed());
-            let (_plain, colored) =
-                crate::messages::tournament_ko(run.rounds_cleared, 0, 0);
+            let (_plain, colored) = crate::messages::tournament_ko(run.rounds_cleared, 0, 0);
             eprintln!("{} {}", "💀".bold(), colored);
             return Some(build_commit(
                 character,
@@ -1127,7 +1150,9 @@ pub fn run_arena_session(
         }
 
         let t = &ARENA_TUNING;
-        let recovery = t.recovery_base.max(entry.max_hp / t.recovery_max_hp_divisor);
+        let recovery = t
+            .recovery_base
+            .max(entry.max_hp / t.recovery_max_hp_divisor);
         let healed = recovery.min(entry.max_hp - run.current_hp);
         run.current_hp = (run.current_hp + recovery).min(entry.max_hp);
         if healed > 0 {
@@ -1145,12 +1170,8 @@ pub fn run_arena_session(
             "   Round {} cleared! Current HP: {}/{}",
             run.rounds_cleared, run.current_hp, entry.max_hp
         );
-        let (_plain_preview, colored_preview) = format_cash_out_preview(
-            &tier,
-            entry_fee,
-            entry.xp_to_next,
-            run.rounds_cleared,
-        );
+        let (_plain_preview, colored_preview) =
+            format_cash_out_preview(&tier, entry_fee, entry.xp_to_next, run.rounds_cleared);
         eprintln!("   {}", colored_preview);
         eprintln!("   1) Continue");
         eprintln!("   2) Cash Out");
@@ -1493,10 +1514,34 @@ mod tests {
     fn godslayer_chest_milestones() {
         let c = TIER_GODSLAYER.collect_chests(50);
         assert_eq!(c.len(), 4);
-        assert_eq!(c[0], PendingChest { round: 10, danger: 4 });
-        assert_eq!(c[1], PendingChest { round: 20, danger: 6 });
-        assert_eq!(c[2], PendingChest { round: 40, danger: 8 });
-        assert_eq!(c[3], PendingChest { round: 50, danger: 9 });
+        assert_eq!(
+            c[0],
+            PendingChest {
+                round: 10,
+                danger: 4
+            }
+        );
+        assert_eq!(
+            c[1],
+            PendingChest {
+                round: 20,
+                danger: 6
+            }
+        );
+        assert_eq!(
+            c[2],
+            PendingChest {
+                round: 40,
+                danger: 8
+            }
+        );
+        assert_eq!(
+            c[3],
+            PendingChest {
+                round: 50,
+                danger: 9
+            }
+        );
     }
 
     #[test]
@@ -1632,57 +1677,102 @@ mod tests {
 
     #[test]
     fn enemy_misses_average_dex_player_on_low_roll() {
-        assert_eq!(compute_enemy_hit_at_round(5, 10, 1, 0), EnemyHitOutcome::Miss);
+        assert_eq!(
+            compute_enemy_hit_at_round(5, 10, 1, 0),
+            EnemyHitOutcome::Miss
+        );
     }
 
     #[test]
     fn enemy_hits_average_dex_player_on_high_roll() {
-        assert_eq!(compute_enemy_hit_at_round(17, 10, 1, 0), EnemyHitOutcome::Hit);
+        assert_eq!(
+            compute_enemy_hit_at_round(17, 10, 1, 0),
+            EnemyHitOutcome::Hit
+        );
     }
 
     #[test]
     fn high_player_dex_makes_enemy_miss_mid_roll() {
-        assert_eq!(compute_enemy_hit_at_round(12, 10, 1, 0), EnemyHitOutcome::Hit);
-        assert_eq!(compute_enemy_hit_at_round(12, 30, 1, 0), EnemyHitOutcome::Miss);
+        assert_eq!(
+            compute_enemy_hit_at_round(12, 10, 1, 0),
+            EnemyHitOutcome::Hit
+        );
+        assert_eq!(
+            compute_enemy_hit_at_round(12, 30, 1, 0),
+            EnemyHitOutcome::Miss
+        );
     }
 
     #[test]
     fn nat_twenty_always_hits_even_against_max_dex() {
-        assert_eq!(compute_enemy_hit_at_round(20, 200, 1, 0), EnemyHitOutcome::Hit);
+        assert_eq!(
+            compute_enemy_hit_at_round(20, 200, 1, 0),
+            EnemyHitOutcome::Hit
+        );
     }
 
     #[test]
     fn nat_one_always_misses_even_against_low_dex() {
-        assert_eq!(compute_enemy_hit_at_round(1, 1, 50, 9), EnemyHitOutcome::Miss);
+        assert_eq!(
+            compute_enemy_hit_at_round(1, 1, 50, 9),
+            EnemyHitOutcome::Miss
+        );
     }
 
     #[test]
     fn enemy_dodge_uses_strict_greater_than() {
-        assert_eq!(compute_enemy_hit_at_round(10, 10, 1, 0), EnemyHitOutcome::Miss);
-        assert_eq!(compute_enemy_hit_at_round(11, 10, 1, 0), EnemyHitOutcome::Hit);
+        assert_eq!(
+            compute_enemy_hit_at_round(10, 10, 1, 0),
+            EnemyHitOutcome::Miss
+        );
+        assert_eq!(
+            compute_enemy_hit_at_round(11, 10, 1, 0),
+            EnemyHitOutcome::Hit
+        );
     }
 
     #[test]
     fn high_armor_low_dex_player_can_still_be_hit_in_arena() {
-        assert_eq!(compute_enemy_hit_at_round(12, 8, 1, 0), EnemyHitOutcome::Hit);
+        assert_eq!(
+            compute_enemy_hit_at_round(12, 8, 1, 0),
+            EnemyHitOutcome::Hit
+        );
     }
 
     #[test]
     fn high_dex_player_still_hittable_in_endgame_waves() {
-        assert_eq!(compute_enemy_hit_at_round(19, 30, 1, 0), EnemyHitOutcome::Miss);
-        assert_eq!(compute_enemy_hit_at_round(13, 30, 50, 0), EnemyHitOutcome::Hit);
+        assert_eq!(
+            compute_enemy_hit_at_round(19, 30, 1, 0),
+            EnemyHitOutcome::Miss
+        );
+        assert_eq!(
+            compute_enemy_hit_at_round(13, 30, 50, 0),
+            EnemyHitOutcome::Hit
+        );
     }
 
     #[test]
     fn later_rounds_land_more_against_same_player() {
-        assert_eq!(compute_enemy_hit_at_round(14, 20, 1, 0), EnemyHitOutcome::Miss);
-        assert_eq!(compute_enemy_hit_at_round(14, 20, 26, 0), EnemyHitOutcome::Hit);
+        assert_eq!(
+            compute_enemy_hit_at_round(14, 20, 1, 0),
+            EnemyHitOutcome::Miss
+        );
+        assert_eq!(
+            compute_enemy_hit_at_round(14, 20, 26, 0),
+            EnemyHitOutcome::Hit
+        );
     }
 
     #[test]
     fn prestige_makes_enemies_more_accurate() {
-        assert_eq!(compute_enemy_hit_at_round(14, 20, 1, 0), EnemyHitOutcome::Miss);
-        assert_eq!(compute_enemy_hit_at_round(14, 20, 1, 5), EnemyHitOutcome::Hit);
+        assert_eq!(
+            compute_enemy_hit_at_round(14, 20, 1, 0),
+            EnemyHitOutcome::Miss
+        );
+        assert_eq!(
+            compute_enemy_hit_at_round(14, 20, 1, 5),
+            EnemyHitOutcome::Hit
+        );
     }
 
     #[test]
@@ -1711,7 +1801,8 @@ mod tests {
         assert!(
             r10 >= r1 * 4,
             "round 10 enemy HP should be at least 4x round 1; got R1={} R10={}",
-            r1, r10
+            r1,
+            r10
         );
     }
 
@@ -1723,7 +1814,9 @@ mod tests {
             assert!(
                 hp >= prev,
                 "enemy HP regressed at round {}: prev={} curr={}",
-                round, prev, hp
+                round,
+                prev,
+                hp
             );
             prev = hp;
         }
@@ -1735,16 +1828,34 @@ mod tests {
         let mid = arena_wave(10).enemy_dex_mod;
         let late = arena_wave(25).enemy_dex_mod;
         let endgame = arena_wave(50).enemy_dex_mod;
-        assert!(mid > early, "round 10 mod {} should be > round 1 mod {}", mid, early);
-        assert!(late > mid, "round 25 mod {} should be > round 10 mod {}", late, mid);
-        assert!(endgame > late, "round 50 mod {} should be > round 25 mod {}", endgame, late);
+        assert!(
+            mid > early,
+            "round 10 mod {} should be > round 1 mod {}",
+            mid,
+            early
+        );
+        assert!(
+            late > mid,
+            "round 25 mod {} should be > round 10 mod {}",
+            late,
+            mid
+        );
+        assert!(
+            endgame > late,
+            "round 50 mod {} should be > round 25 mod {}",
+            endgame,
+            late
+        );
     }
 
     #[test]
     fn enemy_crit_message_contains_critical_marker_and_doubled_damage() {
-        let (plain, _colored) =
-            crate::messages::tournament_enemy_crit("Goblin", 50, 100, 150, 0);
-        assert!(plain.contains("CRITICAL"), "expected CRITICAL marker: {}", plain);
+        let (plain, _colored) = crate::messages::tournament_enemy_crit("Goblin", 50, 100, 150, 0);
+        assert!(
+            plain.contains("CRITICAL"),
+            "expected CRITICAL marker: {}",
+            plain
+        );
         assert!(plain.contains("50"), "expected damage value: {}", plain);
         assert!(plain.contains("Goblin"), "expected enemy name: {}", plain);
     }
@@ -1756,7 +1867,8 @@ mod tests {
                 assert!(
                     !should_enemy_crit(roll, round),
                     "round {} should never crit; roll={} produced crit",
-                    round, roll
+                    round,
+                    roll
                 );
             }
         }
@@ -1767,7 +1879,10 @@ mod tests {
         let crits_at_fifty: usize = (0u32..100)
             .filter(|&roll| should_enemy_crit(roll, 50))
             .count();
-        assert!(crits_at_fifty > 0, "round 50 should have at least one crit-producing roll");
+        assert!(
+            crits_at_fifty > 0,
+            "round 50 should have at least one crit-producing roll"
+        );
         assert!(
             crits_at_fifty < 100,
             "round 50 must not crit on every roll; got {}/100",
@@ -1791,7 +1906,8 @@ mod tests {
         assert!(
             late_landing_rolls > early_landing_rolls,
             "round 25 should land more often than round 1; early={} late={}",
-            early_landing_rolls, late_landing_rolls
+            early_landing_rolls,
+            late_landing_rolls
         );
     }
 
@@ -1805,7 +1921,11 @@ mod tests {
     #[test]
     fn cash_out_preview_labels_the_choice() {
         let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 1);
-        assert!(plain.to_lowercase().contains("cash out"), "plain: {}", plain);
+        assert!(
+            plain.to_lowercase().contains("cash out"),
+            "plain: {}",
+            plain
+        );
     }
 
     #[test]
@@ -2070,10 +2190,22 @@ mod tests {
         game.character.best_tournament_round = 0;
 
         for i in 0..20 {
-            game.character.inventory.push(Item { name: format!("Legendary {}", i), slot: ItemSlot::Weapon, power: 50 + i as i32, rarity: Rarity::Legendary, enchant_level: 0 });
+            game.character.inventory.push(Item {
+                name: format!("Legendary {}", i),
+                slot: ItemSlot::Weapon,
+                power: 50 + i as i32,
+                rarity: Rarity::Legendary,
+                enchant_level: 0,
+            });
         }
 
-        let chest_item = Item { name: "Rusty Dagger".to_string(), slot: ItemSlot::Weapon, power: 2, rarity: Rarity::Common, enchant_level: 0 };
+        let chest_item = Item {
+            name: "Rusty Dagger".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 2,
+            rarity: Rarity::Common,
+            enchant_level: 0,
+        };
         let sell_value = crate::loot::sell_price(&chest_item);
 
         let commit = ArenaCommit {
@@ -2091,8 +2223,15 @@ mod tests {
 
         let deferred = apply_arena_commit(&mut game, &commit);
 
-        let expected_gold = 500u32.saturating_sub(50).saturating_add(100).saturating_add(sell_value);
-        assert_eq!(game.character.gold, expected_gold, "expected {} gold (base 500 - fee 50 + reward 100 + overflow {}), got {}", expected_gold, sell_value, game.character.gold);
+        let expected_gold = 500u32
+            .saturating_sub(50)
+            .saturating_add(100)
+            .saturating_add(sell_value);
+        assert_eq!(
+            game.character.gold, expected_gold,
+            "expected {} gold (base 500 - fee 50 + reward 100 + overflow {}), got {}",
+            expected_gold, sell_value, game.character.gold
+        );
         assert_eq!(game.character.inventory.len(), 20);
         assert!(
             deferred
@@ -2170,9 +2309,27 @@ mod tests {
     #[test]
     fn snapshot_copies_equipped_stats() {
         let mut c = make_character(10, 1, 500);
-        c.equip(Item { name: "Sword".to_string(), slot: ItemSlot::Weapon, power: 15, rarity: Rarity::Rare, enchant_level: 0 });
-        c.equip(Item { name: "Plate".to_string(), slot: ItemSlot::Armor, power: 10, rarity: Rarity::Uncommon, enchant_level: 0 });
-        c.equip(Item { name: "Ring".to_string(), slot: ItemSlot::Ring, power: 5, rarity: Rarity::Common, enchant_level: 0 });
+        c.equip(Item {
+            name: "Sword".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 15,
+            rarity: Rarity::Rare,
+            enchant_level: 0,
+        });
+        c.equip(Item {
+            name: "Plate".to_string(),
+            slot: ItemSlot::Armor,
+            power: 10,
+            rarity: Rarity::Uncommon,
+            enchant_level: 0,
+        });
+        c.equip(Item {
+            name: "Ring".to_string(),
+            slot: ItemSlot::Ring,
+            power: 5,
+            rarity: Rarity::Common,
+            enchant_level: 0,
+        });
 
         let snap = ArenaEntrySnapshot::from_character(&c);
         assert_eq!(snap.attack_power, c.attack_power());
@@ -2285,7 +2442,13 @@ mod tests {
         game.character.hp = 80;
         game.character.best_tournament_round = 0;
 
-        let item = Item { name: "Iron Sword".to_string(), slot: ItemSlot::Weapon, power: 10, rarity: Rarity::Uncommon, enchant_level: 0 };
+        let item = Item {
+            name: "Iron Sword".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 10,
+            rarity: Rarity::Uncommon,
+            enchant_level: 0,
+        };
 
         let commit = ArenaCommit {
             outcome: ArenaOutcome::CashOut { rounds_cleared: 3 },
@@ -2335,7 +2498,10 @@ mod tests {
         let _deferred = apply_arena_commit(&mut game, &commit);
 
         assert_eq!(game.journal.len(), 1);
-        assert!(matches!(game.journal[0].event_type, crate::journal::EventType::Tournament));
+        assert!(matches!(
+            game.journal[0].event_type,
+            crate::journal::EventType::Tournament
+        ));
         assert_eq!(
             game.journal[0].message,
             "Arena cash-out in The Pit after 3 rounds. +100 gold, +0 XP."
@@ -2346,9 +2512,9 @@ mod tests {
 
     #[test]
     fn seeded_long_combat_returns_all_exchanges_without_summary() {
-        use rand::SeedableRng;
-        use rand::rngs::StdRng;
         use crate::character::Class;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         let mut rng = StdRng::seed_from_u64(42);
         let entry = ArenaEntrySnapshot {
@@ -2396,31 +2562,43 @@ mod tests {
 
     #[test]
     fn turn_cap_forces_defeat_on_pathological_input() {
-        use rand::SeedableRng;
-        use rand::rngs::StdRng;
         use crate::character::Class;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         let mut rng = StdRng::seed_from_u64(0);
         let entry = ArenaEntrySnapshot {
-            level: 1, xp_to_next: 25,
-            hp: 1_000_000, max_hp: 1_000_000,
-            attack_power: 1, defense: 200,
-            prestige: 0, gold: 0,
-            intelligence: 6, strength: 10,
+            level: 1,
+            xp_to_next: 25,
+            hp: 1_000_000,
+            max_hp: 1_000_000,
+            attack_power: 1,
+            defense: 200,
+            prestige: 0,
+            gold: 0,
+            intelligence: 6,
+            strength: 10,
             dexterity: 8,
         };
         let mut enemy = ArenaEnemy {
             name: "Stress Test".to_string(),
-            hp: 1_000_000, max_hp: 1_000_000, attack: 1,
+            hp: 1_000_000,
+            max_hp: 1_000_000,
+            attack: 1,
         };
 
-        let result = run_compact_combat(&entry, 1_000_000, &mut enemy, &Class::Warrior, 1, &mut rng);
+        let result =
+            run_compact_combat(&entry, 1_000_000, &mut enemy, &Class::Warrior, 1, &mut rng);
 
-        assert!(!result.player_won, "Expected forced defeat on turn-cap, got victory");
+        assert!(
+            !result.player_won,
+            "Expected forced defeat on turn-cap, got victory"
+        );
         assert!(
             result.total_turns > ARENA_TUNING.max_turns,
             "Expected total_turns > {} (max_turns), got {}",
-            ARENA_TUNING.max_turns, result.total_turns
+            ARENA_TUNING.max_turns,
+            result.total_turns
         );
     }
 
@@ -2510,12 +2688,27 @@ mod tests {
         game.character.hp = 80;
 
         for i in 0..20 {
-            game.character.inventory.push(Item { name: format!("Legendary {}", i), slot: ItemSlot::Weapon, power: 50 + i as i32, rarity: Rarity::Legendary, enchant_level: 0 });
+            game.character.inventory.push(Item {
+                name: format!("Legendary {}", i),
+                slot: ItemSlot::Weapon,
+                power: 50 + i as i32,
+                rarity: Rarity::Legendary,
+                enchant_level: 0,
+            });
         }
 
-        let chest_item = Item { name: "Rusty Dagger".to_string(), slot: ItemSlot::Weapon, power: 2, rarity: Rarity::Common, enchant_level: 0 };
+        let chest_item = Item {
+            name: "Rusty Dagger".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 2,
+            rarity: Rarity::Common,
+            enchant_level: 0,
+        };
         let sell_value = crate::loot::sell_price(&chest_item);
-        assert!(sell_value > 0, "test fixture sanity: overflow value must be > 0");
+        assert!(
+            sell_value > 0,
+            "test fixture sanity: overflow value must be > 0"
+        );
 
         let commit = ArenaCommit {
             outcome: ArenaOutcome::CashOut { rounds_cleared: 3 },
@@ -2557,10 +2750,22 @@ mod tests {
         game.character.hp = 80;
 
         for i in 0..20 {
-            game.character.inventory.push(Item { name: format!("Weak {}", i), slot: ItemSlot::Weapon, power: 1, rarity: Rarity::Common, enchant_level: 0 });
+            game.character.inventory.push(Item {
+                name: format!("Weak {}", i),
+                slot: ItemSlot::Weapon,
+                power: 1,
+                rarity: Rarity::Common,
+                enchant_level: 0,
+            });
         }
 
-        let chest_item = Item { name: "Strong Sword".to_string(), slot: ItemSlot::Weapon, power: 100, rarity: Rarity::Rare, enchant_level: 0 };
+        let chest_item = Item {
+            name: "Strong Sword".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 100,
+            rarity: Rarity::Rare,
+            enchant_level: 0,
+        };
 
         let commit = ArenaCommit {
             outcome: ArenaOutcome::CashOut { rounds_cleared: 3 },

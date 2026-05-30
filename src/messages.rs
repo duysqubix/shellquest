@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use crate::character::Class;
+use crate::display::{color_damage, color_gold, color_monster, color_xp};
 use colored::*;
-use crate::display::{color_xp, color_gold, color_damage, color_monster};
 
 type Msg = (String, String);
 
@@ -11,24 +11,50 @@ pub fn combat_win(class: &Class, monster: &str, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("A {} dissolves in arcane light! Mystical victory! +{} XP", monster, xp),
-            format!("A {} dissolves in {}! {}! {}", m, "arcane light".blue().bold(), "Mystical victory".blue().bold(), x),
+            format!(
+                "A {} dissolves in arcane light! Mystical victory! +{} XP",
+                monster, xp
+            ),
+            format!(
+                "A {} dissolves in {}! {}! {}",
+                m,
+                "arcane light".blue().bold(),
+                "Mystical victory".blue().bold(),
+                x
+            ),
         ),
         Class::Warrior => (
-            format!("A {} falls before your blade! Glorious victory! +{} XP", monster, xp),
+            format!(
+                "A {} falls before your blade! Glorious victory! +{} XP",
+                monster, xp
+            ),
             format!("A {} falls! {}! {}", m, "Glorious victory".red().bold(), x),
         ),
         Class::Rogue => (
             format!("A {} never saw it coming. Clean kill. +{} XP", monster, xp),
-            format!("A {} never saw it coming. {}. {}", m, "Clean kill".yellow().bold(), x),
+            format!(
+                "A {} never saw it coming. {}. {}",
+                m,
+                "Clean kill".yellow().bold(),
+                x
+            ),
         ),
         Class::Ranger => (
             format!("True aim. A {} drops at range. +{} XP", monster, xp),
             format!("{}. A {} drops. {}", "True aim".green().bold(), m, x),
         ),
         Class::Necromancer => (
-            format!("A {}'s life force drains away. Soul claimed. +{} XP", monster, xp),
-            format!("A {}'s {} drains away. {}. {}", m, "life force".magenta(), "Soul claimed".magenta().bold(), x),
+            format!(
+                "A {}'s life force drains away. Soul claimed. +{} XP",
+                monster, xp
+            ),
+            format!(
+                "A {}'s {} drains away. {}. {}",
+                m,
+                "life force".magenta(),
+                "Soul claimed".magenta().bold(),
+                x
+            ),
         ),
     }
 }
@@ -39,24 +65,51 @@ pub fn combat_tough(class: &Class, monster: &str, dmg: i32, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("Arcane duel with {}! You prevail, not unscathed. -{} HP, +{} XP", monster, dmg, xp),
+            format!(
+                "Arcane duel with {}! You prevail, not unscathed. -{} HP, +{} XP",
+                monster, dmg, xp
+            ),
             format!("Arcane duel with {}! You prevail. {} HP lost. {}", m, d, x),
         ),
         Class::Warrior => (
-            format!("Brutal exchange with {}! You endure! -{} HP, +{} XP", monster, dmg, xp),
-            format!("Brutal exchange with {}! You endure! {} HP lost. {}", m, d, x),
+            format!(
+                "Brutal exchange with {}! You endure! -{} HP, +{} XP",
+                monster, dmg, xp
+            ),
+            format!(
+                "Brutal exchange with {}! You endure! {} HP lost. {}",
+                m, d, x
+            ),
         ),
         Class::Rogue => (
-            format!("Close call with {}. You get out alive. -{} HP, +{} XP", monster, dmg, xp),
-            format!("Close call with {}. Alive... barely. {} HP lost. {}", m, d, x),
+            format!(
+                "Close call with {}. You get out alive. -{} HP, +{} XP",
+                monster, dmg, xp
+            ),
+            format!(
+                "Close call with {}. Alive... barely. {} HP lost. {}",
+                m, d, x
+            ),
         ),
         Class::Ranger => (
-            format!("Scrappy fight with {}. You track your wounds. -{} HP, +{} XP", monster, dmg, xp),
+            format!(
+                "Scrappy fight with {}. You track your wounds. -{} HP, +{} XP",
+                monster, dmg, xp
+            ),
             format!("Scrappy fight with {}. {} HP lost. {}", m, d, x),
         ),
         Class::Necromancer => (
-            format!("Dark binding with {}. Pain is entropy. -{} HP, +{} XP", monster, dmg, xp),
-            format!("Dark binding with {}. Pain is {}. {} HP lost. {}", m, "entropy".magenta(), d, x),
+            format!(
+                "Dark binding with {}. Pain is entropy. -{} HP, +{} XP",
+                monster, dmg, xp
+            ),
+            format!(
+                "Dark binding with {}. Pain is {}. {} HP lost. {}",
+                m,
+                "entropy".magenta(),
+                d,
+                x
+            ),
         ),
     }
 }
@@ -74,7 +127,10 @@ pub fn combat_lose(class: &Class, monster: &str, dmg: i32) -> Msg {
             format!("{} breaks your guard! Took {} damage.", m, d),
         ),
         Class::Rogue => (
-            format!("{} outmaneuvers you. {} damage slips through.", monster, dmg),
+            format!(
+                "{} outmaneuvers you. {} damage slips through.",
+                monster, dmg
+            ),
             format!("{} outmaneuvers you. {} damage slips through.", m, d),
         ),
         Class::Ranger => (
@@ -83,7 +139,12 @@ pub fn combat_lose(class: &Class, monster: &str, dmg: i32) -> Msg {
         ),
         Class::Necromancer => (
             format!("{} strikes true. {} damage. The void waits.", monster, dmg),
-            format!("{} strikes true. {} damage. The {} waits.", m, d, "void".magenta()),
+            format!(
+                "{} strikes true. {} damage. The {} waits.",
+                m,
+                d,
+                "void".magenta()
+            ),
         ),
     }
 }
@@ -92,16 +153,30 @@ pub fn combat_draw(class: &Class, monster: &str) -> Msg {
     let m = color_monster(monster);
     match class {
         Class::Wizard => (
-            format!("A {} — your spell fizzles. It retreats into the ether.", monster),
-            format!("A {} — your spell {}. It retreats.", m, "fizzles".blue().dimmed()),
+            format!(
+                "A {} — your spell fizzles. It retreats into the ether.",
+                monster
+            ),
+            format!(
+                "A {} — your spell {}. It retreats.",
+                m,
+                "fizzles".blue().dimmed()
+            ),
         ),
         Class::Warrior => (
             format!("A {} — you clash and separate. It retreats.", monster),
             format!("A {} — you clash and separate. It retreats.", m),
         ),
         Class::Rogue => (
-            format!("A {} — you ghost before it can press. Mutual retreat.", monster),
-            format!("A {} — you {} before it can press.", m, "ghost".yellow().dimmed()),
+            format!(
+                "A {} — you ghost before it can press. Mutual retreat.",
+                monster
+            ),
+            format!(
+                "A {} — you {} before it can press.",
+                m,
+                "ghost".yellow().dimmed()
+            ),
         ),
         Class::Ranger => (
             format!("A {} — you hold your ground. It slinks back.", monster),
@@ -109,7 +184,11 @@ pub fn combat_draw(class: &Class, monster: &str) -> Msg {
         ),
         Class::Necromancer => (
             format!("A {} — entropy claims neither of you. Today.", monster),
-            format!("A {} — {} claims neither of you. Today.", m, "entropy".magenta().dimmed()),
+            format!(
+                "A {} — {} claims neither of you. Today.",
+                m,
+                "entropy".magenta().dimmed()
+            ),
         ),
     }
 }
@@ -119,24 +198,66 @@ pub fn combat_elite_win(class: &Class, monster: &str, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("The {} unleashes chaos — and meets your wrath. +{} XP", monster, xp),
-            format!("The {} unleashes {} — and meets your {}. {}", m, "chaos".blue().bold(), "wrath".blue().bold(), x),
+            format!(
+                "The {} unleashes chaos — and meets your wrath. +{} XP",
+                monster, xp
+            ),
+            format!(
+                "The {} unleashes {} — and meets your {}. {}",
+                m,
+                "chaos".blue().bold(),
+                "wrath".blue().bold(),
+                x
+            ),
         ),
         Class::Warrior => (
-            format!("The {} charges like a warband. You break it. +{} XP", monster, xp),
-            format!("The {} charges like a {}. You break it. {}", m, "warband".red().bold(), x),
+            format!(
+                "The {} charges like a warband. You break it. +{} XP",
+                monster, xp
+            ),
+            format!(
+                "The {} charges like a {}. You break it. {}",
+                m,
+                "warband".red().bold(),
+                x
+            ),
         ),
         Class::Rogue => (
-            format!("Even the {} can't track your killing stroke. +{} XP", monster, xp),
-            format!("Even the {} can't track your {}. {}", m, "killing stroke".yellow().bold(), x),
+            format!(
+                "Even the {} can't track your killing stroke. +{} XP",
+                monster, xp
+            ),
+            format!(
+                "Even the {} can't track your {}. {}",
+                m,
+                "killing stroke".yellow().bold(),
+                x
+            ),
         ),
         Class::Ranger => (
-            format!("The {} rushes the line. Your aim holds. +{} XP", monster, xp),
-            format!("The {} rushes the line. Your aim {}. {}", m, "holds".green().bold(), x),
+            format!(
+                "The {} rushes the line. Your aim holds. +{} XP",
+                monster, xp
+            ),
+            format!(
+                "The {} rushes the line. Your aim {}. {}",
+                m,
+                "holds".green().bold(),
+                x
+            ),
         ),
         Class::Necromancer => (
-            format!("The {} roars at the void. The void answers first. +{} XP", monster, xp),
-            format!("The {} roars at the {}. The {} answers first. {}", m, "void".magenta().bold(), "void".magenta().bold(), x),
+            format!(
+                "The {} roars at the void. The void answers first. +{} XP",
+                monster, xp
+            ),
+            format!(
+                "The {} roars at the {}. The {} answers first. {}",
+                m,
+                "void".magenta().bold(),
+                "void".magenta().bold(),
+                x
+            ),
         ),
     }
 }
@@ -147,24 +268,66 @@ pub fn combat_elite_tough(class: &Class, monster: &str, dmg: i32, xp: u32) -> Ms
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("The {} nearly tears through your wards. You erase it anyway. -{} HP, +{} XP", monster, dmg, xp),
-            format!("The {} nearly tears through your {}. You erase it anyway. {} HP lost. {}", m, "wards".blue().bold(), d, x),
+            format!(
+                "The {} nearly tears through your wards. You erase it anyway. -{} HP, +{} XP",
+                monster, dmg, xp
+            ),
+            format!(
+                "The {} nearly tears through your {}. You erase it anyway. {} HP lost. {}",
+                m,
+                "wards".blue().bold(),
+                d,
+                x
+            ),
         ),
         Class::Warrior => (
-            format!("You trade savage blows with the {}. You stand. It doesn't. -{} HP, +{} XP", monster, dmg, xp),
-            format!("You trade savage blows with the {}. You stand. It doesn't. {} HP lost. {}", m, d, x),
+            format!(
+                "You trade savage blows with the {}. You stand. It doesn't. -{} HP, +{} XP",
+                monster, dmg, xp
+            ),
+            format!(
+                "You trade savage blows with the {}. You stand. It doesn't. {} HP lost. {}",
+                m, d, x
+            ),
         ),
         Class::Rogue => (
-            format!("The {} nearly pins you. Your answer is faster. -{} HP, +{} XP", monster, dmg, xp),
-            format!("The {} nearly pins you. Your answer is {}. {} HP lost. {}", m, "faster".yellow().bold(), d, x),
+            format!(
+                "The {} nearly pins you. Your answer is faster. -{} HP, +{} XP",
+                monster, dmg, xp
+            ),
+            format!(
+                "The {} nearly pins you. Your answer is {}. {} HP lost. {}",
+                m,
+                "faster".yellow().bold(),
+                d,
+                x
+            ),
         ),
         Class::Ranger => (
-            format!("The {} gets inside your guard. You drop it at arm's length. -{} HP, +{} XP", monster, dmg, xp),
-            format!("The {} gets inside your guard. You drop it at {}. {} HP lost. {}", m, "arm's length".green().bold(), d, x),
+            format!(
+                "The {} gets inside your guard. You drop it at arm's length. -{} HP, +{} XP",
+                monster, dmg, xp
+            ),
+            format!(
+                "The {} gets inside your guard. You drop it at {}. {} HP lost. {}",
+                m,
+                "arm's length".green().bold(),
+                d,
+                x
+            ),
         ),
         Class::Necromancer => (
-            format!("The {} bites deep before your hex closes the grave. -{} HP, +{} XP", monster, dmg, xp),
-            format!("The {} bites deep before your {} closes the grave. {} HP lost. {}", m, "hex".magenta().bold(), d, x),
+            format!(
+                "The {} bites deep before your hex closes the grave. -{} HP, +{} XP",
+                monster, dmg, xp
+            ),
+            format!(
+                "The {} bites deep before your {} closes the grave. {} HP lost. {}",
+                m,
+                "hex".magenta().bold(),
+                d,
+                x
+            ),
         ),
     }
 }
@@ -175,23 +338,45 @@ pub fn combat_elite_lose(class: &Class, monster: &str, dmg: i32) -> Msg {
     match class {
         Class::Wizard => (
             format!("The {} shatters every ward you raise. -{} HP", monster, dmg),
-            format!("The {} shatters every {} you raise. -{} HP", m, "ward".blue().bold(), d),
+            format!(
+                "The {} shatters every {} you raise. -{} HP",
+                m,
+                "ward".blue().bold(),
+                d
+            ),
         ),
         Class::Warrior => (
-            format!("The {} caves in your guard with a brutal hit. -{} HP", monster, dmg),
+            format!(
+                "The {} caves in your guard with a brutal hit. -{} HP",
+                monster, dmg
+            ),
             format!("The {} caves in your guard with a brutal hit. -{} HP", m, d),
         ),
         Class::Rogue => (
-            format!("The {} finds a gap you didn't know existed. -{} HP", monster, dmg),
+            format!(
+                "The {} finds a gap you didn't know existed. -{} HP",
+                monster, dmg
+            ),
             format!("The {} finds a gap you didn't know existed. -{} HP", m, d),
         ),
         Class::Ranger => (
-            format!("The {} overruns your footing and tears through you. -{} HP", monster, dmg),
-            format!("The {} overruns your footing and tears through you. -{} HP", m, d),
+            format!(
+                "The {} overruns your footing and tears through you. -{} HP",
+                monster, dmg
+            ),
+            format!(
+                "The {} overruns your footing and tears through you. -{} HP",
+                m, d
+            ),
         ),
         Class::Necromancer => (
             format!("The {} rips life from your lungs. -{} HP", monster, dmg),
-            format!("The {} rips life from your {}. -{} HP", m, "lungs".magenta().bold(), d),
+            format!(
+                "The {} rips life from your {}. -{} HP",
+                m,
+                "lungs".magenta().bold(),
+                d
+            ),
         ),
     }
 }
@@ -201,24 +386,50 @@ pub fn trap(class: &Class, dmg: i32, hp: i32, max_hp: i32) -> Msg {
     let hp_str = crate::display::color_hp(hp, max_hp);
     match class {
         Class::Wizard => (
-            format!("Residual magic flares! Arcane backlash! -{} HP. HP: {}/{}", dmg, hp, max_hp),
-            format!("Residual {} flares! {} HP lost. {}", "magic".blue(), d, hp_str),
+            format!(
+                "Residual magic flares! Arcane backlash! -{} HP. HP: {}/{}",
+                dmg, hp, max_hp
+            ),
+            format!(
+                "Residual {} flares! {} HP lost. {}",
+                "magic".blue(),
+                d,
+                hp_str
+            ),
         ),
         Class::Warrior => (
             format!("A crude mechanism bites! -{} HP. Unfair.", dmg),
-            format!("A crude mechanism bites! {} HP lost. {}. {}", d, "Unfair".red().dimmed(), hp_str),
+            format!(
+                "A crude mechanism bites! {} HP lost. {}. {}",
+                d,
+                "Unfair".red().dimmed(),
+                hp_str
+            ),
         ),
         Class::Rogue => (
             format!("Your instincts catch it late. -{} HP. Sloppy.", dmg),
-            format!("Your instincts catch it {}. {} HP lost. {}", "late".yellow().dimmed(), d, hp_str),
+            format!(
+                "Your instincts catch it {}. {} HP lost. {}",
+                "late".yellow().dimmed(),
+                d,
+                hp_str
+            ),
         ),
         Class::Ranger => (
             format!("Missed the signs. Terrain punishes. -{} HP.", dmg),
-            format!("Missed the signs. Terrain punishes. {} HP lost. {}", d, hp_str),
+            format!(
+                "Missed the signs. Terrain punishes. {} HP lost. {}",
+                d, hp_str
+            ),
         ),
         Class::Necromancer => (
             format!("Dark wards activate against you. -{} HP. Ironic.", dmg),
-            format!("Dark {} activate against you. {} HP lost. {}", "wards".magenta(), d, hp_str),
+            format!(
+                "Dark {} activate against you. {} HP lost. {}",
+                "wards".magenta(),
+                d,
+                hp_str
+            ),
         ),
     }
 }
@@ -228,24 +439,66 @@ pub fn quest(class: &Class, xp: u32, gold: u32) -> Msg {
     let g = color_gold(gold);
     match class {
         Class::Wizard => (
-            format!("The enchantment completes! Push delivered to the ether. +{} XP, +{} gold", xp, gold),
-            format!("The {} completes! Push delivered to the ether. {} {}", "enchantment".blue().bold(), x, g),
+            format!(
+                "The enchantment completes! Push delivered to the ether. +{} XP, +{} gold",
+                xp, gold
+            ),
+            format!(
+                "The {} completes! Push delivered to the ether. {} {}",
+                "enchantment".blue().bold(),
+                x,
+                g
+            ),
         ),
         Class::Warrior => (
-            format!("The siege succeeds! Code pushed to the realm! +{} XP, +{} gold", xp, gold),
-            format!("The {} succeeds! Code pushed to the realm! {} {}", "siege".red().bold(), x, g),
+            format!(
+                "The siege succeeds! Code pushed to the realm! +{} XP, +{} gold",
+                xp, gold
+            ),
+            format!(
+                "The {} succeeds! Code pushed to the realm! {} {}",
+                "siege".red().bold(),
+                x,
+                g
+            ),
         ),
         Class::Rogue => (
-            format!("Delivered, no witnesses. The push lands silent. +{} XP, +{} gold", xp, gold),
-            format!("Delivered, {}. The push lands {}. {} {}", "no witnesses".yellow().dimmed(), "silent".yellow(), x, g),
+            format!(
+                "Delivered, no witnesses. The push lands silent. +{} XP, +{} gold",
+                xp, gold
+            ),
+            format!(
+                "Delivered, {}. The push lands {}. {} {}",
+                "no witnesses".yellow().dimmed(),
+                "silent".yellow(),
+                x,
+                g
+            ),
         ),
         Class::Ranger => (
-            format!("The trail leads true. Push reaches its mark. +{} XP, +{} gold", xp, gold),
-            format!("The trail leads {}. Push reaches its mark. {} {}", "true".green().bold(), x, g),
+            format!(
+                "The trail leads true. Push reaches its mark. +{} XP, +{} gold",
+                xp, gold
+            ),
+            format!(
+                "The trail leads {}. Push reaches its mark. {} {}",
+                "true".green().bold(),
+                x,
+                g
+            ),
         ),
         Class::Necromancer => (
-            format!("The ritual completes. Another payload sent to the void. +{} XP, +{} gold", xp, gold),
-            format!("The {} completes. Payload sent to the {}. {} {}", "ritual".magenta().bold(), "void".magenta(), x, g),
+            format!(
+                "The ritual completes. Another payload sent to the void. +{} XP, +{} gold",
+                xp, gold
+            ),
+            format!(
+                "The {} completes. Payload sent to the {}. {} {}",
+                "ritual".magenta().bold(),
+                "void".magenta(),
+                x,
+                g
+            ),
         ),
     }
 }
@@ -254,24 +507,56 @@ pub fn craft(class: &Class, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("You weave the commit into the pattern. The grimoire grows. +{} XP", xp),
-            format!("You weave the commit into the {}. The {} grows. {}", "pattern".blue(), "grimoire".blue().bold(), x),
+            format!(
+                "You weave the commit into the pattern. The grimoire grows. +{} XP",
+                xp
+            ),
+            format!(
+                "You weave the commit into the {}. The {} grows. {}",
+                "pattern".blue(),
+                "grimoire".blue().bold(),
+                x
+            ),
         ),
         Class::Warrior => (
-            format!("Another battle-scroll committed to the archives. +{} XP", xp),
-            format!("Another {} committed to the archives. {}", "battle-scroll".red(), x),
+            format!(
+                "Another battle-scroll committed to the archives. +{} XP",
+                xp
+            ),
+            format!(
+                "Another {} committed to the archives. {}",
+                "battle-scroll".red(),
+                x
+            ),
         ),
         Class::Rogue => (
-            format!("You slip the commit through undetected. Clean mark. +{} XP", xp),
-            format!("You slip the commit through {}. {}. {}", "undetected".yellow().dimmed(), "Clean mark".yellow(), x),
+            format!(
+                "You slip the commit through undetected. Clean mark. +{} XP",
+                xp
+            ),
+            format!(
+                "You slip the commit through {}. {}. {}",
+                "undetected".yellow().dimmed(),
+                "Clean mark".yellow(),
+                x
+            ),
         ),
         Class::Ranger => (
             format!("You mark another waypoint on the journey. +{} XP", xp),
-            format!("You mark another {} on the journey. {}", "waypoint".green(), x),
+            format!(
+                "You mark another {} on the journey. {}",
+                "waypoint".green(),
+                x
+            ),
         ),
         Class::Necromancer => (
             format!("Another soul bound to the archives of the dead. +{} XP", xp),
-            format!("Another {} bound to the {}. {}", "soul".magenta(), "archives of the dead".magenta().bold(), x),
+            format!(
+                "Another {} bound to the {}. {}",
+                "soul".magenta(),
+                "archives of the dead".magenta().bold(),
+                x
+            ),
         ),
     }
 }
@@ -280,24 +565,71 @@ pub fn forge_loot(class: &Class, item_name: &str, power: i32, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("The arcane forge manifests: {} (+{})! +{} XP", item_name, power, xp),
-            format!("The {} manifests: {} {}! {}", "arcane forge".blue().bold(), item_name.cyan().bold(), format!("(+{})", power).green(), x),
+            format!(
+                "The arcane forge manifests: {} (+{})! +{} XP",
+                item_name, power, xp
+            ),
+            format!(
+                "The {} manifests: {} {}! {}",
+                "arcane forge".blue().bold(),
+                item_name.cyan().bold(),
+                format!("(+{})", power).green(),
+                x
+            ),
         ),
         Class::Warrior => (
-            format!("Your hammer strikes true! Forged: {} (+{})! +{} XP", item_name, power, xp),
-            format!("Your hammer strikes {}! {}: {} {}! {}", "true".red().bold(), "Forged".red(), item_name.cyan().bold(), format!("(+{})", power).green(), x),
+            format!(
+                "Your hammer strikes true! Forged: {} (+{})! +{} XP",
+                item_name, power, xp
+            ),
+            format!(
+                "Your hammer strikes {}! {}: {} {}! {}",
+                "true".red().bold(),
+                "Forged".red(),
+                item_name.cyan().bold(),
+                format!("(+{})", power).green(),
+                x
+            ),
         ),
         Class::Rogue => (
-            format!("Precision work. You fashion {} (+{}). +{} XP", item_name, power, xp),
-            format!("{} work. {} {} {}. {}", "Precision".yellow(), "Fashioned:".yellow().dimmed(), item_name.cyan().bold(), format!("(+{})", power).green(), x),
+            format!(
+                "Precision work. You fashion {} (+{}). +{} XP",
+                item_name, power, xp
+            ),
+            format!(
+                "{} work. {} {} {}. {}",
+                "Precision".yellow(),
+                "Fashioned:".yellow().dimmed(),
+                item_name.cyan().bold(),
+                format!("(+{})", power).green(),
+                x
+            ),
         ),
         Class::Ranger => (
-            format!("Wilderness craft yields: {} (+{}). +{} XP", item_name, power, xp),
-            format!("{} yields: {} {}. {}", "Wilderness craft".green(), item_name.cyan().bold(), format!("(+{})", power).green(), x),
+            format!(
+                "Wilderness craft yields: {} (+{}). +{} XP",
+                item_name, power, xp
+            ),
+            format!(
+                "{} yields: {} {}. {}",
+                "Wilderness craft".green(),
+                item_name.cyan().bold(),
+                format!("(+{})", power).green(),
+                x
+            ),
         ),
         Class::Necromancer => (
-            format!("Dark synthesis complete: {} (+{}). +{} XP", item_name, power, xp),
-            format!("{}: {} {}. {}", "Dark synthesis complete".magenta().bold(), item_name.cyan().bold(), format!("(+{})", power).green(), x),
+            format!(
+                "Dark synthesis complete: {} (+{}). +{} XP",
+                item_name, power, xp
+            ),
+            format!(
+                "{}: {} {}. {}",
+                "Dark synthesis complete".magenta().bold(),
+                item_name.cyan().bold(),
+                format!("(+{})", power).green(),
+                x
+            ),
         ),
     }
 }
@@ -323,7 +655,11 @@ pub fn forge_xp(class: &Class, xp: u32) -> Msg {
         ),
         Class::Necromancer => (
             format!("The necrotic compiler finishes its work. +{} XP", xp),
-            format!("The {} finishes its work. {}", "necrotic compiler".magenta(), x),
+            format!(
+                "The {} finishes its work. {}",
+                "necrotic compiler".magenta(),
+                x
+            ),
         ),
     }
 }
@@ -333,7 +669,12 @@ pub fn discovery(class: &Class, detail: &str, xp: u32) -> Msg {
     match class {
         Class::Wizard => (
             format!("Your arcane senses reveal: {}. +{} XP", detail, xp),
-            format!("Your {} senses reveal: {}. {}", "arcane".blue(), detail.blue().italic(), x),
+            format!(
+                "Your {} senses reveal: {}. {}",
+                "arcane".blue(),
+                detail.blue().italic(),
+                x
+            ),
         ),
         Class::Warrior => (
             format!("Scouting the battlefield, you find: {}. +{} XP", detail, xp),
@@ -341,11 +682,22 @@ pub fn discovery(class: &Class, detail: &str, xp: u32) -> Msg {
         ),
         Class::Rogue => (
             format!("Poking around where you shouldn't — {}. +{} XP", detail, xp),
-            format!("Poking around where you shouldn't — {}. {}", detail.yellow().italic(), x),
+            format!(
+                "Poking around where you shouldn't — {}. {}",
+                detail.yellow().italic(),
+                x
+            ),
         ),
         Class::Ranger => (
-            format!("Tracking through the wilds, you uncover: {}. +{} XP", detail, xp),
-            format!("Tracking the wilds, you uncover: {}. {}", detail.green().italic(), x),
+            format!(
+                "Tracking through the wilds, you uncover: {}. +{} XP",
+                detail, xp
+            ),
+            format!(
+                "Tracking the wilds, you uncover: {}. {}",
+                detail.green().italic(),
+                x
+            ),
         ),
         Class::Necromancer => (
             format!("The dead whisper secrets: {}. +{} XP", detail, xp),
@@ -358,24 +710,68 @@ pub fn familiar(class: &Class, creature: &str, heal: i32, hp: i32, max_hp: i32) 
     let hp_str = crate::display::color_hp(hp, max_hp);
     match class {
         Class::Wizard => (
-            format!("A {} manifests as your familiar! It mends your essence. +{} HP. HP: {}/{}", creature, heal, hp, max_hp),
-            format!("A {} manifests as your {}! +{} HP. {}", creature.cyan(), "familiar".blue().bold(), format!("{}", heal).green(), hp_str),
+            format!(
+                "A {} manifests as your familiar! It mends your essence. +{} HP. HP: {}/{}",
+                creature, heal, hp, max_hp
+            ),
+            format!(
+                "A {} manifests as your {}! +{} HP. {}",
+                creature.cyan(),
+                "familiar".blue().bold(),
+                format!("{}", heal).green(),
+                hp_str
+            ),
         ),
         Class::Warrior => (
-            format!("A {} approaches without fear. It heals your wounds. +{} HP. HP: {}/{}", creature, heal, hp, max_hp),
-            format!("A {} approaches without fear. +{} HP. {}", creature.cyan(), format!("{}", heal).green(), hp_str),
+            format!(
+                "A {} approaches without fear. It heals your wounds. +{} HP. HP: {}/{}",
+                creature, heal, hp, max_hp
+            ),
+            format!(
+                "A {} approaches without fear. +{} HP. {}",
+                creature.cyan(),
+                format!("{}", heal).green(),
+                hp_str
+            ),
         ),
         Class::Rogue => (
-            format!("A {} finds you in the shadows and mends your cuts. +{} HP. HP: {}/{}", creature, heal, hp, max_hp),
-            format!("A {} finds you in the {}. +{} HP. {}", creature.cyan(), "shadows".yellow().dimmed(), format!("{}", heal).green(), hp_str),
+            format!(
+                "A {} finds you in the shadows and mends your cuts. +{} HP. HP: {}/{}",
+                creature, heal, hp, max_hp
+            ),
+            format!(
+                "A {} finds you in the {}. +{} HP. {}",
+                creature.cyan(),
+                "shadows".yellow().dimmed(),
+                format!("{}", heal).green(),
+                hp_str
+            ),
         ),
         Class::Ranger => (
-            format!("A {} answers your call of the wild. Healed. +{} HP. HP: {}/{}", creature, heal, hp, max_hp),
-            format!("A {} answers the {}. +{} HP. {}", creature.cyan(), "call of the wild".green(), format!("{}", heal).green(), hp_str),
+            format!(
+                "A {} answers your call of the wild. Healed. +{} HP. HP: {}/{}",
+                creature, heal, hp, max_hp
+            ),
+            format!(
+                "A {} answers the {}. +{} HP. {}",
+                creature.cyan(),
+                "call of the wild".green(),
+                format!("{}", heal).green(),
+                hp_str
+            ),
         ),
         Class::Necromancer => (
-            format!("A {} senses the void in you and offers life. +{} HP. HP: {}/{}", creature, heal, hp, max_hp),
-            format!("A {} senses the {} in you. +{} HP. {}", creature.cyan(), "void".magenta(), format!("{}", heal).green(), hp_str),
+            format!(
+                "A {} senses the void in you and offers life. +{} HP. HP: {}/{}",
+                creature, heal, hp, max_hp
+            ),
+            format!(
+                "A {} senses the {} in you. +{} HP. {}",
+                creature.cyan(),
+                "void".magenta(),
+                format!("{}", heal).green(),
+                hp_str
+            ),
         ),
     }
 }
@@ -385,24 +781,69 @@ pub fn healer(class: &Class, heal: i32, hp: i32, max_hp: i32) -> Msg {
     let h = format!("{}", heal).green();
     match class {
         Class::Wizard => (
-            format!("The healer weaves restorative glyphs around you. +{} HP. HP: {}/{}", heal, hp, max_hp),
-            format!("The {} weaves {} around you. +{} HP. {}", "healer".blue().bold(), "restorative glyphs".blue().italic(), h, hp_str),
+            format!(
+                "The healer weaves restorative glyphs around you. +{} HP. HP: {}/{}",
+                heal, hp, max_hp
+            ),
+            format!(
+                "The {} weaves {} around you. +{} HP. {}",
+                "healer".blue().bold(),
+                "restorative glyphs".blue().italic(),
+                h,
+                hp_str
+            ),
         ),
         Class::Warrior => (
-            format!("The healer binds your wounds with practiced hands. +{} HP. HP: {}/{}", heal, hp, max_hp),
-            format!("The {} binds your wounds with {}. +{} HP. {}", "healer".blue().bold(), "practiced hands".red(), h, hp_str),
+            format!(
+                "The healer binds your wounds with practiced hands. +{} HP. HP: {}/{}",
+                heal, hp, max_hp
+            ),
+            format!(
+                "The {} binds your wounds with {}. +{} HP. {}",
+                "healer".blue().bold(),
+                "practiced hands".red(),
+                h,
+                hp_str
+            ),
         ),
         Class::Rogue => (
-            format!("The healer presses a salve into your palm, wordless. +{} HP. HP: {}/{}", heal, hp, max_hp),
-            format!("The {} presses a {} into your palm, wordless. +{} HP. {}", "healer".blue().bold(), "salve".yellow().dimmed(), h, hp_str),
+            format!(
+                "The healer presses a salve into your palm, wordless. +{} HP. HP: {}/{}",
+                heal, hp, max_hp
+            ),
+            format!(
+                "The {} presses a {} into your palm, wordless. +{} HP. {}",
+                "healer".blue().bold(),
+                "salve".yellow().dimmed(),
+                h,
+                hp_str
+            ),
         ),
         Class::Ranger => (
-            format!("The healer applies wilderness herbs and tonics. +{} HP. HP: {}/{}", heal, hp, max_hp),
-            format!("The {} applies {} and tonics. +{} HP. {}", "healer".blue().bold(), "wilderness herbs".green(), h, hp_str),
+            format!(
+                "The healer applies wilderness herbs and tonics. +{} HP. HP: {}/{}",
+                heal, hp, max_hp
+            ),
+            format!(
+                "The {} applies {} and tonics. +{} HP. {}",
+                "healer".blue().bold(),
+                "wilderness herbs".green(),
+                h,
+                hp_str
+            ),
         ),
         Class::Necromancer => (
-            format!("The healer's prayers grate, but the wounds close. +{} HP. HP: {}/{}", heal, hp, max_hp),
-            format!("The {}'s {} grate, but the wounds close. +{} HP. {}", "healer".blue().bold(), "prayers".magenta(), h, hp_str),
+            format!(
+                "The healer's prayers grate, but the wounds close. +{} HP. HP: {}/{}",
+                heal, hp, max_hp
+            ),
+            format!(
+                "The {}'s {} grate, but the wounds close. +{} HP. {}",
+                "healer".blue().bold(),
+                "prayers".magenta(),
+                h,
+                hp_str
+            ),
         ),
     }
 }
@@ -411,24 +852,56 @@ pub fn portal(class: &Class, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("A ley-line opens to a distant realm. Connection established. +{} XP", xp),
-            format!("A {} opens to a distant realm. {}", "ley-line".blue().bold(), x),
+            format!(
+                "A ley-line opens to a distant realm. Connection established. +{} XP",
+                xp
+            ),
+            format!(
+                "A {} opens to a distant realm. {}",
+                "ley-line".blue().bold(),
+                x
+            ),
         ),
         Class::Warrior => (
-            format!("You breach a remote fortress! Connection established. +{} XP", xp),
-            format!("You breach a {}! Connection established. {}", "remote fortress".red(), x),
+            format!(
+                "You breach a remote fortress! Connection established. +{} XP",
+                xp
+            ),
+            format!(
+                "You breach a {}! Connection established. {}",
+                "remote fortress".red(),
+                x
+            ),
         ),
         Class::Rogue => (
-            format!("You slip through the network's defenses. Portal open. +{} XP", xp),
-            format!("You slip through the {}. Portal open. {}", "network's defenses".yellow().dimmed(), x),
+            format!(
+                "You slip through the network's defenses. Portal open. +{} XP",
+                xp
+            ),
+            format!(
+                "You slip through the {}. Portal open. {}",
+                "network's defenses".yellow().dimmed(),
+                x
+            ),
         ),
         Class::Ranger => (
-            format!("You chart a path to distant lands. Portal established. +{} XP", xp),
-            format!("You chart a path to {}. Portal established. {}", "distant lands".green(), x),
+            format!(
+                "You chart a path to distant lands. Portal established. +{} XP",
+                xp
+            ),
+            format!(
+                "You chart a path to {}. Portal established. {}",
+                "distant lands".green(),
+                x
+            ),
         ),
         Class::Necromancer => (
             format!("You tear open a rift to the remote plane. +{} XP", xp),
-            format!("You tear open a {} to the remote plane. {}", "rift".magenta().bold(), x),
+            format!(
+                "You tear open a {} to the remote plane. {}",
+                "rift".magenta().bold(),
+                x
+            ),
         ),
     }
 }
@@ -437,24 +910,58 @@ pub fn power_surge(class: &Class, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("Root incantation spoken! Ley-lines surge through you. +{} XP", xp),
-            format!("Root {} spoken! {}-lines surge. {}", "incantation".blue().bold(), "Ley".blue(), x),
+            format!(
+                "Root incantation spoken! Ley-lines surge through you. +{} XP",
+                xp
+            ),
+            format!(
+                "Root {} spoken! {}-lines surge. {}",
+                "incantation".blue().bold(),
+                "Ley".blue(),
+                x
+            ),
         ),
         Class::Warrior => (
-            format!("SUDO! The full weight of root power channels through your arms! +{} XP", xp),
-            format!("{}! Root power channels through your arms! {}", "SUDO".red().bold(), x),
+            format!(
+                "SUDO! The full weight of root power channels through your arms! +{} XP",
+                xp
+            ),
+            format!(
+                "{}! Root power channels through your arms! {}",
+                "SUDO".red().bold(),
+                x
+            ),
         ),
         Class::Rogue => (
-            format!("Privilege escalated. You go unseen with root access. +{} XP", xp),
-            format!("Privilege {}. You go unseen with {} access. {}", "escalated".yellow().bold(), "root".yellow(), x),
+            format!(
+                "Privilege escalated. You go unseen with root access. +{} XP",
+                xp
+            ),
+            format!(
+                "Privilege {}. You go unseen with {} access. {}",
+                "escalated".yellow().bold(),
+                "root".yellow(),
+                x
+            ),
         ),
         Class::Ranger => (
             format!("You call upon the primal authority of root. +{} XP", xp),
-            format!("You call upon the {} authority of root. {}", "primal".green().bold(), x),
+            format!(
+                "You call upon the {} authority of root. {}",
+                "primal".green().bold(),
+                x
+            ),
         ),
         Class::Necromancer => (
-            format!("Root access granted. The system bows to the void. +{} XP", xp),
-            format!("Root access granted. The system bows to the {}. {}", "void".magenta().bold(), x),
+            format!(
+                "Root access granted. The system bows to the void. +{} XP",
+                xp
+            ),
+            format!(
+                "Root access granted. The system bows to the {}. {}",
+                "void".magenta().bold(),
+                x
+            ),
         ),
     }
 }
@@ -464,24 +971,69 @@ pub fn banish(class: &Class, target: &str, xp: u32, gold: u32) -> Msg {
     let g = color_gold(gold);
     match class {
         Class::Wizard => (
-            format!("You unmake {} with a word. Process banished. +{} XP, +{} gold", target, xp, gold),
-            format!("You unmake {} with a {}. Process banished. {} {}", target.red(), "word".blue().bold(), x, g),
+            format!(
+                "You unmake {} with a word. Process banished. +{} XP, +{} gold",
+                target, xp, gold
+            ),
+            format!(
+                "You unmake {} with a {}. Process banished. {} {}",
+                target.red(),
+                "word".blue().bold(),
+                x,
+                g
+            ),
         ),
         Class::Warrior => (
-            format!("You slay {} with iron will! Process vanquished. +{} XP, +{} gold", target, xp, gold),
-            format!("You slay {} with {}! Process vanquished. {} {}", target.red(), "iron will".red().bold(), x, g),
+            format!(
+                "You slay {} with iron will! Process vanquished. +{} XP, +{} gold",
+                target, xp, gold
+            ),
+            format!(
+                "You slay {} with {}! Process vanquished. {} {}",
+                target.red(),
+                "iron will".red().bold(),
+                x,
+                g
+            ),
         ),
         Class::Rogue => (
-            format!("You silence {} without ceremony. +{} XP, +{} gold", target, xp, gold),
-            format!("You silence {} {}. {} {}", target.red(), "without ceremony".yellow().dimmed(), x, g),
+            format!(
+                "You silence {} without ceremony. +{} XP, +{} gold",
+                target, xp, gold
+            ),
+            format!(
+                "You silence {} {}. {} {}",
+                target.red(),
+                "without ceremony".yellow().dimmed(),
+                x,
+                g
+            ),
         ),
         Class::Ranger => (
-            format!("You put {} down cleanly. The wilderness is quieter. +{} XP, +{} gold", target, xp, gold),
-            format!("You put {} down {}. The wilderness is quieter. {} {}", target.red(), "cleanly".green(), x, g),
+            format!(
+                "You put {} down cleanly. The wilderness is quieter. +{} XP, +{} gold",
+                target, xp, gold
+            ),
+            format!(
+                "You put {} down {}. The wilderness is quieter. {} {}",
+                target.red(),
+                "cleanly".green(),
+                x,
+                g
+            ),
         ),
         Class::Necromancer => (
-            format!("You harvest {}. Its cycles end. +{} XP, +{} gold", target, xp, gold),
-            format!("You harvest {}. Its {} end. {} {}", target.red(), "cycles".magenta(), x, g),
+            format!(
+                "You harvest {}. Its cycles end. +{} XP, +{} gold",
+                target, xp, gold
+            ),
+            format!(
+                "You harvest {}. Its {} end. {} {}",
+                target.red(),
+                "cycles".magenta(),
+                x,
+                g
+            ),
         ),
     }
 }
@@ -517,24 +1069,60 @@ pub fn incantation(class: &Class, lang: &str, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("You speak the {} tongue. A spell takes form. +{} XP", lang, xp),
-            format!("You speak the {} tongue. A {} takes form. {}", lang.blue(), "spell".blue().bold(), x),
+            format!(
+                "You speak the {} tongue. A spell takes form. +{} XP",
+                lang, xp
+            ),
+            format!(
+                "You speak the {} tongue. A {} takes form. {}",
+                lang.blue(),
+                "spell".blue().bold(),
+                x
+            ),
         ),
         Class::Warrior => (
-            format!("You wield {} like a weapon. Crude but effective. +{} XP", lang, xp),
-            format!("You wield {} like a weapon. Crude but effective. {}", lang.red(), x),
+            format!(
+                "You wield {} like a weapon. Crude but effective. +{} XP",
+                lang, xp
+            ),
+            format!(
+                "You wield {} like a weapon. Crude but effective. {}",
+                lang.red(),
+                x
+            ),
         ),
         Class::Rogue => (
             format!("{} — an interpreter, untraceable. +{} XP", lang, xp),
-            format!("{} — an {}, untraceable. {}", lang.yellow(), "interpreter".yellow().dimmed(), x),
+            format!(
+                "{} — an {}, untraceable. {}",
+                lang.yellow(),
+                "interpreter".yellow().dimmed(),
+                x
+            ),
         ),
         Class::Ranger => (
-            format!("You track {} through its native territory. +{} XP", lang, xp),
-            format!("You track {} through its {}. {}", lang.green(), "native territory".green().dimmed(), x),
+            format!(
+                "You track {} through its native territory. +{} XP",
+                lang, xp
+            ),
+            format!(
+                "You track {} through its {}. {}",
+                lang.green(),
+                "native territory".green().dimmed(),
+                x
+            ),
         ),
         Class::Necromancer => (
-            format!("You summon {} from the interpreter beyond. +{} XP", lang, xp),
-            format!("You summon {} from the {}. {}", lang.magenta(), "interpreter beyond".magenta().bold(), x),
+            format!(
+                "You summon {} from the interpreter beyond. +{} XP",
+                lang, xp
+            ),
+            format!(
+                "You summon {} from the {}. {}",
+                lang.magenta(),
+                "interpreter beyond".magenta().bold(),
+                x
+            ),
         ),
     }
 }
@@ -543,24 +1131,64 @@ pub fn ancient_tome(class: &Class, subject: &str, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("You consult the arcane scrolls of {}. Knowledge absorbed. +{} XP", subject, xp),
-            format!("You consult the {} of {}. {}", "arcane scrolls".blue().italic(), subject.bold(), x),
+            format!(
+                "You consult the arcane scrolls of {}. Knowledge absorbed. +{} XP",
+                subject, xp
+            ),
+            format!(
+                "You consult the {} of {}. {}",
+                "arcane scrolls".blue().italic(),
+                subject.bold(),
+                x
+            ),
         ),
         Class::Warrior => (
-            format!("You read the field manual of {}. Strategy memorized. +{} XP", subject, xp),
-            format!("You read the {} of {}. Strategy memorized. {}", "field manual".red().dimmed(), subject.bold(), x),
+            format!(
+                "You read the field manual of {}. Strategy memorized. +{} XP",
+                subject, xp
+            ),
+            format!(
+                "You read the {} of {}. Strategy memorized. {}",
+                "field manual".red().dimmed(),
+                subject.bold(),
+                x
+            ),
         ),
         Class::Rogue => (
-            format!("You skim {} for the relevant details. No time for the rest. +{} XP", subject, xp),
-            format!("You skim {} for the relevant details. {}. {}", subject.bold(), "No time for the rest".yellow().dimmed(), x),
+            format!(
+                "You skim {} for the relevant details. No time for the rest. +{} XP",
+                subject, xp
+            ),
+            format!(
+                "You skim {} for the relevant details. {}. {}",
+                subject.bold(),
+                "No time for the rest".yellow().dimmed(),
+                x
+            ),
         ),
         Class::Ranger => (
-            format!("You study {} like a terrain map. Routes memorized. +{} XP", subject, xp),
-            format!("You study {} like a {}. Routes memorized. {}", subject.bold(), "terrain map".green(), x),
+            format!(
+                "You study {} like a terrain map. Routes memorized. +{} XP",
+                subject, xp
+            ),
+            format!(
+                "You study {} like a {}. Routes memorized. {}",
+                subject.bold(),
+                "terrain map".green(),
+                x
+            ),
         ),
         Class::Necromancer => (
-            format!("The dead pages of {} yield their secrets. +{} XP", subject, xp),
-            format!("The {} of {} yield their secrets. {}", "dead pages".magenta().dimmed(), subject.bold(), x),
+            format!(
+                "The dead pages of {} yield their secrets. +{} XP",
+                subject, xp
+            ),
+            format!(
+                "The {} of {} yield their secrets. {}",
+                "dead pages".magenta().dimmed(),
+                subject.bold(),
+                x
+            ),
         ),
     }
 }
@@ -568,24 +1196,69 @@ pub fn ancient_tome(class: &Class, subject: &str, xp: u32) -> Msg {
 pub fn level_up(class: &Class, level: u32, title: &str) -> Msg {
     match class {
         Class::Wizard => (
-            format!("LEVEL UP! The arcane flows stronger! You are now level {}! Title: {}", level, title),
-            format!("{} The {} flows stronger! Level {} — {}!", "LEVEL UP!".yellow().bold(), "arcane".blue().bold(), format!("{}", level).yellow().bold(), title.cyan().italic()),
+            format!(
+                "LEVEL UP! The arcane flows stronger! You are now level {}! Title: {}",
+                level, title
+            ),
+            format!(
+                "{} The {} flows stronger! Level {} — {}!",
+                "LEVEL UP!".yellow().bold(),
+                "arcane".blue().bold(),
+                format!("{}", level).yellow().bold(),
+                title.cyan().italic()
+            ),
         ),
         Class::Warrior => (
-            format!("LEVEL UP! Your might grows! You are now level {}! Title: {}", level, title),
-            format!("{} Your {} grows! Level {} — {}!", "LEVEL UP!".yellow().bold(), "might".red().bold(), format!("{}", level).yellow().bold(), title.cyan().italic()),
+            format!(
+                "LEVEL UP! Your might grows! You are now level {}! Title: {}",
+                level, title
+            ),
+            format!(
+                "{} Your {} grows! Level {} — {}!",
+                "LEVEL UP!".yellow().bold(),
+                "might".red().bold(),
+                format!("{}", level).yellow().bold(),
+                title.cyan().italic()
+            ),
         ),
         Class::Rogue => (
-            format!("LEVEL UP! Sharper, faster, deadlier. Level {}. Title: {}", level, title),
-            format!("{} {}. Level {} — {}!", "LEVEL UP!".yellow().bold(), "Sharper. Faster. Deadlier.".yellow(), format!("{}", level).yellow().bold(), title.cyan().italic()),
+            format!(
+                "LEVEL UP! Sharper, faster, deadlier. Level {}. Title: {}",
+                level, title
+            ),
+            format!(
+                "{} {}. Level {} — {}!",
+                "LEVEL UP!".yellow().bold(),
+                "Sharper. Faster. Deadlier.".yellow(),
+                format!("{}", level).yellow().bold(),
+                title.cyan().italic()
+            ),
         ),
         Class::Ranger => (
-            format!("LEVEL UP! The wilds yield their secrets. Level {}. Title: {}", level, title),
-            format!("{} The wilds {}. Level {} — {}!", "LEVEL UP!".yellow().bold(), "yield their secrets".green(), format!("{}", level).yellow().bold(), title.cyan().italic()),
+            format!(
+                "LEVEL UP! The wilds yield their secrets. Level {}. Title: {}",
+                level, title
+            ),
+            format!(
+                "{} The wilds {}. Level {} — {}!",
+                "LEVEL UP!".yellow().bold(),
+                "yield their secrets".green(),
+                format!("{}", level).yellow().bold(),
+                title.cyan().italic()
+            ),
         ),
         Class::Necromancer => (
-            format!("LEVEL UP! The darkness deepens. Level {}. Title: {}", level, title),
-            format!("{} The darkness {}. Level {} — {}!", "LEVEL UP!".yellow().bold(), "deepens".magenta().bold(), format!("{}", level).yellow().bold(), title.cyan().italic()),
+            format!(
+                "LEVEL UP! The darkness deepens. Level {}. Title: {}",
+                level, title
+            ),
+            format!(
+                "{} The darkness {}. Level {} — {}!",
+                "LEVEL UP!".yellow().bold(),
+                "deepens".magenta().bold(),
+                format!("{}", level).yellow().bold(),
+                title.cyan().italic()
+            ),
         ),
     }
 }
@@ -594,24 +1267,64 @@ pub fn death_normal(class: &Class, killer: &str, gold_lost: u32) -> Msg {
     let k = color_monster(killer);
     match class {
         Class::Wizard => (
-            format!("Your wards shattered by {}! Arcane collapse! Lost {} gold, XP reset.", killer, gold_lost),
-            format!("Your {} shattered by {}! {}. -{} gold, XP reset.", "wards".blue(), k, "Arcane collapse".blue().bold(), format!("{}", gold_lost).yellow()),
+            format!(
+                "Your wards shattered by {}! Arcane collapse! Lost {} gold, XP reset.",
+                killer, gold_lost
+            ),
+            format!(
+                "Your {} shattered by {}! {}. -{} gold, XP reset.",
+                "wards".blue(),
+                k,
+                "Arcane collapse".blue().bold(),
+                format!("{}", gold_lost).yellow()
+            ),
         ),
         Class::Warrior => (
-            format!("Felled by {}! The battle is lost! Lost {} gold, XP reset.", killer, gold_lost),
-            format!("Felled by {}! The battle is {}! -{} gold, XP reset.", k, "lost".red().bold(), format!("{}", gold_lost).yellow()),
+            format!(
+                "Felled by {}! The battle is lost! Lost {} gold, XP reset.",
+                killer, gold_lost
+            ),
+            format!(
+                "Felled by {}! The battle is {}! -{} gold, XP reset.",
+                k,
+                "lost".red().bold(),
+                format!("{}", gold_lost).yellow()
+            ),
         ),
         Class::Rogue => (
-            format!("Caught by {}. The shadows offer no shelter today. Lost {} gold, XP reset.", killer, gold_lost),
-            format!("Caught by {}. The {} offer no shelter today. -{} gold, XP reset.", k, "shadows".yellow().dimmed(), format!("{}", gold_lost).yellow()),
+            format!(
+                "Caught by {}. The shadows offer no shelter today. Lost {} gold, XP reset.",
+                killer, gold_lost
+            ),
+            format!(
+                "Caught by {}. The {} offer no shelter today. -{} gold, XP reset.",
+                k,
+                "shadows".yellow().dimmed(),
+                format!("{}", gold_lost).yellow()
+            ),
         ),
         Class::Ranger => (
-            format!("Overrun by {}! The hunt ends here. Lost {} gold, XP reset.", killer, gold_lost),
-            format!("Overrun by {}! The hunt ends here. -{} gold, XP reset.", k, format!("{}", gold_lost).yellow()),
+            format!(
+                "Overrun by {}! The hunt ends here. Lost {} gold, XP reset.",
+                killer, gold_lost
+            ),
+            format!(
+                "Overrun by {}! The hunt ends here. -{} gold, XP reset.",
+                k,
+                format!("{}", gold_lost).yellow()
+            ),
         ),
         Class::Necromancer => (
-            format!("Consumed by {}. Even death has a price. Lost {} gold, XP reset.", killer, gold_lost),
-            format!("Consumed by {}. Even {} has a price. -{} gold, XP reset.", k, "death".magenta(), format!("{}", gold_lost).yellow()),
+            format!(
+                "Consumed by {}. Even death has a price. Lost {} gold, XP reset.",
+                killer, gold_lost
+            ),
+            format!(
+                "Consumed by {}. Even {} has a price. -{} gold, XP reset.",
+                k,
+                "death".magenta(),
+                format!("{}", gold_lost).yellow()
+            ),
         ),
     }
 }
@@ -621,24 +1334,61 @@ pub fn docker_orchestra(class: &Class, xp: u32, gold: u32) -> Msg {
     let g = color_gold(gold);
     match class {
         Class::Wizard => (
-            format!("You conduct the container symphony! Services harmonize. +{} XP, +{} gold", xp, gold),
-            format!("You conduct the {} symphony! Services {}. {} {}", "container".blue(), "harmonize".blue().bold(), x, g),
+            format!(
+                "You conduct the container symphony! Services harmonize. +{} XP, +{} gold",
+                xp, gold
+            ),
+            format!(
+                "You conduct the {} symphony! Services {}. {} {}",
+                "container".blue(),
+                "harmonize".blue().bold(),
+                x,
+                g
+            ),
         ),
         Class::Warrior => (
-            format!("Your army of containers marches! The siege engine starts! +{} XP, +{} gold", xp, gold),
+            format!(
+                "Your army of containers marches! The siege engine starts! +{} XP, +{} gold",
+                xp, gold
+            ),
             format!("Your {} of containers marches! {} {}", "army".red(), x, g),
         ),
         Class::Rogue => (
-            format!("Services launch unseen. The operation is live. +{} XP, +{} gold", xp, gold),
-            format!("Services launch {}. The operation is live. {} {}", "unseen".yellow().dimmed(), x, g),
+            format!(
+                "Services launch unseen. The operation is live. +{} XP, +{} gold",
+                xp, gold
+            ),
+            format!(
+                "Services launch {}. The operation is live. {} {}",
+                "unseen".yellow().dimmed(),
+                x,
+                g
+            ),
         ),
         Class::Ranger => (
-            format!("The pack deploys in formation. Ecosystem stable. +{} XP, +{} gold", xp, gold),
-            format!("The pack deploys in {}. Ecosystem stable. {} {}", "formation".green(), x, g),
+            format!(
+                "The pack deploys in formation. Ecosystem stable. +{} XP, +{} gold",
+                xp, gold
+            ),
+            format!(
+                "The pack deploys in {}. Ecosystem stable. {} {}",
+                "formation".green(),
+                x,
+                g
+            ),
         ),
         Class::Necromancer => (
-            format!("You animate the container horde. The undead swarm is live. +{} XP, +{} gold", xp, gold),
-            format!("You animate the container {}. The {} is live. {} {}", "horde".magenta(), "undead swarm".magenta().bold(), x, g),
+            format!(
+                "You animate the container horde. The undead swarm is live. +{} XP, +{} gold",
+                xp, gold
+            ),
+            format!(
+                "You animate the container {}. The {} is live. {} {}",
+                "horde".magenta(),
+                "undead swarm".magenta().bold(),
+                x,
+                g
+            ),
         ),
     }
 }
@@ -703,36 +1453,93 @@ fn tournament_round_intro_impl(class: &Class, round: u32, enemy_name: &str) -> M
 #[allow(non_upper_case_globals)]
 pub const tournament_round_intro: fn(&Class, u32, &str) -> Msg = tournament_round_intro_impl;
 
-pub fn tournament_player_hit(class: &Class, enemy_name: &str, damage: i32, enemy_hp: i32, enemy_max_hp: i32) -> Msg {
+pub fn tournament_player_hit(
+    class: &Class,
+    enemy_name: &str,
+    damage: i32,
+    enemy_hp: i32,
+    enemy_max_hp: i32,
+) -> Msg {
     let m = color_monster(enemy_name);
     let d = color_damage(damage);
     let hp_plain = format!("{}/{}", enemy_hp.max(0), enemy_max_hp);
     let hp_colored = hp_plain.red();
     match class {
         Class::Wizard => (
-            format!("Your arcane bolt sears the {} for {} damage! (HP: {})", enemy_name, damage, hp_plain),
-            format!("Your {} sears the {} for {} damage! (HP: {})", "arcane bolt".blue().bold(), m, d, hp_colored),
+            format!(
+                "Your arcane bolt sears the {} for {} damage! (HP: {})",
+                enemy_name, damage, hp_plain
+            ),
+            format!(
+                "Your {} sears the {} for {} damage! (HP: {})",
+                "arcane bolt".blue().bold(),
+                m,
+                d,
+                hp_colored
+            ),
         ),
         Class::Warrior => (
-            format!("Your blade bites deep into the {} for {} damage! (HP: {})", enemy_name, damage, hp_plain),
-            format!("Your {} bites deep into the {} for {} damage! (HP: {})", "blade".red().bold(), m, d, hp_colored),
+            format!(
+                "Your blade bites deep into the {} for {} damage! (HP: {})",
+                enemy_name, damage, hp_plain
+            ),
+            format!(
+                "Your {} bites deep into the {} for {} damage! (HP: {})",
+                "blade".red().bold(),
+                m,
+                d,
+                hp_colored
+            ),
         ),
         Class::Rogue => (
-            format!("Your strike finds a vital point on the {} for {} damage! (HP: {})", enemy_name, damage, hp_plain),
-            format!("Your {} finds a vital point on the {} for {} damage! (HP: {})", "strike".yellow().bold(), m, d, hp_colored),
+            format!(
+                "Your strike finds a vital point on the {} for {} damage! (HP: {})",
+                enemy_name, damage, hp_plain
+            ),
+            format!(
+                "Your {} finds a vital point on the {} for {} damage! (HP: {})",
+                "strike".yellow().bold(),
+                m,
+                d,
+                hp_colored
+            ),
         ),
         Class::Ranger => (
-            format!("Your arrow strikes true, piercing the {} for {} damage! (HP: {})", enemy_name, damage, hp_plain),
-            format!("Your {} strikes true, piercing the {} for {} damage! (HP: {})", "arrow".green().bold(), m, d, hp_colored),
+            format!(
+                "Your arrow strikes true, piercing the {} for {} damage! (HP: {})",
+                enemy_name, damage, hp_plain
+            ),
+            format!(
+                "Your {} strikes true, piercing the {} for {} damage! (HP: {})",
+                "arrow".green().bold(),
+                m,
+                d,
+                hp_colored
+            ),
         ),
         Class::Necromancer => (
-            format!("Your dark tendrils drain the {} for {} damage! (HP: {})", enemy_name, damage, hp_plain),
-            format!("Your {} drain the {} for {} damage! (HP: {})", "dark tendrils".magenta().bold(), m, d, hp_colored),
+            format!(
+                "Your dark tendrils drain the {} for {} damage! (HP: {})",
+                enemy_name, damage, hp_plain
+            ),
+            format!(
+                "Your {} drain the {} for {} damage! (HP: {})",
+                "dark tendrils".magenta().bold(),
+                m,
+                d,
+                hp_colored
+            ),
         ),
     }
 }
 
-pub fn tournament_player_crit(class: &Class, enemy_name: &str, damage: i32, enemy_hp: i32, enemy_max_hp: i32) -> Msg {
+pub fn tournament_player_crit(
+    class: &Class,
+    enemy_name: &str,
+    damage: i32,
+    enemy_hp: i32,
+    enemy_max_hp: i32,
+) -> Msg {
     let m = color_monster(enemy_name);
     let d = color_damage(damage);
     let hp_plain = format!("{}/{}", enemy_hp.max(0), enemy_max_hp);
@@ -741,24 +1548,74 @@ pub fn tournament_player_crit(class: &Class, enemy_name: &str, damage: i32, enem
     let tag = "CRITICAL!".yellow().bold();
     match class {
         Class::Wizard => (
-            format!("{} Arcane lightning splits the {} for {} damage! (HP: {})", tag_plain, enemy_name, damage, hp_plain),
-            format!("{} {} splits the {} for {} damage! (HP: {})", tag, "Arcane lightning".blue().bold(), m, d, hp_colored),
+            format!(
+                "{} Arcane lightning splits the {} for {} damage! (HP: {})",
+                tag_plain, enemy_name, damage, hp_plain
+            ),
+            format!(
+                "{} {} splits the {} for {} damage! (HP: {})",
+                tag,
+                "Arcane lightning".blue().bold(),
+                m,
+                d,
+                hp_colored
+            ),
         ),
         Class::Warrior => (
-            format!("{} Your blade cleaves the {} for {} damage! (HP: {})", tag_plain, enemy_name, damage, hp_plain),
-            format!("{} Your {} cleaves the {} for {} damage! (HP: {})", tag, "blade".red().bold(), m, d, hp_colored),
+            format!(
+                "{} Your blade cleaves the {} for {} damage! (HP: {})",
+                tag_plain, enemy_name, damage, hp_plain
+            ),
+            format!(
+                "{} Your {} cleaves the {} for {} damage! (HP: {})",
+                tag,
+                "blade".red().bold(),
+                m,
+                d,
+                hp_colored
+            ),
         ),
         Class::Rogue => (
-            format!("{} Vital strike on the {} for {} damage! (HP: {})", tag_plain, enemy_name, damage, hp_plain),
-            format!("{} {} on the {} for {} damage! (HP: {})", tag, "Vital strike".yellow().bold(), m, d, hp_colored),
+            format!(
+                "{} Vital strike on the {} for {} damage! (HP: {})",
+                tag_plain, enemy_name, damage, hp_plain
+            ),
+            format!(
+                "{} {} on the {} for {} damage! (HP: {})",
+                tag,
+                "Vital strike".yellow().bold(),
+                m,
+                d,
+                hp_colored
+            ),
         ),
         Class::Ranger => (
-            format!("{} Headshot — your arrow drops the {} for {} damage! (HP: {})", tag_plain, enemy_name, damage, hp_plain),
-            format!("{} {} — your arrow drops the {} for {} damage! (HP: {})", tag, "Headshot".green().bold(), m, d, hp_colored),
+            format!(
+                "{} Headshot — your arrow drops the {} for {} damage! (HP: {})",
+                tag_plain, enemy_name, damage, hp_plain
+            ),
+            format!(
+                "{} {} — your arrow drops the {} for {} damage! (HP: {})",
+                tag,
+                "Headshot".green().bold(),
+                m,
+                d,
+                hp_colored
+            ),
         ),
         Class::Necromancer => (
-            format!("{} Death magic engulfs the {} for {} damage! (HP: {})", tag_plain, enemy_name, damage, hp_plain),
-            format!("{} {} engulfs the {} for {} damage! (HP: {})", tag, "Death magic".magenta().bold(), m, d, hp_colored),
+            format!(
+                "{} Death magic engulfs the {} for {} damage! (HP: {})",
+                tag_plain, enemy_name, damage, hp_plain
+            ),
+            format!(
+                "{} {} engulfs the {} for {} damage! (HP: {})",
+                tag,
+                "Death magic".magenta().bold(),
+                m,
+                d,
+                hp_colored
+            ),
         ),
     }
 }
@@ -768,50 +1625,117 @@ pub fn tournament_player_miss(class: &Class, enemy_name: &str) -> Msg {
     match class {
         Class::Wizard => (
             format!("Your spell fizzles in the air, missing the {}!", enemy_name),
-            format!("Your spell {} in the air, missing the {}!", "fizzles".blue().dimmed(), m),
+            format!(
+                "Your spell {} in the air, missing the {}!",
+                "fizzles".blue().dimmed(),
+                m
+            ),
         ),
         Class::Warrior => (
             format!("Your swing goes wide, the {} evades!", enemy_name),
-            format!("Your swing goes {}, the {} evades!", "wide".red().dimmed(), m),
+            format!(
+                "Your swing goes {}, the {} evades!",
+                "wide".red().dimmed(),
+                m
+            ),
         ),
         Class::Rogue => (
-            format!("Your dagger catches only shadow — the {} dodges!", enemy_name),
-            format!("Your dagger catches only {} — the {} dodges!", "shadow".yellow().dimmed(), m),
+            format!(
+                "Your dagger catches only shadow — the {} dodges!",
+                enemy_name
+            ),
+            format!(
+                "Your dagger catches only {} — the {} dodges!",
+                "shadow".yellow().dimmed(),
+                m
+            ),
         ),
         Class::Ranger => (
             format!("Your shot veers off course, missing the {}!", enemy_name),
-            format!("Your shot veers {}, missing the {}!", "off course".green().dimmed(), m),
+            format!(
+                "Your shot veers {}, missing the {}!",
+                "off course".green().dimmed(),
+                m
+            ),
         ),
         Class::Necromancer => (
             format!("Your hex dissipates harmlessly around the {}!", enemy_name),
-            format!("Your hex {} harmlessly around the {}!", "dissipates".magenta().dimmed(), m),
+            format!(
+                "Your hex {} harmlessly around the {}!",
+                "dissipates".magenta().dimmed(),
+                m
+            ),
         ),
     }
 }
 
-pub fn tournament_enemy_hit(enemy_name: &str, damage: i32, player_hp: i32, player_max_hp: i32, variant: u32) -> Msg {
+pub fn tournament_enemy_hit(
+    enemy_name: &str,
+    damage: i32,
+    player_hp: i32,
+    player_max_hp: i32,
+    variant: u32,
+) -> Msg {
     let m = color_monster(enemy_name);
     let d = color_damage(damage);
     let hp_str = crate::display::color_hp(player_hp, player_max_hp);
     match variant % 4 {
         0 => {
-            let plain = format!("The {} lashes out, dealing {} damage! {}", enemy_name, damage, format!("HP: {}/{}", player_hp, player_max_hp));
+            let plain = format!(
+                "The {} lashes out, dealing {} damage! {}",
+                enemy_name,
+                damage,
+                format!("HP: {}/{}", player_hp, player_max_hp)
+            );
             let colored = format!("The {} lashes out, dealing {} damage! {}", m, d, hp_str);
             (plain, colored)
         }
         1 => {
-            let plain = format!("The {} strikes with fury! You take {} damage! {}", enemy_name, damage, format!("HP: {}/{}", player_hp, player_max_hp));
-            let colored = format!("The {} strikes with {}! You take {} damage! {}", m, "fury".red().bold(), d, hp_str);
+            let plain = format!(
+                "The {} strikes with fury! You take {} damage! {}",
+                enemy_name,
+                damage,
+                format!("HP: {}/{}", player_hp, player_max_hp)
+            );
+            let colored = format!(
+                "The {} strikes with {}! You take {} damage! {}",
+                m,
+                "fury".red().bold(),
+                d,
+                hp_str
+            );
             (plain, colored)
         }
         2 => {
-            let plain = format!("The {} lands a solid blow! {} damage! {}", enemy_name, damage, format!("HP: {}/{}", player_hp, player_max_hp));
-            let colored = format!("The {} lands a {}! {} damage! {}", m, "solid blow".red().bold(), d, hp_str);
+            let plain = format!(
+                "The {} lands a solid blow! {} damage! {}",
+                enemy_name,
+                damage,
+                format!("HP: {}/{}", player_hp, player_max_hp)
+            );
+            let colored = format!(
+                "The {} lands a {}! {} damage! {}",
+                m,
+                "solid blow".red().bold(),
+                d,
+                hp_str
+            );
             (plain, colored)
         }
         _ => {
-            let plain = format!("The {} catches you off-guard! Took {} damage! {}", enemy_name, damage, format!("HP: {}/{}", player_hp, player_max_hp));
-            let colored = format!("The {} catches you {}! Took {} damage! {}", m, "off-guard".red().dimmed(), d, hp_str);
+            let plain = format!(
+                "The {} catches you off-guard! Took {} damage! {}",
+                enemy_name,
+                damage,
+                format!("HP: {}/{}", player_hp, player_max_hp)
+            );
+            let colored = format!(
+                "The {} catches you {}! Took {} damage! {}",
+                m,
+                "off-guard".red().dimmed(),
+                d,
+                hp_str
+            );
             (plain, colored)
         }
     }
@@ -843,7 +1767,13 @@ pub fn tournament_enemy_miss(enemy_name: &str, variant: u32) -> Msg {
     }
 }
 
-pub fn tournament_enemy_crit(enemy_name: &str, damage: i32, player_hp: i32, player_max_hp: i32, variant: u32) -> Msg {
+pub fn tournament_enemy_crit(
+    enemy_name: &str,
+    damage: i32,
+    player_hp: i32,
+    player_max_hp: i32,
+    variant: u32,
+) -> Msg {
     let m = color_monster(enemy_name);
     let d = color_damage(damage);
     let hp_str = crate::display::color_hp(player_hp, player_max_hp);
@@ -851,25 +1781,60 @@ pub fn tournament_enemy_crit(enemy_name: &str, damage: i32, player_hp: i32, play
     let tag = "CRITICAL!".red().bold();
     match variant % 3 {
         0 => {
-            let plain = format!("{} The {} crushes your guard for {} damage! HP: {}/{}", tag_plain, enemy_name, damage, player_hp, player_max_hp);
-            let colored = format!("{} The {} crushes your guard for {} damage! {}", tag, m, d, hp_str);
+            let plain = format!(
+                "{} The {} crushes your guard for {} damage! HP: {}/{}",
+                tag_plain, enemy_name, damage, player_hp, player_max_hp
+            );
+            let colored = format!(
+                "{} The {} crushes your guard for {} damage! {}",
+                tag, m, d, hp_str
+            );
             (plain, colored)
         }
         1 => {
-            let plain = format!("{} The {} lands a devastating blow! {} damage! HP: {}/{}", tag_plain, enemy_name, damage, player_hp, player_max_hp);
-            let colored = format!("{} The {} lands a {}! {} damage! {}", tag, m, "devastating blow".red().bold(), d, hp_str);
+            let plain = format!(
+                "{} The {} lands a devastating blow! {} damage! HP: {}/{}",
+                tag_plain, enemy_name, damage, player_hp, player_max_hp
+            );
+            let colored = format!(
+                "{} The {} lands a {}! {} damage! {}",
+                tag,
+                m,
+                "devastating blow".red().bold(),
+                d,
+                hp_str
+            );
             (plain, colored)
         }
         _ => {
-            let plain = format!("{} The {} eviscerates you for {} damage! HP: {}/{}", tag_plain, enemy_name, damage, player_hp, player_max_hp);
-            let colored = format!("{} The {} {} you for {} damage! {}", tag, m, "eviscerates".red().bold(), d, hp_str);
+            let plain = format!(
+                "{} The {} eviscerates you for {} damage! HP: {}/{}",
+                tag_plain, enemy_name, damage, player_hp, player_max_hp
+            );
+            let colored = format!(
+                "{} The {} {} you for {} damage! {}",
+                tag,
+                m,
+                "eviscerates".red().bold(),
+                d,
+                hp_str
+            );
             (plain, colored)
         }
     }
 }
 
 pub fn tournament_ko(rounds_cleared: u32, total_gold: u32, total_xp: u32) -> Msg {
-    let plain = format!("You were knocked out after {} rounds. Earned: {} gold, {} XP.", rounds_cleared, total_gold, total_xp);
-    let colored = format!("You were {} after {} rounds. Earned: {} gold, {} XP.", "knocked out".red().bold(), format!("{}", rounds_cleared).cyan().bold(), format!("{}", total_gold).yellow().bold(), format!("{}", total_xp).cyan().bold());
+    let plain = format!(
+        "You were knocked out after {} rounds. Earned: {} gold, {} XP.",
+        rounds_cleared, total_gold, total_xp
+    );
+    let colored = format!(
+        "You were {} after {} rounds. Earned: {} gold, {} XP.",
+        "knocked out".red().bold(),
+        format!("{}", rounds_cleared).cyan().bold(),
+        format!("{}", total_gold).yellow().bold(),
+        format!("{}", total_xp).cyan().bold()
+    );
     (plain, colored)
 }

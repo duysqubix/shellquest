@@ -175,11 +175,17 @@ impl Subclass {
 
     pub fn available_for(class: &Class) -> Vec<Subclass> {
         match class {
-            Class::Wizard => vec![Subclass::Archmage, Subclass::Chronomancer, Subclass::Datamancer],
+            Class::Wizard => vec![
+                Subclass::Archmage,
+                Subclass::Chronomancer,
+                Subclass::Datamancer,
+            ],
             Class::Warrior => vec![Subclass::Berserker, Subclass::Paladin, Subclass::Warlord],
             Class::Rogue => vec![Subclass::Assassin, Subclass::Hacker, Subclass::Shadow],
             Class::Ranger => vec![Subclass::Beastmaster, Subclass::Sniper, Subclass::Scout],
-            Class::Necromancer => vec![Subclass::Lich, Subclass::Plaguebearer, Subclass::SoulReaper],
+            Class::Necromancer => {
+                vec![Subclass::Lich, Subclass::Plaguebearer, Subclass::SoulReaper]
+            }
         }
     }
 }
@@ -471,15 +477,27 @@ pub fn signature_bonus(
     match class {
         Class::Wizard => {
             let bonus = (intelligence / 5).max(0);
-            if bonus > 0 { (bonus, Some("arcane burn")) } else { (0, None) }
+            if bonus > 0 {
+                (bonus, Some("arcane burn"))
+            } else {
+                (0, None)
+            }
         }
         Class::Ranger if is_first_strike => {
             let bonus = (intelligence / 3).max(0);
-            if bonus > 0 { (bonus, Some("mark prey")) } else { (0, None) }
+            if bonus > 0 {
+                (bonus, Some("mark prey"))
+            } else {
+                (0, None)
+            }
         }
         Class::Warrior if hp * 5 < max_hp * 3 => {
             let bonus = (strength / 4).max(0);
-            if bonus > 0 { (bonus, Some("battle frenzy")) } else { (0, None) }
+            if bonus > 0 {
+                (bonus, Some("battle frenzy"))
+            } else {
+                (0, None)
+            }
         }
         _ => (0, None),
     }
@@ -523,7 +541,13 @@ mod tests {
     use super::*;
 
     fn make_item(slot: ItemSlot, power: i32, rarity: Rarity) -> Item {
-        Item { name: "Test Item".to_string(), slot, power, rarity, enchant_level: 0 }
+        Item {
+            name: "Test Item".to_string(),
+            slot,
+            power,
+            rarity,
+            enchant_level: 0,
+        }
     }
 
     // --- Character::new() ---
@@ -576,7 +600,8 @@ mod tests {
             assert!(
                 (3..=4).contains(&budget),
                 "{:?} race stat budget out of design range: {} (must be 3 or 4)",
-                race, budget
+                race,
+                budget
             );
         }
     }
@@ -586,7 +611,12 @@ mod tests {
         for race in [Race::Human, Race::Elf, Race::Dwarf, Race::Orc, Race::Goblin] {
             let (s, d, i) = race.stat_bonus();
             let max = s.max(d).max(i);
-            assert!(max <= 3, "{:?} race max single-stat bonus exceeds +3: {}", race, max);
+            assert!(
+                max <= 3,
+                "{:?} race max single-stat bonus exceeds +3: {}",
+                race,
+                max
+            );
         }
     }
 
@@ -751,7 +781,11 @@ mod tests {
         let before = c.dex_mod();
         c.equip(make_item(ItemSlot::Armor, 99, Rarity::Legendary));
         c.equip(make_item(ItemSlot::Ring, 99, Rarity::Legendary));
-        assert_eq!(c.dex_mod(), before, "dodge stat must come from DEX only, not gear");
+        assert_eq!(
+            c.dex_mod(),
+            before,
+            "dodge stat must come from DEX only, not gear"
+        );
     }
 
     #[test]
@@ -993,7 +1027,8 @@ mod tests {
         c.level = MAX_LEVEL;
         c.gold = 500;
         c.kills = 42;
-        c.inventory.push(make_item(ItemSlot::Potion, 5, Rarity::Common));
+        c.inventory
+            .push(make_item(ItemSlot::Potion, 5, Rarity::Common));
         c.prestige(Subclass::Berserker);
         assert_eq!(c.level, 1);
         assert_eq!(c.gold, 500);

@@ -2,9 +2,9 @@
 
 #![allow(dead_code)]
 
+use colored::*;
 use std::collections::HashMap;
 use strsim::levenshtein;
-use colored::*;
 
 #[derive(Debug)]
 pub struct HelpTopic {
@@ -385,11 +385,7 @@ pub fn render_index() -> String {
     for name in CANONICAL_TOPIC_ORDER {
         if let Some(topic) = all_topics().iter().find(|t| t.name == *name) {
             let padded = format!("{:width$}", name, width = max_name_len);
-            out.push_str(&format!(
-                "  {}  {}\n",
-                padded.cyan().bold(),
-                topic.summary
-            ));
+            out.push_str(&format!("  {}  {}\n", padded.cyan().bold(), topic.summary));
         }
     }
 
@@ -402,10 +398,7 @@ pub fn render_index() -> String {
 pub fn render_topic(topic: &HelpTopic) -> String {
     let mut out = String::new();
 
-    out.push_str(&format!(
-        "{}\n",
-        format!("sq {}", topic.name).bold().cyan()
-    ));
+    out.push_str(&format!("{}\n", format!("sq {}", topic.name).bold().cyan()));
     out.push_str(&format!("{}\n", "─".repeat(SEPARATOR_WIDTH).dimmed()));
 
     out.push_str(&format!("  {}\n", topic.summary));
@@ -470,11 +463,7 @@ pub fn render_no_match(query: &str, suggestions: &[&'static HelpTopic]) -> Strin
     } else {
         out.push_str(&format!("{}\n", "Did you mean:".yellow().bold()));
         for s in suggestions {
-            out.push_str(&format!(
-                "  {} — {}\n",
-                s.name.cyan().bold(),
-                s.summary
-            ));
+            out.push_str(&format!("  {} — {}\n", s.name.cyan().bold(), s.summary));
         }
     }
 
@@ -584,7 +573,10 @@ mod tests {
     fn lookup_typo_within_distance_two_returns_suggestion() {
         match lookup_topic("jounral") {
             LookupResult::Suggestions(s) => {
-                assert!(!s.is_empty(), "expected at least one suggestion for 'jounral'");
+                assert!(
+                    !s.is_empty(),
+                    "expected at least one suggestion for 'jounral'"
+                );
                 assert_eq!(
                     s[0].name, "journal",
                     "first suggestion for 'jounral' must be 'journal'"
@@ -639,8 +631,10 @@ mod tests {
         assert!(!suggestions.is_empty(), "no suggestions for {:?}", query);
         for pair in suggestions.windows(2) {
             let (a, b) = (pair[0], pair[1]);
-            let da = best_match_distance(a, query).expect("returned suggestion must have a distance");
-            let db = best_match_distance(b, query).expect("returned suggestion must have a distance");
+            let da =
+                best_match_distance(a, query).expect("returned suggestion must have a distance");
+            let db =
+                best_match_distance(b, query).expect("returned suggestion must have a distance");
             let ordered = da < db || (da == db && a.name <= b.name);
             assert!(
                 ordered,
@@ -683,9 +677,7 @@ mod tests {
             .find("Aliases:")
             .expect("status has an alias and must render an Aliases section");
         let usage_pos = out.find("Usage:").expect("Usage section must appear");
-        let examples_pos = out
-            .find("Examples:")
-            .expect("Examples section must appear");
+        let examples_pos = out.find("Examples:").expect("Examples section must appear");
         let notes_pos = out.find("Notes:").expect("Notes section must appear");
         let see_also_pos = out
             .find("See also:")

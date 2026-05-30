@@ -86,7 +86,11 @@ pub fn zone_from_path(path: &str) -> Zone {
             danger_level: 2,
             color: ZoneColor::Green,
         }
-    } else if path == dirs::home_dir().map(|d| d.to_string_lossy().to_string()).unwrap_or_default() {
+    } else if path
+        == dirs::home_dir()
+            .map(|d| d.to_string_lossy().to_string())
+            .unwrap_or_default()
+    {
         Zone {
             name: "Home Village",
             description: "The safety of your home directory...",
