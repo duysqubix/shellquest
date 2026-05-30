@@ -14,14 +14,86 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from simulator import db
+import os
+import subprocess
+
+RARITY_ORDER = ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
+SLOT_ORDER = ["Weapon", "Armor", "Ring", "Potion"]
+
+
+def _resolve_sq_bin() -> str | None:
+    """Find the host sq binary for the static item-catalog command.
+    The dashboard runs on the host (not a container), so a host-built
+    (even Mach-O) binary is fine. Returns None if not found."""
+    env = os.environ.get("SQ_BIN_HOST")
+    if env and Path(env).is_file():
+        return env
+    repo_root = Path(__file__).resolve().parents[2]
+    for rel in ("target/debug/sq", "target/release/sq"):
+        cand = repo_root / rel
+        if cand.is_file():
+            return str(cand)
+    return None
+
+
+def load_catalog() -> dict | None:
+    """Run `sq items --json` to fetch the static 160-item catalog.
+    Catalog is label-independent and needs no runs.db. Returns None on any
+    failure (missing binary / non-zero exit / bad JSON) so the dashboard
+    never crashes — the Items tab renders a placeholder instead."""
+    sq = _resolve_sq_bin()
+    if not sq:
+        return None
+    try:
+        proc = subprocess.run(
+            [sq, "items", "--json"],
+            capture_output=True, text=True, timeout=20,
+        )
+        if proc.returncode != 0:
+            return None
+        cat = json.loads(proc.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        return None
+    if not isinstance(cat, dict) or not cat.get("items"):
+        return None
+    return cat
+
+
+def load_bestiary() -> dict | None:
+    """Run `sq bestiary --json` to fetch the static boss roster + monster
+    bestiary. Label-independent, needs no runs.db. Returns None on any failure
+    so the dashboard never crashes — the Bestiary tab renders a placeholder."""
+    sq = _resolve_sq_bin()
+    if not sq:
+        return None
+    try:
+        proc = subprocess.run(
+            [sq, "bestiary", "--json"],
+            capture_output=True, text=True, timeout=20,
+        )
+        if proc.returncode != 0:
+            return None
+        best = json.loads(proc.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        return None
+    if not isinstance(best, dict) or not best.get("bosses") or not best.get("monsters"):
+        return None
+    return best
 
 TIER_ORDER = ["Pit", "Gauntlet", "Colosseum", "Abyssal", "Godslayer"]
 
 
 def list_tuning_labels(conn: sqlite3.Connection) -> list[str]:
-    return [r[0] for r in conn.execute(
-        "SELECT DISTINCT tuning_label FROM run ORDER BY tuning_label"
-    )]
+    try:
+        return [r[0] for r in conn.execute(
+            "SELECT DISTINCT tuning_label FROM run ORDER BY tuning_label"
+        )]
+    except sqlite3.OperationalError as e:
+        # Only treat a missing 'run' table (fresh/empty DB) as 'no sim data';
+        # re-raise real DB failures (locked db, corruption, etc.).
+        if "no such table" in str(e).lower():
+            return []
+        raise
 
 
 def lifetime_summary(conn: sqlite3.Connection, label: str) -> list[dict]:
@@ -62,6 +134,63 @@ def arena_summary(conn: sqlite3.Connection, label: str) -> list[dict]:
          WHERE r.tuning_label = ?
          GROUP BY r.class, r.strategy, aa.tier, aa.tier_index
          ORDER BY r.class, r.strategy, aa.tier_index
+        """, (label,)
+    )]
+
+
+def boss_summary(conn: sqlite3.Connection, label: str) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        """
+        SELECT r.class, r.strategy, oe.enemy_name,
+               COUNT(*) AS encounters,
+               SUM(CASE WHEN oe.outcome='win' THEN 1 ELSE 0 END) AS wins,
+               SUM(CASE WHEN oe.outcome='loss' THEN 1 ELSE 0 END) AS losses,
+               SUM(CASE WHEN oe.outcome='flee' THEN 1 ELSE 0 END) AS flees,
+               AVG(oe.dmg_dealt) AS avg_dmg_dealt,
+               AVG(oe.dmg_taken) AS avg_dmg_taken
+          FROM overworld_encounter oe JOIN run r ON r.id = oe.run_id
+         WHERE r.tuning_label = ? AND oe.kind = 'boss'
+         GROUP BY r.class, r.strategy, oe.enemy_name
+         ORDER BY r.class, r.strategy, oe.enemy_name
+        """, (label,)
+    )]
+
+
+def mob_summary(conn: sqlite3.Connection, label: str) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        """
+        SELECT r.class, r.strategy,
+               COUNT(*) AS encounters,
+               SUM(CASE WHEN oe.outcome='kill' THEN 1 ELSE 0 END) AS kills,
+               SUM(CASE WHEN oe.outcome='draw' THEN 1 ELSE 0 END) AS draws,
+               SUM(CASE WHEN oe.outcome='death' THEN 1 ELSE 0 END) AS deaths,
+               SUM(oe.elite) AS elites,
+               AVG(oe.dmg_dealt) AS avg_dmg_dealt,
+               AVG(oe.dmg_taken) AS avg_dmg_taken
+          FROM overworld_encounter oe JOIN run r ON r.id = oe.run_id
+         WHERE r.tuning_label = ? AND oe.kind = 'mob'
+         GROUP BY r.class, r.strategy
+         ORDER BY r.class, r.strategy
+        """, (label,)
+    )]
+
+
+def damage_summary(conn: sqlite3.Connection, label: str) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        """
+        SELECT r.class, r.strategy,
+               SUM(CASE WHEN oe.kind='mob' THEN oe.dmg_dealt ELSE 0 END) AS mob_dmg_dealt,
+               SUM(CASE WHEN oe.kind='mob' THEN oe.dmg_taken ELSE 0 END) AS mob_dmg_taken,
+               SUM(CASE WHEN oe.kind='boss' THEN oe.dmg_dealt ELSE 0 END) AS boss_dmg_dealt,
+               SUM(CASE WHEN oe.kind='boss' THEN oe.dmg_taken ELSE 0 END) AS boss_dmg_taken,
+               AVG(CASE WHEN oe.kind='mob' THEN oe.dmg_dealt END) AS avg_mob_dmg_dealt,
+               AVG(CASE WHEN oe.kind='mob' THEN oe.dmg_taken END) AS avg_mob_dmg_taken,
+               AVG(CASE WHEN oe.kind='boss' THEN oe.dmg_dealt END) AS avg_boss_dmg_dealt,
+               AVG(CASE WHEN oe.kind='boss' THEN oe.dmg_taken END) AS avg_boss_dmg_taken
+          FROM overworld_encounter oe JOIN run r ON r.id = oe.run_id
+         WHERE r.tuning_label = ?
+         GROUP BY r.class, r.strategy
+         ORDER BY r.class, r.strategy
         """, (label,)
     )]
 
@@ -131,6 +260,9 @@ def build_label_payload(conn: sqlite3.Connection, label: str) -> dict:
         "run_count": run_count,
         "lifetime": lifetime_summary(conn, label),
         "arena": arena_summary(conn, label),
+        "boss": boss_summary(conn, label),
+        "mob": mob_summary(conn, label),
+        "damage": damage_summary(conn, label),
         "progression": progression_curve(conn, label),
         "time_to_l25": time_to_level(conn, label, 25),
         "time_to_l40": time_to_level(conn, label, 40),
@@ -205,6 +337,9 @@ th {{ color: var(--muted); font-weight: 500; }}
     <button class=\"tab active\" data-tab=\"summary\">Summary</button>
     <button class=\"tab\" data-tab=\"progression\">Progression</button>
     <button class=\"tab\" data-tab=\"arena\">Arena</button>
+    <button class=\"tab\" data-tab=\"combat\">Combat</button>
+    <button class=\"tab\" data-tab=\"items\">Items</button>
+    <button class=\"tab\" data-tab=\"bestiary\">Bestiary</button>
     <button class=\"tab\" data-tab=\"ab\">A/B Compare</button>
   </div>
 
@@ -247,6 +382,91 @@ th {{ color: var(--muted); font-weight: 500; }}
     </div>
   </section>
 
+  <section id=\"tab-combat\" class=\"tab-content\">
+    <div class=\"grid\">
+      <div class=\"card\"><h2>Boss win rate by class</h2>
+        <div class=\"desc\">Boss encounters spawn at ~1/500 ticks — short sweeps may have none.</div>
+        <canvas id=\"chart-boss-winrate\"></canvas></div>
+      <div class=\"card\"><h2>Mob outcomes by class</h2>
+        <div class=\"desc\">Overworld mob encounter outcomes (kills / draws / deaths), summed by class.</div>
+        <canvas id=\"chart-mob-outcomes\"></canvas></div>
+      <div class=\"card\"><h2>Avg damage dealt: mob vs boss</h2>
+        <canvas id=\"chart-dmg-dealt-kind\"></canvas></div>
+      <div class=\"card\"><h2>Avg damage taken: mob vs boss</h2>
+        <canvas id=\"chart-dmg-taken-kind\"></canvas></div>
+      <div class=\"card\"><h2>Boss performance table</h2>
+        <div id=\"boss-table\"></div></div>
+      <div class=\"card\"><h2>Mob encounters table</h2>
+        <div id=\"mob-table\"></div></div>
+    </div>
+  </section>
+
+  <section id=\"tab-items\" class=\"tab-content\">
+    <div id=\"items-unavailable\" style=\"display:none\" class=\"card empty\">
+      Item catalog unavailable — build the sq binary (<code>cargo build --bin sq</code>) and regenerate the dashboard.</div>
+    <div id=\"items-content\">
+      <div class=\"card\"><h2>Item catalog</h2>
+        <div class=\"desc\">The game's static loot tables (from <code>sq items --json</code>) — independent of any simulation. <span id=\"items-total\"></span></div></div>
+      <div class=\"grid\">
+        <div class=\"card\"><h2>Items by rarity</h2>
+          <canvas id=\"chart-item-rarity\"></canvas></div>
+        <div class=\"card\"><h2>Items by rarity × slot</h2>
+          <canvas id=\"chart-item-rarity-slot\"></canvas></div>
+        <div class=\"card\"><h2>Power range by rarity (min / avg / max)</h2>
+          <canvas id=\"chart-item-power-rarity\"></canvas></div>
+        <div class=\"card\"><h2>Power distribution (all items, by midpoint)</h2>
+          <canvas id=\"chart-item-power-hist\"></canvas></div>
+        <div class=\"card\"><h2>Items by slot</h2>
+          <canvas id=\"chart-item-slot\"></canvas></div>
+        <div class=\"card\"><h2>Price range by rarity (gold)</h2>
+          <canvas id=\"chart-item-price-rarity\"></canvas></div>
+        <div class=\"card\"><h2>Drop weights &amp; power multipliers</h2>
+          <div class=\"desc\">Reference: rarity drop probability and the price/power multiplier.</div>
+          <div id=\"items-meta-table\"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id=\"tab-bestiary\" class=\"tab-content\">
+    <div id=\"bestiary-unavailable\" style=\"display:none\" class=\"card empty\">
+      Bestiary unavailable — build the sq binary (<code>cargo build --bin sq</code>) and regenerate the dashboard.</div>
+    <div id=\"bestiary-content\">
+      <div class=\"card\"><h2>Bestiary</h2>
+        <div class=\"desc\">The game's static monster bestiary and boss roster (from <code>sq bestiary --json</code>) — independent of any simulation. <span id=\"bestiary-total\"></span></div></div>
+      <h2 style=\"margin:18px 0 6px\">Monsters</h2>
+      <div class=\"grid\">
+        <div class=\"card\"><h2>Monsters by tier</h2>
+          <canvas id=\"chart-mob-count\"></canvas></div>
+        <div class=\"card\"><h2>HP by tier (min / avg / max)</h2>
+          <canvas id=\"chart-mob-hp\"></canvas></div>
+        <div class=\"card\"><h2>Attack by tier (min / avg / max)</h2>
+          <canvas id=\"chart-mob-atk\"></canvas></div>
+        <div class=\"card\"><h2>XP by tier (min / avg / max)</h2>
+          <canvas id=\"chart-mob-xp\"></canvas></div>
+        <div class=\"card\"><h2>Tier → zone-danger spawn gating</h2>
+          <div class=\"desc\">Which monster tiers can spawn at each zone danger level.</div>
+          <div id=\"mob-tier-danger-table\"></div></div>
+        <div class=\"card\"><h2>Elite / enraged modifiers</h2>
+          <div class=\"desc\">Static multipliers applied to ~1/8 of spawns (“Enraged” variants).</div>
+          <div id=\"mob-elite-table\"></div></div>
+      </div>
+      <h2 style=\"margin:18px 0 6px\">Bosses</h2>
+      <div class=\"card\"><div class=\"desc\" id=\"boss-spawn-note\"></div></div>
+      <div class=\"grid\">
+        <div class=\"card\"><h2>HP per boss</h2>
+          <canvas id=\"chart-boss-hp\"></canvas></div>
+        <div class=\"card\"><h2>Attack per boss</h2>
+          <canvas id=\"chart-boss-atk\"></canvas></div>
+        <div class=\"card\"><h2>XP reward per boss</h2>
+          <canvas id=\"chart-boss-xp\"></canvas></div>
+        <div class=\"card\"><h2>Gold reward per boss</h2>
+          <canvas id=\"chart-boss-gold\"></canvas></div>
+        <div class=\"card\"><h2>Boss roster</h2>
+          <div id=\"boss-roster-table\"></div></div>
+      </div>
+    </div>
+  </section>
+
   <section id=\"tab-ab\" class=\"tab-content\">
     <div id=\"ab-content\"></div>
   </section>
@@ -261,6 +481,9 @@ const CLASS_COLOR = {{
 }};
 const STRATEGY_DASH = {{ greedy: [], balanced: [6, 3], conservative: [2, 2] }};
 const TIER_ORDER = {json.dumps(TIER_ORDER)};
+const RARITY_ORDER = {json.dumps(RARITY_ORDER)};
+const SLOT_ORDER = {json.dumps(SLOT_ORDER)};
+const RARITY_COLOR = {{ Common: '#8b949e', Uncommon: '#3fb950', Rare: '#58a6ff', Epic: '#bc8cff', Legendary: '#d29922' }};
 
 function getColor(cls, alpha) {{
   const c = CLASS_COLOR[cls] || '#8b949e';
@@ -448,6 +671,295 @@ function renderArena(payload) {{
     `<table><thead><tr>${{arenaHeaders.map(h => `<th>${{h}}</th>`).join('')}}</tr></thead><tbody>${{rows}}</tbody></table>`;
 }}
 
+function renderCombat(payload) {{
+  ['chart-boss-winrate', 'chart-mob-outcomes', 'chart-dmg-dealt-kind', 'chart-dmg-taken-kind'].forEach(id => {{
+    if (chartsByLabel[id]) chartsByLabel[id].destroy();
+  }});
+  const boss = payload.boss || [];
+  const mob = payload.mob || [];
+  const damage = payload.damage || [];
+  const classes = [...new Set([
+    ...boss.map(r => r.class), ...mob.map(r => r.class), ...damage.map(r => r.class),
+  ])].sort();
+
+  const sumBy = (arr, cls, field) => arr.filter(r => r.class === cls)
+    .reduce((s, r) => s + (r[field] || 0), 0);
+  const mobEnc = cls => sumBy(mob, cls, 'encounters');
+  const bossEnc = cls => sumBy(boss, cls, 'encounters');
+  const avgDmg = (cls, totField, encFn) => {{
+    const e = encFn(cls);
+    return e ? +(sumBy(damage, cls, totField) / e).toFixed(1) : null;
+  }};
+
+  const bossWin = classes.map(cls => {{
+    const enc = bossEnc(cls);
+    const wins = sumBy(boss, cls, 'wins');
+    return enc ? Math.round(100 * wins / enc) : null;
+  }});
+  chartsByLabel['chart-boss-winrate'] = setupChart(
+    document.getElementById('chart-boss-winrate'), 'bar',
+    {{ labels: classes, datasets: [{{ label: 'win %', data: bossWin,
+       backgroundColor: classes.map(c => getColor(c, 0.7)) }}] }},
+    {{ scales: {{ y: {{ beginAtZero: true, max: 100,
+      title: {{ display: true, text: 'boss win %', color: '#8b949e' }} }} }} }});
+
+  const mobOut = (field) => classes.map(cls => sumBy(mob, cls, field));
+  chartsByLabel['chart-mob-outcomes'] = setupChart(
+    document.getElementById('chart-mob-outcomes'), 'bar',
+    {{ labels: classes, datasets: [
+      {{ label: 'Kills', data: mobOut('kills'), backgroundColor: getColor('Ranger', 0.7) }},
+      {{ label: 'Draws', data: mobOut('draws'), backgroundColor: getColor('Wizard', 0.7) }},
+      {{ label: 'Deaths', data: mobOut('deaths'), backgroundColor: getColor('Warrior', 0.7) }},
+    ] }},
+    {{ scales: {{ x: {{ stacked: true }}, y: {{ stacked: true, beginAtZero: true,
+      title: {{ display: true, text: 'mob encounters', color: '#8b949e' }} }} }} }});
+
+  const dmgChart = (canvasId, mobTot, bossTot, ylabel) => {{
+    chartsByLabel[canvasId] = setupChart(
+      document.getElementById(canvasId), 'bar',
+      {{ labels: classes, datasets: [
+        {{ label: 'Mob', data: classes.map(c => avgDmg(c, mobTot, mobEnc)),
+           backgroundColor: getColor('Rogue', 0.7) }},
+        {{ label: 'Boss', data: classes.map(c => avgDmg(c, bossTot, bossEnc)),
+           backgroundColor: getColor('Necromancer', 0.7) }},
+      ] }},
+      {{ scales: {{ y: {{ beginAtZero: true,
+        title: {{ display: true, text: ylabel, color: '#8b949e' }} }} }} }});
+  }};
+  dmgChart('chart-dmg-dealt-kind', 'mob_dmg_dealt', 'boss_dmg_dealt', 'avg dmg dealt');
+  dmgChart('chart-dmg-taken-kind', 'mob_dmg_taken', 'boss_dmg_taken', 'avg dmg taken');
+
+  const tableHTML = (rows, cols, headers) => {{
+    if (!rows.length) return '<div class=\"empty\">(no encounters recorded)</div>';
+    const body = rows.map(r => `<tr>${{cols.map(c => {{
+      let v = r[c];
+      if (typeof v === 'number' && !Number.isInteger(v)) v = v.toFixed(1);
+      return `<td>${{v}}</td>`;
+    }}).join('')}}</tr>`).join('');
+    return `<table><thead><tr>${{headers.map(h => `<th>${{h}}</th>`).join('')}}</tr></thead><tbody>${{body}}</tbody></table>`;
+  }};
+  const bossCols = ['class','strategy','enemy_name','encounters','wins','losses','flees','avg_dmg_dealt','avg_dmg_taken'];
+  const bossHeaders = ['Class','Strategy','Boss','N','Wins','Losses','Flees','Avg Dmg Dealt','Avg Dmg Taken'];
+  const mobCols = ['class','strategy','encounters','kills','draws','deaths','elites','avg_dmg_dealt','avg_dmg_taken'];
+  const mobHeaders = ['Class','Strategy','N','Kills','Draws','Deaths','Elites','Avg Dmg Dealt','Avg Dmg Taken'];
+  document.getElementById('boss-table').innerHTML = tableHTML(boss, bossCols, bossHeaders);
+  document.getElementById('mob-table').innerHTML = tableHTML(mob, mobCols, mobHeaders);
+}}
+
+function renderItems() {{
+  const cat = DATA.catalog;
+  const unavail = document.getElementById('items-unavailable');
+  const content = document.getElementById('items-content');
+  if (!cat || !cat.items || !cat.items.length) {{
+    unavail.style.display = '';
+    content.style.display = 'none';
+    return;
+  }}
+  unavail.style.display = 'none';
+  content.style.display = '';
+  const items = cat.items;
+  document.getElementById('items-total').textContent =
+    `${{items.length}} items · ${{RARITY_ORDER.length}} rarities × ${{SLOT_ORDER.length}} slots`;
+  const rarityColors = RARITY_ORDER.map(r => RARITY_COLOR[r] || '#8b949e');
+  // Destroy any item charts from a prior render() (dropdown changes re-run
+  // render()->renderItems(); recreating on a live canvas crashes Chart.js).
+  ['chart-item-rarity','chart-item-rarity-slot','chart-item-power-rarity',
+   'chart-item-power-hist','chart-item-slot','chart-item-price-rarity'].forEach(id => {{
+    if (chartsByLabel[id]) {{ chartsByLabel[id].destroy(); delete chartsByLabel[id]; }}
+  }});
+
+  // 1. Items by rarity
+  const byRarity = RARITY_ORDER.map(r => items.filter(i => i.rarity === r).length);
+  chartsByLabel['chart-item-rarity'] = setupChart(
+    document.getElementById('chart-item-rarity'), 'bar',
+    {{ labels: RARITY_ORDER, datasets: [{{ label: 'items', data: byRarity,
+       backgroundColor: rarityColors }}] }},
+    {{ plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true,
+      title: {{ display: true, text: 'item count', color: '#8b949e' }} }} }} }});
+
+  // 2. Rarity x slot (stacked)
+  chartsByLabel['chart-item-rarity-slot'] = setupChart(
+    document.getElementById('chart-item-rarity-slot'), 'bar',
+    {{ labels: RARITY_ORDER, datasets: SLOT_ORDER.map((slot, idx) => ({{
+      label: slot,
+      data: RARITY_ORDER.map(r => items.filter(i => i.rarity === r && i.slot === slot).length),
+      backgroundColor: getColor(['Warrior','Ranger','Wizard','Necromancer'][idx], 0.7),
+    }})) }},
+    {{ scales: {{ x: {{ stacked: true }}, y: {{ stacked: true, beginAtZero: true,
+      title: {{ display: true, text: 'item count', color: '#8b949e' }} }} }} }});
+
+  // 3. Power range by rarity (min/avg/max)
+  const stat = (r, fn) => {{
+    const subset = items.filter(i => i.rarity === r);
+    if (!subset.length) return 0;
+    return fn(subset);
+  }};
+  const powMin = RARITY_ORDER.map(r => stat(r, s => Math.min(...s.map(i => i.power_min))));
+  const powMax = RARITY_ORDER.map(r => stat(r, s => Math.max(...s.map(i => i.power_max))));
+  const powAvg = RARITY_ORDER.map(r => stat(r, s => +(s.reduce((a, i) => a + (i.power_min + i.power_max) / 2, 0) / s.length).toFixed(1)));
+  chartsByLabel['chart-item-power-rarity'] = setupChart(
+    document.getElementById('chart-item-power-rarity'), 'bar',
+    {{ labels: RARITY_ORDER, datasets: [
+      {{ label: 'min', data: powMin, backgroundColor: getColor('Wizard', 0.6) }},
+      {{ label: 'avg', data: powAvg, backgroundColor: getColor('Ranger', 0.6) }},
+      {{ label: 'max', data: powMax, backgroundColor: getColor('Warrior', 0.6) }},
+    ] }},
+    {{ scales: {{ y: {{ beginAtZero: true,
+      title: {{ display: true, text: 'power', color: '#8b949e' }} }} }} }});
+
+  // 4. Power histogram (midpoint of each item's range)
+  const mids = items.map(i => Math.round((i.power_min + i.power_max) / 2));
+  const maxMid = Math.max(...mids);
+  const buckets = {{}};
+  for (let p = 0; p <= maxMid; p++) buckets[p] = 0;
+  mids.forEach(m => {{ buckets[m] = (buckets[m] || 0) + 1; }});
+  const histLabels = Object.keys(buckets).map(Number).sort((a, b) => a - b);
+  chartsByLabel['chart-item-power-hist'] = setupChart(
+    document.getElementById('chart-item-power-hist'), 'bar',
+    {{ labels: histLabels, datasets: [{{ label: 'items', data: histLabels.map(p => buckets[p]),
+       backgroundColor: getColor('Rogue', 0.7) }}] }},
+    {{ plugins: {{ legend: {{ display: false }} }}, scales: {{ x: {{
+      title: {{ display: true, text: 'power (range midpoint)', color: '#8b949e' }} }},
+      y: {{ beginAtZero: true, title: {{ display: true, text: 'item count', color: '#8b949e' }} }} }} }});
+
+  // 5. Items by slot
+  const bySlot = SLOT_ORDER.map(s => items.filter(i => i.slot === s).length);
+  chartsByLabel['chart-item-slot'] = setupChart(
+    document.getElementById('chart-item-slot'), 'bar',
+    {{ labels: SLOT_ORDER, datasets: [{{ label: 'items', data: bySlot,
+       backgroundColor: getColor('Ranger', 0.7) }}] }},
+    {{ plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true,
+      title: {{ display: true, text: 'item count', color: '#8b949e' }} }} }} }});
+
+  // 6. Price range by rarity
+  const priceMin = RARITY_ORDER.map(r => stat(r, s => Math.min(...s.map(i => i.price_min))));
+  const priceMax = RARITY_ORDER.map(r => stat(r, s => Math.max(...s.map(i => i.price_max))));
+  chartsByLabel['chart-item-price-rarity'] = setupChart(
+    document.getElementById('chart-item-price-rarity'), 'bar',
+    {{ labels: RARITY_ORDER, datasets: [
+      {{ label: 'min price', data: priceMin, backgroundColor: getColor('Wizard', 0.6) }},
+      {{ label: 'max price', data: priceMax, backgroundColor: getColor('Warrior', 0.6) }},
+    ] }},
+    {{ scales: {{ y: {{ beginAtZero: true,
+      title: {{ display: true, text: 'gold', color: '#8b949e' }} }} }} }});
+
+  // 7. Weights + multipliers reference table
+  const weights = cat.rarity_weights || {{}};
+  const mults = cat.rarity_multipliers || {{}};
+  const rows = RARITY_ORDER.map(r => {{
+    const w = weights[r];
+    const pct = (typeof w === 'number') ? (w * 100).toFixed(2) + '%' : '—';
+    const m = (mults[r] !== undefined) ? mults[r] : '—';
+    return `<tr><td>${{r}}</td><td>${{pct}}</td><td>${{m}}×</td></tr>`;
+  }}).join('');
+  document.getElementById('items-meta-table').innerHTML =
+    `<table><thead><tr><th>Rarity</th><th>Drop chance</th><th>Multiplier</th></tr></thead><tbody>${{rows}}</tbody></table>`;
+}}
+
+function renderBestiary() {{
+  const best = DATA.bestiary;
+  const unavail = document.getElementById('bestiary-unavailable');
+  const content = document.getElementById('bestiary-content');
+  if (!best || !best.bosses || !best.bosses.length || !best.monsters || !best.monsters.length) {{
+    unavail.style.display = '';
+    content.style.display = 'none';
+    return;
+  }}
+  unavail.style.display = 'none';
+  content.style.display = '';
+  const monsters = best.monsters;
+  const bosses = best.bosses;
+  const meta = best.meta || {{}};
+  const tierOrder = meta.tier_order || ['Vermin','Bruiser','Hunter','Horror','BossAdjacent'];
+  document.getElementById('bestiary-total').textContent =
+    `${{monsters.length}} monsters · ${{tierOrder.length}} tiers · ${{bosses.length}} bosses`;
+
+  ['chart-mob-count','chart-mob-hp','chart-mob-atk','chart-mob-xp',
+   'chart-boss-hp','chart-boss-atk','chart-boss-xp','chart-boss-gold'].forEach(id => {{
+    if (chartsByLabel[id]) {{ chartsByLabel[id].destroy(); delete chartsByLabel[id]; }}
+  }});
+
+  const tierColors = tierOrder.map((t, i) => getColor(['Ranger','Wizard','Rogue','Warrior','Necromancer'][i % 5], 0.7));
+  const tierStat = (tier, field, fn) => {{
+    const subset = monsters.filter(m => m.tier === tier);
+    if (!subset.length) return 0;
+    return fn(subset.map(m => m[field]));
+  }};
+
+  // 1. Monsters by tier
+  chartsByLabel['chart-mob-count'] = setupChart(
+    document.getElementById('chart-mob-count'), 'bar',
+    {{ labels: tierOrder, datasets: [{{ label: 'monsters', data: tierOrder.map(t => monsters.filter(m => m.tier === t).length),
+       backgroundColor: tierColors }}] }},
+    {{ plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true,
+      title: {{ display: true, text: 'monster count', color: '#8b949e' }} }} }} }});
+
+  // 2-4. HP / Attack / XP by tier (min/avg/max)
+  const minmaxavg = (canvasId, field, ylabel) => {{
+    const mn = tierOrder.map(t => tierStat(t, field, a => Math.min(...a)));
+    const mx = tierOrder.map(t => tierStat(t, field, a => Math.max(...a)));
+    const av = tierOrder.map(t => tierStat(t, field, a => +(a.reduce((s, v) => s + v, 0) / a.length).toFixed(1)));
+    chartsByLabel[canvasId] = setupChart(
+      document.getElementById(canvasId), 'bar',
+      {{ labels: tierOrder, datasets: [
+        {{ label: 'min', data: mn, backgroundColor: getColor('Wizard', 0.6) }},
+        {{ label: 'avg', data: av, backgroundColor: getColor('Ranger', 0.6) }},
+        {{ label: 'max', data: mx, backgroundColor: getColor('Warrior', 0.6) }},
+      ] }},
+      {{ scales: {{ y: {{ beginAtZero: true,
+        title: {{ display: true, text: ylabel, color: '#8b949e' }} }} }} }});
+  }};
+  minmaxavg('chart-mob-hp', 'hp', 'HP');
+  minmaxavg('chart-mob-atk', 'attack', 'attack');
+  minmaxavg('chart-mob-xp', 'xp', 'XP');
+
+  // 5. Tier -> danger gating table
+  const td = meta.tier_danger || {{}};
+  const dangerRows = Object.keys(td).sort().map(d =>
+    `<tr><td>${{d}}</td><td>${{(td[d] || []).join(', ')}}</td></tr>`).join('');
+  document.getElementById('mob-tier-danger-table').innerHTML =
+    `<table><thead><tr><th>Danger</th><th>Spawnable tiers</th></tr></thead><tbody>${{dangerRows}}</tbody></table>`;
+
+  // 6. Elite modifiers table
+  const el = meta.elite || {{}};
+  const eliteRows = [
+    ['Attack (base ×)', el.attack_base_mult],
+    ['Attack (+ per danger)', el.attack_per_danger],
+    ['HP (×)', el.hp_mult],
+    ['XP (×)', el.xp_mult],
+  ].map(([k, v]) => `<tr><td>${{k}}</td><td>${{v === undefined ? '—' : v}}</td></tr>`).join('');
+  document.getElementById('mob-elite-table').innerHTML =
+    `<table><thead><tr><th>Modifier</th><th>Value</th></tr></thead><tbody>${{eliteRows}}</tbody></table>`;
+
+  // 7-10. Per-boss bars
+  const bossLabels = bosses.map(b => b.name);
+  const bossBar = (canvasId, field, ylabel, cls) => {{
+    chartsByLabel[canvasId] = setupChart(
+      document.getElementById(canvasId), 'bar',
+      {{ labels: bossLabels, datasets: [{{ label: ylabel, data: bosses.map(b => b[field]),
+         backgroundColor: getColor(cls, 0.7) }}] }},
+      {{ plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true,
+        title: {{ display: true, text: ylabel, color: '#8b949e' }} }} }} }});
+  }};
+  bossBar('chart-boss-hp', 'hp', 'HP', 'Warrior');
+  bossBar('chart-boss-atk', 'attack', 'attack', 'Necromancer');
+  bossBar('chart-boss-xp', 'xp_reward', 'XP reward', 'Ranger');
+  bossBar('chart-boss-gold', 'gold_reward', 'gold reward', 'Wizard');
+
+  // 11. Boss roster table
+  const bossRows = bosses.map(b =>
+    `<tr><td>${{b.name}}</td><td>${{b.hp}}</td><td>${{b.attack}}</td><td>${{b.xp_reward}}</td><td>${{b.gold_reward}}</td><td>${{b.dex_mod}}</td></tr>`).join('');
+  document.getElementById('boss-roster-table').innerHTML =
+    `<table><thead><tr><th>Boss</th><th>HP</th><th>Attack</th><th>XP</th><th>Gold</th><th>Dex</th></tr></thead><tbody>${{bossRows}}</tbody></table>`;
+
+  // 12. Spawn rate note
+  const rate = meta.boss_spawn_rate;
+  if (typeof rate === 'number' && rate > 0) {{
+    document.getElementById('boss-spawn-note').textContent =
+      `Bosses spawn at ~1 in ${{Math.round(1 / rate)}} ticks (rate ${{rate}}). No warning.`;
+  }}
+}}
+
 function renderAB(primary, compare) {{
   const root = document.getElementById('ab-content');
   if (!compare) {{
@@ -512,13 +1024,21 @@ function currentPayload(label) {{
 }}
 
 function render(primaryLabel, compareLabel) {{
-  const primary = currentPayload(primaryLabel);
+  renderItems();
+  renderBestiary();
+  const primary = primaryLabel ? currentPayload(primaryLabel) : null;
+  if (!primary) {{
+    document.getElementById('meta').textContent =
+      `no sim data · generated ${{DATA.generated_at}}`;
+    return;
+  }}
   document.getElementById('meta').textContent =
     `${{primary.run_count}} runs · generated ${{DATA.generated_at}}`;
   renderOverview(primary);
   renderLifetimeTable(primary);
   renderProgression(primary);
   renderArena(primary);
+  renderCombat(primary);
   renderAB(primary, compareLabel ? currentPayload(compareLabel) : null);
 }}
 
@@ -540,7 +1060,7 @@ function init() {{
       document.getElementById('tab-' + t.dataset.tab).classList.add('active');
     }});
   }});
-  render(DATA.primary_label, null);
+  render(DATA.primary_label || null, null);
 }}
 init();
 </script>
@@ -559,21 +1079,36 @@ def main() -> int:
 
     conn = db.open_db(Path(args.db))
     labels = list_tuning_labels(conn)
-    if not labels:
-        print("No tuning_labels in database — run sims first", file=sys.stderr)
-        return 1
+    catalog = load_catalog()
+    bestiary = load_bestiary()
 
-    primary_label = args.primary or labels[-1]
-    if primary_label not in labels:
-        print(f"tuning_label '{primary_label}' not found. Available: {labels}",
-              file=sys.stderr)
-        return 1
+    if not labels:
+        # No sim data: still emit a catalog-only dashboard (the Items tab is
+        # independent of runs.db). Warn but do not fail.
+        if catalog is None and bestiary is None:
+            print("No tuning_labels in database and no item catalog / bestiary "
+                  "(build sq: cargo build --bin sq) — nothing to render",
+                  file=sys.stderr)
+            return 1
+        print("No tuning_labels in database — rendering item catalog only "
+              "(run sims to populate the other tabs)", file=sys.stderr)
+        primary_label = None
+        label_payloads = {}
+    else:
+        primary_label = args.primary or labels[-1]
+        if primary_label not in labels:
+            print(f"tuning_label '{primary_label}' not found. Available: {labels}",
+                  file=sys.stderr)
+            return 1
+        label_payloads = {lbl: build_label_payload(conn, lbl) for lbl in labels}
 
     data = {
         "tuning_labels": labels,
         "primary_label": primary_label,
         "generated_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
-        "labels": {lbl: build_label_payload(conn, lbl) for lbl in labels},
+        "labels": label_payloads,
+        "catalog": catalog,
+        "bestiary": bestiary,
     }
 
     output_path = (
