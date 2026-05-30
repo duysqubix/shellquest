@@ -153,6 +153,76 @@ const VOID_MONSTER_ROSTER: &[VoidMonsterTemplate] = &[
         base_attack: 6,
         base_xp: 34,
     },
+    VoidMonsterTemplate {
+        name: "Portal Maw",
+        flavor: "gnashing at the home-rift threshold",
+        base_hp: 30,
+        base_attack: 7,
+        base_xp: 36,
+    },
+    VoidMonsterTemplate {
+        name: "Severed Pipe",
+        flavor: "leaking commands into nowhere",
+        base_hp: 16,
+        base_attack: 10,
+        base_xp: 29,
+    },
+    VoidMonsterTemplate {
+        name: "Entropy Shade",
+        flavor: "unmaking directory names one glyph at a time",
+        base_hp: 22,
+        base_attack: 9,
+        base_xp: 33,
+    },
+    VoidMonsterTemplate {
+        name: "Dead-Sector Seraph",
+        flavor: "singing hymns from corrupted blocks",
+        base_hp: 32,
+        base_attack: 6,
+        base_xp: 38,
+    },
+    VoidMonsterTemplate {
+        name: "Forkbomb Revenant",
+        flavor: "multiplying every shadow behind it",
+        base_hp: 20,
+        base_attack: 11,
+        base_xp: 35,
+    },
+    VoidMonsterTemplate {
+        name: "Untracked Phantom",
+        flavor: "hovering outside every commit's memory",
+        base_hp: 18,
+        base_attack: 8,
+        base_xp: 31,
+    },
+    VoidMonsterTemplate {
+        name: "Heap Specter",
+        flavor: "dragging freed memory through the rift",
+        base_hp: 26,
+        base_attack: 9,
+        base_xp: 37,
+    },
+    VoidMonsterTemplate {
+        name: "Cursed Symlink",
+        flavor: "pointing at a room that points back",
+        base_hp: 24,
+        base_attack: 10,
+        base_xp: 39,
+    },
+    VoidMonsterTemplate {
+        name: "Static Devourer",
+        flavor: "eating the signal from severed sessions",
+        base_hp: 34,
+        base_attack: 8,
+        base_xp: 42,
+    },
+    VoidMonsterTemplate {
+        name: "The Unmapped",
+        flavor: "standing where no path component should exist",
+        base_hp: 28,
+        base_attack: 11,
+        base_xp: 45,
+    },
 ];
 
 pub fn tick(state: &mut GameState, command: &str, cwd: &str, exit_code: i32) {
@@ -2410,6 +2480,21 @@ mod tests {
         assert_eq!(high.attack, 48);
         assert!(high.hp > low.hp);
         assert!(high.attack > low.attack);
+    }
+
+    #[test]
+    fn void_roster_has_eighteen_distinct_templates() {
+        use std::collections::HashSet;
+
+        let names = VOID_MONSTER_ROSTER
+            .iter()
+            .map(|mob| mob.name)
+            .collect::<HashSet<_>>();
+
+        assert_eq!(VOID_MONSTER_ROSTER.len(), 18);
+        assert_eq!(names.len(), VOID_MONSTER_ROSTER.len());
+        assert!(VOID_MONSTER_ROSTER.iter().any(|mob| mob.base_attack >= 10));
+        assert!(VOID_MONSTER_ROSTER.iter().any(|mob| mob.base_hp >= 30));
     }
 
     #[test]
