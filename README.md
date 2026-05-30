@@ -130,7 +130,7 @@ A full, code-backed RPG hiding inside your prompt:
 - **150 levels**, scaling XP curve, **15 progression titles** from *Terminal Novice* to *Root Overlord*
 - **160 items** across 5 rarity tiers — Common (70%) · Uncommon (25%) · Rare (4%) · Epic (0.99%) · Legendary (0.01%). 8 items per slot, per rarity.
 - **40-monster bestiary** across 5 difficulty tiers — *Vermin → Bruiser → Hunter → Horror → Boss-adjacent* — that spawn by zone danger, so `$HOME` sees Symlink Slugs and `node_modules` sees Deadlock Dragons
-- **11 zones** mapped to your `$PWD` — `node_modules` is the Abyss (danger 5), `/tmp` is the Wasteland (danger 3), `$HOME` is safe. Danger scales which monsters spawn, plus loot and XP.
+- **33 zones** mapped to your `$PWD` — from safe `$HOME`, Desktop, Documents, and media galleries to `/proc`, `/sys`, `.ssh`, secrets, caches, build artifacts, backups, trash, and the Abyss of `node_modules`. Danger scales which monsters spawn, plus loot and XP.
 - **30+ event handlers** — `git commit` crafts, `kill` banishes, `vim` meditates, `sudo` surges, `grep` scries, `man` reads ancient tomes, and every command has its own flavor
 - **HP-pool multi-turn combat** — every monster has an HP bar; fights resolve over multiple swings inside a single command, with crits and class signatures firing on every turn
 - **Elite encounters** — rare *Enraged* variants get +60% attack, +50% HP, and 2× XP

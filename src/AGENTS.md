@@ -4,7 +4,7 @@
 # src
 
 ## Purpose
-All Rust source code for the `sq` binary. Flat module structure — `main.rs` declares every module (no `lib.rs`) and implements CLI commands; each module owns a distinct game domain. ~12.4k lines across 13 modules. Overworld combat lives in `events.rs`; the arena is a separate, larger combat system in `arena.rs`.
+All Rust source code for the `sq` binary. Flat module structure — `main.rs` declares every module (no `lib.rs`) and implements CLI commands; each module owns a distinct game domain. ~12.7k lines across 13 modules. Overworld combat lives in `events.rs`; the arena is a separate, larger combat system in `arena.rs`.
 
 ## Key Files
 
@@ -21,7 +21,7 @@ All Rust source code for the `sq` binary. Flat module structure — `main.rs` de
 | `boss.rs` | 283 | 5-boss roster, `maybe_spawn()` (**1/500** per tick), `tick_boss()` HP-pool combat. Shares crit formula `max(13, 20−INT/8)`. |
 | `sage.rs` | 223 | Update notifier: crates.io check every 24h (via `ureq`), guaranteed once on first new-version tick, then 1/50 random (max 3×/day). |
 | `state.rs` | 215 | `GameState` (character + journal + caches + `active_boss` + `permadeath`). Atomic save: temp-file + rename to `~/.shellquest/save.json`. |
-| `zones.rs` | 213 | Path→zone mapping (`/tmp`=Wasteland, `node_modules`=Abyss) with danger levels + colors. |
+| `zones.rs` | 538 | Path→zone mapping (33 themed filesystem zones, from `$HOME`=Home Village to `node_modules`=Abyss) with danger levels + colors. |
 | `journal.rs` | 73 | `JournalEntry` + `EventType` enum (Combat/Loot/Travel/Discovery/LevelUp/Death/Quest/Craft/Tournament), capped at 100. |
 
 ## For AI Agents
@@ -45,7 +45,7 @@ All Rust source code for the `sq` binary. Flat module structure — `main.rs` de
 
 ### Testing Requirements
 - Tests are **in-file** `#[cfg(test)] mod tests` — no top-level `tests/` integration dir.
-- **361 `#[test]` total.** Heaviest coverage: arena 100, main 66, character 57, events 45; then display 21, loot 21, help 14, zones 13, state 9, boss 7, journal 5, messages 3, sage 0.
+- **404 `#[test]` total after the expanded-zone branch.** Heaviest coverage remains arena, main, character, and events; `zones.rs` now has 35 in-file tests covering the expanded map.
 - `cargo build` (or `cargo build --bin sq`) to compile; `cargo test` for the suite. `cargo clippy` is **not** installed in this toolchain — skip it.
 - Cargo cache quirk + full CLI/Arena manual-QA checklist live in the parent `../AGENTS.md` — don't duplicate here. Arena tests rely on seeded `StdRng`; combat fns take `&mut impl Rng` so they're deterministic in tests.
 - When adding a balance constant, add or update its guard test in `arena.rs` `mod tests` (the wave/tuning invariants are pinned there).
