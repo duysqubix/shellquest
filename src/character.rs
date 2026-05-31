@@ -301,7 +301,7 @@ impl Character {
     }
 
     pub fn attack_power(&self) -> i32 {
-        let base = self.strength + (self.dexterity / 2);
+        let base = self.strength + (self.dexterity / 3);
         let weapon_bonus = self
             .weapon
             .as_ref()
@@ -700,15 +700,15 @@ mod tests {
     fn attack_power_no_weapon() {
         let c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
         // Warrior+Human: STR 17, DEX 9
-        // base = 17 + 9/2 = 17 + 4 = 21
-        assert_eq!(c.attack_power(), 17 + 9 / 2);
+        // base = 17 + 9/3 = 17 + 3 = 20
+        assert_eq!(c.attack_power(), 17 + 9 / 3);
     }
 
     #[test]
     fn attack_power_with_weapon() {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
         c.equip(make_item(ItemSlot::Weapon, 10, Rarity::Common));
-        assert_eq!(c.attack_power(), 17 + 9 / 2 + 10);
+        assert_eq!(c.attack_power(), 17 + 9 / 3 + 10);
     }
 
     #[test]
@@ -722,7 +722,7 @@ mod tests {
             enchant_level: 3,
         };
         c.equip(weapon);
-        assert_eq!(c.attack_power(), 17 + 9 / 2 + 10 + 3);
+        assert_eq!(c.attack_power(), 17 + 9 / 3 + 10 + 3);
     }
 
     #[test]

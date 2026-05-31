@@ -380,9 +380,9 @@ pub fn print_status(char: &Character, permadeath: bool) {
         format!("{}", char.intelligence).blue()
     );
 
-    let base_atk = char.strength + char.dexterity / 2;
-    let base_def = char.dexterity / 3;
     let bonus = gear_bonus(char);
+    let base_atk = char.attack_power() - bonus.attack;
+    let base_def = char.dexterity / 3;
     println!(
         "{}  {} {} {}  {} {} {}",
         "│".dimmed(),
