@@ -365,7 +365,7 @@ impl Character {
         // XP curve: starts easy, gets harder
         self.xp_to_next = match self.level {
             1..=10 => self.level * 30 + 40,
-            11..=30 => self.level * 25 + 30,
+            11..=30 => self.level * 32 + 30,
             31..=60 => self.level * 45 + 80,
             61..=100 => self.level * 80 + 200,
             101..=130 => self.level * 120 + 400,
@@ -1145,7 +1145,63 @@ mod tests {
         }
 
         assert_eq!(char.level, 11);
-        assert_eq!(char.xp_to_next, 11 * 25 + 30);
+        assert_eq!(char.xp_to_next, 11 * 32 + 30);
+    }
+
+    #[test]
+    fn xp_curve_is_monotonic_non_decreasing_through_max_level() {
+        let mut char = Character::new("T".to_string(), Class::Warrior, Race::Human);
+        let mut previous_cost = 0;
+
+        for expected_level in 1..=MAX_LEVEL {
+            assert_eq!(char.level, expected_level);
+            assert!(
+                char.xp_to_next >= previous_cost,
+                "level {} cost {} dropped below previous cost {}",
+                expected_level,
+                char.xp_to_next,
+                previous_cost
+            );
+
+            previous_cost = char.xp_to_next;
+            if expected_level < MAX_LEVEL {
+                char.gain_xp(char.xp_to_next);
+            }
+        }
+    }
+
+    #[test]
+    fn xp_curve_band_boundaries_are_pinned() {
+        let mut char = Character::new("T".to_string(), Class::Warrior, Race::Human);
+        let expected_boundaries = [
+            (10, 340),
+            (11, 382),
+            (30, 990),
+            (31, 1475),
+            (60, 2780),
+            (61, 5080),
+            (100, 8200),
+            (101, 12520),
+            (130, 16000),
+            (131, 23070),
+        ];
+
+        for expected_level in 1..=MAX_LEVEL {
+            if let Some((_, expected_cost)) = expected_boundaries
+                .iter()
+                .find(|(level, _)| *level == expected_level)
+            {
+                assert_eq!(
+                    char.xp_to_next, *expected_cost,
+                    "level {} boundary cost changed",
+                    expected_level
+                );
+            }
+
+            if expected_level < MAX_LEVEL {
+                char.gain_xp(char.xp_to_next);
+            }
+        }
     }
 
     #[test]
