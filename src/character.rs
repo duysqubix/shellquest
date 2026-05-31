@@ -214,6 +214,7 @@ impl fmt::Display for Subclass {
 }
 
 pub const MAX_LEVEL: u32 = 150;
+const LEVEL_ONE_XP_TO_NEXT: u32 = 70;
 
 pub fn dex_modifier(dexterity: i32) -> i32 {
     (dexterity - 10) / 2
@@ -276,7 +277,7 @@ impl Character {
             race,
             level: 1,
             xp: 0,
-            xp_to_next: 25,
+            xp_to_next: LEVEL_ONE_XP_TO_NEXT,
             hp: max_hp,
             max_hp,
             strength,
@@ -363,7 +364,7 @@ impl Character {
         self.level += 1;
         // XP curve: starts easy, gets harder
         self.xp_to_next = match self.level {
-            1..=10 => self.level * 15 + 10,
+            1..=10 => self.level * 30 + 40,
             11..=30 => self.level * 25 + 30,
             31..=60 => self.level * 45 + 80,
             61..=100 => self.level * 80 + 200,
@@ -400,7 +401,7 @@ impl Character {
 
         self.level = 1;
         self.xp = 0;
-        self.xp_to_next = 25;
+        self.xp_to_next = LEVEL_ONE_XP_TO_NEXT;
         self.strength = base_str + race_str + prestige_bonus + sub_str;
         self.dexterity = base_dex + race_dex + prestige_bonus + sub_dex;
         self.intelligence = base_int + race_int + prestige_bonus + sub_int;
@@ -563,7 +564,7 @@ mod tests {
         assert_eq!(c.hp, c.max_hp);
         assert_eq!(c.level, 1);
         assert_eq!(c.xp, 0);
-        assert_eq!(c.xp_to_next, 25);
+        assert_eq!(c.xp_to_next, 70);
         assert_eq!(c.gold, 10);
         assert_eq!(c.kills, 0);
         assert_eq!(c.deaths, 0);
@@ -652,7 +653,7 @@ mod tests {
     #[test]
     fn gain_xp_exact_threshold_triggers_level_up() {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
-        let leveled = c.gain_xp(25);
+        let leveled = c.gain_xp(70);
         assert!(leveled);
         assert_eq!(c.level, 2);
         assert_eq!(c.xp, 0);
@@ -661,10 +662,10 @@ mod tests {
     #[test]
     fn gain_xp_over_threshold_carries_remainder() {
         let mut c = Character::new("Hero".to_string(), Class::Warrior, Race::Human);
-        let leveled = c.gain_xp(50);
+        let leveled = c.gain_xp(90);
         assert!(leveled);
         assert_eq!(c.level, 2);
-        assert_eq!(c.xp, 25);
+        assert_eq!(c.xp, 20);
     }
 
     #[test]
@@ -685,7 +686,7 @@ mod tests {
         let dex_before = c.dexterity;
         let int_before = c.intelligence;
         let max_hp_before = c.max_hp;
-        c.gain_xp(25);
+        c.gain_xp(70);
         assert_eq!(c.strength, str_before + 1);
         assert_eq!(c.dexterity, dex_before + 1);
         assert_eq!(c.intelligence, int_before + 1);
@@ -1036,6 +1037,7 @@ mod tests {
         assert_eq!(c.inventory.len(), 1);
         assert_eq!(c.prestige, 1);
         assert_eq!(c.total_prestiges, 1);
+        assert_eq!(c.xp_to_next, 70);
     }
 
     #[test]
@@ -1125,9 +1127,37 @@ mod tests {
     }
 
     #[test]
-    fn xp_to_next_level_1_is_25() {
+    fn xp_to_next_level_1_is_70() {
         let char = Character::new("T".to_string(), Class::Warrior, Race::Human);
-        assert_eq!(char.xp_to_next, 25);
+        assert_eq!(char.xp_to_next, 70);
+    }
+
+    #[test]
+    fn early_xp_curve_is_30x_level_plus_40_through_level_10() {
+        let mut char = Character::new("T".to_string(), Class::Warrior, Race::Human);
+        assert_eq!(char.xp_to_next, 70);
+
+        for current_level in 1..=10 {
+            assert_eq!(char.level, current_level);
+            let expected_cost = current_level * 30 + 40;
+            assert_eq!(char.xp_to_next, expected_cost);
+            char.gain_xp(expected_cost);
+        }
+
+        assert_eq!(char.level, 11);
+        assert_eq!(char.xp_to_next, 11 * 25 + 30);
+    }
+
+    #[test]
+    fn prestige_reset_uses_level_1_xp_cost() {
+        let mut char = Character::new("T".to_string(), Class::Warrior, Race::Human);
+        char.level = MAX_LEVEL;
+        char.xp_to_next = 9999;
+        char.prestige(Subclass::Berserker);
+
+        assert_eq!(char.level, 1);
+        assert_eq!(char.xp, 0);
+        assert_eq!(char.xp_to_next, 70);
     }
 
     #[test]

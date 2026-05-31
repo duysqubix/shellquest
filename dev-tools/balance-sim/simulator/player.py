@@ -48,7 +48,7 @@ def starter_save(cls: str, race: str, seed: int) -> dict[str, Any]:
         "character": {
             "name": f"Sim-{seed}",
             "class": cls, "race": race,
-            "level": 1, "xp": 0, "xp_to_next": 25,
+            "level": 1, "xp": 0, "xp_to_next": 70,
             "hp": max_hp, "max_hp": max_hp,
             "strength": strength, "dexterity": dexterity, "intelligence": intelligence,
             "gold": 10, "kills": 0, "deaths": 0, "commands_run": 0,
