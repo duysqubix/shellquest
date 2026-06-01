@@ -585,14 +585,14 @@ pub fn arena_wave(round: u32) -> ArenaWave {
             enemy_crit_chance_pct: 20,
         },
         26..=40 => ArenaWave {
-            hp_multiplier: 6.8,
+            hp_multiplier: 5.8,
             enemy_dex_mod: 14,
-            enemy_crit_chance_pct: 19,
+            enemy_crit_chance_pct: 18,
         },
         _ => ArenaWave {
-            hp_multiplier: 9.2,
+            hp_multiplier: 6.5,
             enemy_dex_mod: 18,
-            enemy_crit_chance_pct: 23,
+            enemy_crit_chance_pct: 19,
         },
     }
 }
@@ -1805,10 +1805,10 @@ mod tests {
         assert_eq!(arena_wave(10).hp_multiplier, 1.8);
         assert_eq!(arena_wave(11).hp_multiplier, 4.8);
         assert_eq!(arena_wave(16).hp_multiplier, 5.8);
-        assert_eq!(arena_wave(26).hp_multiplier, 6.8);
-        assert_eq!(arena_wave(41).hp_multiplier, 9.2);
+        assert_eq!(arena_wave(26).hp_multiplier, 5.8);
+        assert_eq!(arena_wave(41).hp_multiplier, 6.5);
         assert_eq!(arena_wave(50).enemy_dex_mod, 18);
-        assert_eq!(arena_wave(50).enemy_crit_chance_pct, 23);
+        assert_eq!(arena_wave(50).enemy_crit_chance_pct, 19);
     }
 
     #[test]

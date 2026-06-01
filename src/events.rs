@@ -1478,6 +1478,12 @@ fn encounter_enemy_dex_level_bonus(level: u32) -> i32 {
     (level / 5) as i32
 }
 
+pub const ENCOUNTER_MAX_PLAYER_DODGE_ADVANTAGE: i32 = 6;
+
+fn effective_player_dodge_mod(player_dex_mod: i32, enemy_dex_mod: i32) -> i32 {
+    player_dex_mod.min(enemy_dex_mod + ENCOUNTER_MAX_PLAYER_DODGE_ADVANTAGE)
+}
+
 struct EncounterProfile {
     name: String,
     attack: i32,
@@ -2049,7 +2055,9 @@ fn combat(
 
         let player_defense = state.character.defense();
         let dodge_roll: i32 = rng.gen_range(1..=20);
-        if crate::character::attack_lands(dodge_roll, enemy_dex_mod, state.character.dex_mod()) {
+        let player_dodge_mod =
+            effective_player_dodge_mod(state.character.dex_mod(), enemy_dex_mod);
+        if crate::character::attack_lands(dodge_roll, enemy_dex_mod, player_dodge_mod) {
             let damage = (monster_atk - player_defense / 3).max(1);
             total_damage_taken += damage;
             let gold_before = state.character.gold;
@@ -2704,6 +2712,13 @@ mod tests {
         assert_eq!(tier_dex_mod(MonsterTier::Hunter), 4);
         assert_eq!(tier_dex_mod(MonsterTier::Horror), 6);
         assert_eq!(tier_dex_mod(MonsterTier::BossAdjacent), 8);
+    }
+
+    #[test]
+    fn overworld_player_dodge_advantage_is_capped() {
+        assert_eq!(ENCOUNTER_MAX_PLAYER_DODGE_ADVANTAGE, 6);
+        assert_eq!(effective_player_dodge_mod(14, 10), 14);
+        assert_eq!(effective_player_dodge_mod(80, 24), 30);
     }
 
     #[test]
