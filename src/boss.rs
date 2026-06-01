@@ -31,14 +31,23 @@ pub struct BossInfo {
 }
 
 pub const BOSS_SPAWN_RATE: f64 = 1.0 / 500.0;
+pub const BOSS_MAX_PLAYER_DODGE_ADVANTAGE: i32 = 6;
 
 pub const BOSS_ROSTER: &[(&str, i32, i32, u32, u32, i32)] = &[
-    ("The Kernel Panic", 220, 29, 1050, 410, 6),
-    ("Lord of /dev/null", 200, 24, 825, 330, 8),
-    ("SIGKILL Supreme", 210, 33, 950, 380, 9),
-    ("The Infinite Loop", 240, 20, 1125, 360, 5),
-    ("The Memory Corruption", 215, 27, 1000, 365, 7),
+    ("The Kernel Panic", 500, 48, 1450, 560, 6),
+    ("Lord of /dev/null", 440, 42, 1150, 450, 8),
+    ("SIGKILL Supreme", 470, 54, 1325, 520, 9),
+    ("The Infinite Loop", 540, 36, 1550, 500, 5),
+    ("The Memory Corruption", 490, 46, 1400, 510, 7),
 ];
+
+fn effective_boss_target_dodge_mod(player_dex_mod: i32, boss_attack_mod: i32) -> i32 {
+    player_dex_mod.min(boss_attack_mod + BOSS_MAX_PLAYER_DODGE_ADVANTAGE)
+}
+
+fn boss_damage_after_defense(boss_atk: i32, player_defense: i32) -> i32 {
+    (boss_atk - player_defense / 3).max(1)
+}
 
 pub fn boss_roster() -> Vec<BossInfo> {
     BOSS_ROSTER
@@ -248,9 +257,11 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
 
     let dodge_roll: i32 = rng.gen_range(1..=20);
     let boss_attack_mod = boss_dex_mod + state.character.total_prestiges as i32;
+    let player_dodge_mod =
+        effective_boss_target_dodge_mod(state.character.dex_mod(), boss_attack_mod);
     let boss_dmg =
-        if crate::character::attack_lands(dodge_roll, boss_attack_mod, state.character.dex_mod()) {
-            let dmg = (boss_atk - player_defense).max(1);
+        if crate::character::attack_lands(dodge_roll, boss_attack_mod, player_dodge_mod) {
+            let dmg = boss_damage_after_defense(boss_atk, player_defense);
             let gold_before = state.character.gold;
             let died = state.character.take_damage(dmg);
             if let Some(boss) = state.active_boss.as_mut() {
@@ -368,6 +379,30 @@ mod tests {
             assert!(*hp > 0);
             assert!(*atk > 0);
         }
+    }
+
+    #[test]
+    fn boss_roster_pins_endgame_pressure_band() {
+        assert_eq!(BOSS_SPAWN_RATE, 1.0 / 500.0);
+        assert_eq!(BOSS_MAX_PLAYER_DODGE_ADVANTAGE, 6);
+
+        let min_hp = BOSS_ROSTER.iter().map(|(_, hp, _, _, _, _)| *hp).min();
+        let max_hp = BOSS_ROSTER.iter().map(|(_, hp, _, _, _, _)| *hp).max();
+        let min_attack = BOSS_ROSTER.iter().map(|(_, _, atk, _, _, _)| *atk).min();
+        let max_attack = BOSS_ROSTER.iter().map(|(_, _, atk, _, _, _)| *atk).max();
+
+        assert_eq!(min_hp, Some(440));
+        assert_eq!(max_hp, Some(540));
+        assert_eq!(min_attack, Some(36));
+        assert_eq!(max_attack, Some(54));
+    }
+
+    #[test]
+    fn boss_hit_and_damage_pressure_are_soft_capped_not_nullified() {
+        assert_eq!(effective_boss_target_dodge_mod(80, 20), 26);
+        assert_eq!(effective_boss_target_dodge_mod(24, 20), 24);
+        assert_eq!(boss_damage_after_defense(48, 60), 28);
+        assert_eq!(boss_damage_after_defense(12, 99), 1);
     }
 
     #[test]
