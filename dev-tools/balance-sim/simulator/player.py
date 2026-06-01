@@ -28,6 +28,13 @@ RACE_BONUS = {
     "Orc":    (3, 1, -1),
     "Goblin": (0, 3, 1),
 }
+FIRST_SUBCLASS = {
+    "Wizard": ("Archmage", (0, 1, 3)),
+    "Warrior": ("Berserker", (3, 1, 0)),
+    "Rogue": ("Assassin", (1, 3, 0)),
+    "Ranger": ("Beastmaster", (2, 2, 0)),
+    "Necromancer": ("Lich", (0, 0, 4)),
+}
 
 
 def _home_parent() -> str | None:
@@ -86,23 +93,49 @@ def title_for_level(level: int) -> str:
     return "Root Overlord"
 
 
+def prestige_title_prefix(prestige: int) -> str:
+    if prestige == 0:
+        return ""
+    if prestige == 1:
+        return "Prestigious "
+    if prestige == 2:
+        return "Exalted "
+    if prestige == 3:
+        return "Transcendent "
+    if prestige == 4:
+        return "Mythical "
+    return "Godlike "
+
+
 def starting_gold_for_level(level: int) -> int:
     if level <= 1:
         return 10
     return level * 150
 
 
-def starter_save(cls: str, race: str, seed: int, start_level: int = 1) -> dict[str, Any]:
+def starter_save(
+    cls: str, race: str, seed: int, start_level: int = 1, start_prestige: int = 0,
+) -> dict[str, Any]:
     if not 1 <= start_level <= MAX_LEVEL:
         raise ValueError(f"start_level must be between 1 and {MAX_LEVEL}: {start_level}")
+    if start_prestige < 0:
+        raise ValueError(f"start_prestige must be non-negative: {start_prestige}")
     bs, bd, bi = CLASS_BASE[cls]
     rs, rd, ri = RACE_BONUS[race]
+    subclass_name = None
+    sub_str, sub_dex, sub_int = (0, 0, 0)
+    if start_prestige:
+        subclass_name, subclass_bonus = FIRST_SUBCLASS[cls]
+        sub_str, sub_dex, sub_int = subclass_bonus
+    prestige_bonus = start_prestige * 2
     level_gain = start_level - 1
-    level_one_strength = bs + rs
+    level_one_strength = bs + rs + prestige_bonus + sub_str
+    level_one_dexterity = bd + rd + prestige_bonus + sub_dex
+    level_one_intelligence = bi + ri + prestige_bonus + sub_int
     strength = level_one_strength + level_gain
-    dexterity = bd + rd + level_gain
-    intelligence = bi + ri + level_gain
-    max_hp = 20 + level_one_strength * 2 + 5 * level_gain
+    dexterity = level_one_dexterity + level_gain
+    intelligence = level_one_intelligence + level_gain
+    max_hp = 20 + level_one_strength * 2 + start_prestige * 10 + 5 * level_gain
     return {
         "character": {
             "name": f"Sim-{seed}",
@@ -113,8 +146,8 @@ def starter_save(cls: str, race: str, seed: int, start_level: int = 1) -> dict[s
             "gold": starting_gold_for_level(start_level), "kills": 0, "deaths": 0, "commands_run": 0,
             "weapon": None, "armor": None, "ring": None,
             "inventory": [],
-            "title": title_for_level(start_level),
-            "prestige": 0, "subclass": None, "total_prestiges": 0,
+            "title": f"{prestige_title_prefix(start_prestige)}{title_for_level(start_level)}",
+            "prestige": start_prestige, "subclass": subclass_name, "total_prestiges": start_prestige,
             "tournament_wins": 0, "best_tournament_round": 0,
         },
         "journal": [],
@@ -168,6 +201,7 @@ class SimPlayer:
         tuning_label: str, db_path: Path,
         target_level: int = 100, max_ticks: int = 8000,
         start_level: int = 1,
+        start_prestige: int = 0,
         snapshot_every: int = 50,
         min_arena_tier_index: int = 1,
     ):
@@ -180,6 +214,7 @@ class SimPlayer:
         self.tuning_label = tuning_label
         self.rng = random.Random(seed)
         self.start_level = start_level
+        self.start_prestige = start_prestige
         self.target_level = target_level
         self.max_ticks = max_ticks
         self.snapshot_every = snapshot_every
@@ -194,7 +229,9 @@ class SimPlayer:
         self.tick_no = 0
         self._enchant_failure_count = 0
         driver.set_invocation_recorder(self._record_sq_invocation)
-        driver.init_save(self.home, starter_save(cls, race, seed, start_level=start_level))
+        driver.init_save(self.home, starter_save(
+            cls, race, seed, start_level=start_level, start_prestige=start_prestige,
+        ))
 
     def cleanup(self) -> None:
         driver.set_invocation_recorder(None)
