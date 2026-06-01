@@ -23,23 +23,77 @@ fn affinity_multiplier(class: &crate::character::Class, cmd: &str) -> f32 {
             "sed", "awk", "perl", "jq", "yq", "lua", "php", "r", "julia", "ghci", "history", "fc",
         ],
         Class::Warrior => &[
-            "cargo", "make", "cmake", "gcc", "g++", "ninja", "meson", "mvn", "gradle",
-            "clang", "rustc", "go", "javac", "dotnet", "bazel", "buck", "xcodebuild",
-            "eslint", "prettier", "black", "ruff", "gofmt", "rustfmt", "clippy",
+            "cargo",
+            "make",
+            "cmake",
+            "gcc",
+            "g++",
+            "ninja",
+            "meson",
+            "mvn",
+            "gradle",
+            "clang",
+            "rustc",
+            "go",
+            "javac",
+            "dotnet",
+            "bazel",
+            "buck",
+            "xcodebuild",
+            "eslint",
+            "prettier",
+            "black",
+            "ruff",
+            "gofmt",
+            "rustfmt",
+            "clippy",
         ],
         Class::Rogue => &[
-            "grep", "rg", "ag", "ssh", "find", "fd", "ls", "eza", "locate",
-            "sort", "uniq", "cut", "tr", "wc", "head", "tail", "which", "whereis", "tree",
-            "diff", "comm",
+            "grep", "rg", "ag", "ssh", "find", "fd", "ls", "eza", "locate", "sort", "uniq", "cut",
+            "tr", "wc", "head", "tail", "which", "whereis", "tree", "diff", "comm",
         ],
         Class::Ranger => &[
-            "curl", "wget", "http", "docker", "kubectl", "ansible", "terraform", "helm",
-            "ping", "dig", "nslookup", "host", "traceroute", "scp", "sftp", "nc", "netcat",
-            "nmap", "netstat", "ss", "ifconfig", "ip", "vagrant", "packer",
+            "curl",
+            "wget",
+            "http",
+            "docker",
+            "kubectl",
+            "ansible",
+            "terraform",
+            "helm",
+            "ping",
+            "dig",
+            "nslookup",
+            "host",
+            "traceroute",
+            "scp",
+            "sftp",
+            "nc",
+            "netcat",
+            "nmap",
+            "netstat",
+            "ss",
+            "ifconfig",
+            "ip",
+            "vagrant",
+            "packer",
         ],
         Class::Necromancer => &[
-            "kill", "pkill", "killall", "rm", "del", "git", "shred",
-            "systemctl", "service", "launchctl", "shutdown", "reboot", "halt", "dd", "wipe",
+            "kill",
+            "pkill",
+            "killall",
+            "rm",
+            "del",
+            "git",
+            "shred",
+            "systemctl",
+            "service",
+            "launchctl",
+            "shutdown",
+            "reboot",
+            "halt",
+            "dd",
+            "wipe",
         ],
     };
     if affinities
@@ -396,8 +450,8 @@ fn tick_with_rng(
             }
         }
         // Text divination / data inspection -> Rogue/Ranger flavor
-        "sort" | "uniq" | "cut" | "tr" | "wc" | "head" | "tail" | "diff" | "comm"
-        | "nmap" | "netstat" | "ss" | "ifconfig" | "ip" => {
+        "sort" | "uniq" | "cut" | "tr" | "wc" | "head" | "tail" | "diff" | "comm" | "nmap"
+        | "netstat" | "ss" | "ifconfig" | "ip" => {
             if rng.gen_ratio(1, 5) {
                 handle_omniscience(state, &mut rng, &zone, &cmd_lower);
             }
@@ -543,7 +597,9 @@ fn scale_void_mob(template: &VoidMonsterTemplate, player_level: u32, depth: u32)
 
     VoidMob {
         name,
-        hp: template.base_hp + (level as i32 * VOID_HP_PER_LEVEL) + (depth as i32 * VOID_HP_PER_DEPTH),
+        hp: template.base_hp
+            + (level as i32 * VOID_HP_PER_LEVEL)
+            + (depth as i32 * VOID_HP_PER_DEPTH),
         attack: template.base_attack + level_attack + (depth as i32 * VOID_ATTACK_PER_DEPTH),
         xp: template.base_xp + (level * VOID_XP_PER_LEVEL) + (depth * VOID_XP_PER_DEPTH),
     }
@@ -568,7 +624,9 @@ fn handle_void_encounter(
     cwd: &str,
     cmd: &str,
 ) {
-    let depth = void_depth(cwd).unwrap_or_default().max(VOID_MIN_COMBAT_DEPTH);
+    let depth = void_depth(cwd)
+        .unwrap_or_default()
+        .max(VOID_MIN_COMBAT_DEPTH);
     let mob = random_void_mob(rng, state.character.level, depth);
     let enemy_dex_mod = void_enemy_dex_mod(
         state.character.level,
@@ -730,8 +788,10 @@ fn handle_angry_spirit(
     zone: &crate::zones::Zone,
     cmd: &str,
 ) {
-    let (name, atk, hp, xp, tier) = random_monster_for_zone(rng, zone);
-    let enemy_dex_mod = tier_dex_mod(tier) + state.character.total_prestiges as i32;
+    let (name, atk, hp, xp, tier) = random_monster_for_zone(rng, zone, state.character.level);
+    let enemy_dex_mod = tier_dex_mod(tier)
+        + encounter_enemy_dex_level_bonus(state.character.level)
+        + state.character.total_prestiges as i32;
     let profile = if rng.gen_ratio(1, 8) {
         apply_elite_pressure(&name, atk, hp, xp, zone.danger_level)
     } else {
@@ -933,7 +993,12 @@ fn handle_alchemy(state: &mut GameState, rng: &mut impl Rng) {
 }
 
 /// Transmutation: reshaping text/data with sed/awk/jq. Wizard-flavored. Loot or XP.
-fn handle_transmute(state: &mut GameState, rng: &mut impl Rng, zone: &crate::zones::Zone, cmd: &str) {
+fn handle_transmute(
+    state: &mut GameState,
+    rng: &mut impl Rng,
+    zone: &crate::zones::Zone,
+    cmd: &str,
+) {
     if rng.gen_ratio(1, 3) {
         let item = roll_loot(zone.danger_level);
         let msg = format!(
@@ -998,14 +1063,14 @@ fn handle_raw_power(state: &mut GameState, rng: &mut impl Rng, cwd: &str) {
             "{} (+{} {}) [{}]",
             item.name, item.power, item.slot, item.rarity
         );
-        let (plain, colored) =
-            crate::messages::raw_power_loot(&state.character.class, &item_desc);
+        let (plain, colored) = crate::messages::raw_power_loot(&state.character.class, &item_desc);
         display::print_loot(&colored, &item.rarity);
         state.add_journal(JournalEntry::new(EventType::Loot, plain));
         add_to_inventory(state, item, false);
     } else {
         // It bites back: 2-5% max-hp self-damage (never lethal here).
-        let dmg = ((state.character.max_hp as f32 * rng.gen_range(0.02..0.05)).round() as i32).max(1);
+        let dmg =
+            ((state.character.max_hp as f32 * rng.gen_range(0.02..0.05)).round() as i32).max(1);
         let dmg = dmg.min(state.character.hp - 1).max(0);
         let _ = state.character.take_damage(dmg);
         let (plain, colored) = crate::messages::raw_power_backfire(
@@ -1287,8 +1352,11 @@ fn handle_random_encounter(
 
     match roll {
         1..=40 => {
-            let (name, base_atk, base_hp, base_xp, tier) = random_monster_for_zone(rng, zone);
-            let enemy_dex_mod = tier_dex_mod(tier) + state.character.total_prestiges as i32;
+            let (name, base_atk, base_hp, base_xp, tier) =
+                random_monster_for_zone(rng, zone, state.character.level);
+            let enemy_dex_mod = tier_dex_mod(tier)
+                + encounter_enemy_dex_level_bonus(state.character.level)
+                + state.character.total_prestiges as i32;
             let profile = if rng.gen_ratio(1, 8) {
                 apply_elite_pressure(&name, base_atk, base_hp, base_xp, zone.danger_level)
             } else {
@@ -1380,12 +1448,40 @@ fn passive_heal_denominator() -> u32 {
 // Used by Task 3 to scale monster attack by zone danger.
 fn encounter_scale_for_danger(danger: u32) -> f32 {
     match danger {
-        1 => 0.9,
-        2 => 1.1,
-        3 => 1.4,
-        4 => 1.8,
-        _ => 2.2,
+        1 => 1.0,
+        2 => 1.25,
+        3 => 1.6,
+        4 => 2.0,
+        _ => 2.45,
     }
+}
+
+fn encounter_hp_floor_for_danger(danger: u32) -> i32 {
+    match danger {
+        1 => 12,
+        2 => 22,
+        3 => 45,
+        4 => 90,
+        _ => 170,
+    }
+}
+
+fn encounter_hp_level_multiplier(level: u32) -> f32 {
+    1.0 + (level.saturating_sub(1) as f32 * 0.30)
+}
+
+fn encounter_attack_level_multiplier(level: u32) -> f32 {
+    1.0 + (level.saturating_sub(1) as f32 * 0.012) + (level.saturating_sub(20) as f32 * 0.04)
+}
+
+fn encounter_enemy_dex_level_bonus(level: u32) -> i32 {
+    (level / 5) as i32
+}
+
+pub const ENCOUNTER_MAX_PLAYER_DODGE_ADVANTAGE: i32 = 6;
+
+fn effective_player_dodge_mod(player_dex_mod: i32, enemy_dex_mod: i32) -> i32 {
+    player_dex_mod.min(enemy_dex_mod + ENCOUNTER_MAX_PLAYER_DODGE_ADVANTAGE)
 }
 
 struct EncounterProfile {
@@ -1396,8 +1492,8 @@ struct EncounterProfile {
     elite: bool,
 }
 
-pub const ELITE_ATTACK_BASE_MULT: f64 = 1.6;
-pub const ELITE_ATTACK_PER_DANGER: f64 = 0.15;
+pub const ELITE_ATTACK_BASE_MULT: f64 = 1.35;
+pub const ELITE_ATTACK_PER_DANGER: f64 = 0.10;
 pub const ELITE_HP_MULT: f64 = 1.5;
 pub const ELITE_XP_MULT: f64 = 2.0;
 
@@ -1832,6 +1928,7 @@ fn random_monster_in_tiers(
 fn random_monster_for_zone(
     rng: &mut impl Rng,
     zone: &crate::zones::Zone,
+    character_level: u32,
 ) -> (String, i32, i32, u32, MonsterTier) {
     let entry = random_monster_in_tiers(rng, tiers_for_danger(zone.danger_level))
         .or_else(|| {
@@ -1846,9 +1943,15 @@ fn random_monster_for_zone(
         })
         .expect("MONSTER_POOL must contain at least one entry");
     let scale = encounter_scale_for_danger(zone.danger_level);
-    let atk = ((entry.attack as f32 * scale).round() as i32).max(1);
+    let atk = ((entry.attack as f32 * scale * encounter_attack_level_multiplier(character_level))
+        .round() as i32)
+        .max(1);
+    let hp_floor = encounter_hp_floor_for_danger(zone.danger_level);
+    let hp = (((entry.hp.max(hp_floor)) as f32 * encounter_hp_level_multiplier(character_level))
+        .round() as i32)
+        .max(1);
     let xp = ((entry.xp as f32 * scale).round() as u32).max(5);
-    (entry.name.to_string(), atk, entry.hp, xp, entry.tier)
+    (entry.name.to_string(), atk, hp, xp, entry.tier)
 }
 
 const COMBAT_MAX_TURNS: u32 = 30;
@@ -1952,7 +2055,9 @@ fn combat(
 
         let player_defense = state.character.defense();
         let dodge_roll: i32 = rng.gen_range(1..=20);
-        if crate::character::attack_lands(dodge_roll, enemy_dex_mod, state.character.dex_mod()) {
+        let player_dodge_mod =
+            effective_player_dodge_mod(state.character.dex_mod(), enemy_dex_mod);
+        if crate::character::attack_lands(dodge_roll, enemy_dex_mod, player_dodge_mod) {
             let damage = (monster_atk - player_defense / 3).max(1);
             total_damage_taken += damage;
             let gold_before = state.character.gold;
@@ -2153,7 +2258,7 @@ mod tests {
             .map(|m| ((m.attack as f32 * encounter_scale_for_danger(1)).round() as i32).max(1))
             .collect();
         for _ in 0..100 {
-            let (_name, atk, _hp, _xp, _tier) = random_monster_for_zone(&mut rng, &zone);
+            let (_name, atk, _hp, _xp, _tier) = random_monster_for_zone(&mut rng, &zone, 1);
             assert!(
                 vermin_attacks.contains(&atk),
                 "danger-1 zone must only produce Vermin-tier monster ATK (got {})",
@@ -2172,7 +2277,7 @@ mod tests {
         };
         let mut rng = rand::thread_rng();
         for _ in 0..50 {
-            let (_name, atk, hp, _xp, _tier) = random_monster_for_zone(&mut rng, &zone);
+            let (_name, atk, hp, _xp, _tier) = random_monster_for_zone(&mut rng, &zone, 1);
             assert!(atk >= 1, "fallback must still produce a valid monster");
             assert!(hp >= 1, "fallback monster must have positive HP");
         }
@@ -2467,15 +2572,31 @@ mod tests {
 
     #[test]
     fn encounter_scale_increases_with_danger() {
-        assert_eq!(encounter_scale_for_danger(1), 0.9_f32);
-        assert_eq!(encounter_scale_for_danger(3), 1.4_f32);
-        assert_eq!(encounter_scale_for_danger(5), 2.2_f32);
+        assert_eq!(encounter_scale_for_danger(1), 1.0_f32);
+        assert_eq!(encounter_scale_for_danger(3), 1.6_f32);
+        assert_eq!(encounter_scale_for_danger(5), 2.45_f32);
         assert!(encounter_scale_for_danger(5) > encounter_scale_for_danger(1));
     }
 
     #[test]
-    fn encounter_scale_danger_1_below_base() {
-        assert_eq!(encounter_scale_for_danger(1), 0.9_f32);
+    fn encounter_scale_danger_1_is_base_pressure() {
+        assert_eq!(encounter_scale_for_danger(1), 1.0_f32);
+    }
+
+    #[test]
+    fn encounter_hp_floor_keeps_early_mobs_from_evaporating() {
+        assert_eq!(encounter_hp_floor_for_danger(1), 12);
+        assert_eq!(encounter_hp_floor_for_danger(3), 45);
+        assert_eq!(encounter_hp_floor_for_danger(5), 170);
+    }
+
+    #[test]
+    fn encounter_level_pressure_scales_gently() {
+        assert_eq!(encounter_hp_level_multiplier(1), 1.0_f32);
+        assert_eq!(encounter_attack_level_multiplier(1), 1.0_f32);
+        assert!((encounter_hp_level_multiplier(40) - 12.7).abs() < 0.001);
+        assert!((encounter_attack_level_multiplier(40) - 2.268).abs() < 0.001);
+        assert_eq!(encounter_enemy_dex_level_bonus(40), 8);
     }
 
     #[test]
@@ -2550,7 +2671,7 @@ mod tests {
     #[test]
     fn elite_modifier_raises_attack_and_reward() {
         let elite = apply_elite_pressure("Deadlock Demon", 12, 33, 25, 4);
-        assert_eq!(elite.attack, 28);
+        assert_eq!(elite.attack, 21);
         assert_eq!(elite.xp, 50);
         assert!(elite.elite);
     }
@@ -2591,6 +2712,13 @@ mod tests {
         assert_eq!(tier_dex_mod(MonsterTier::Hunter), 4);
         assert_eq!(tier_dex_mod(MonsterTier::Horror), 6);
         assert_eq!(tier_dex_mod(MonsterTier::BossAdjacent), 8);
+    }
+
+    #[test]
+    fn overworld_player_dodge_advantage_is_capped() {
+        assert_eq!(ENCOUNTER_MAX_PLAYER_DODGE_ADVANTAGE, 6);
+        assert_eq!(effective_player_dodge_mod(14, 10), 14);
+        assert_eq!(effective_player_dodge_mod(80, 24), 30);
     }
 
     #[test]
@@ -2981,8 +3109,7 @@ mod tests {
             Class::Ranger,
             Class::Necromancer,
         ] {
-            let (plain, _colored) =
-                crate::messages::void_mob_intro(&class, "Null-Space Nightmare");
+            let (plain, _colored) = crate::messages::void_mob_intro(&class, "Null-Space Nightmare");
             let lower = plain.to_lowercase();
             assert!(
                 lower.contains("void")

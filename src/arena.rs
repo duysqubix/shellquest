@@ -37,11 +37,11 @@ pub const TIER_PIT: ArenaTier = ArenaTier {
     min_prestige: 0,
     or_unlock: false,
     reward_bands: &[
-        (1, 10, 5),
-        (2, 25, 12),
-        (3, 45, 24),
-        (4, 70, 40),
-        (5, 110, 60),
+        (1, 12, 5),
+        (2, 30, 12),
+        (3, 55, 24),
+        (4, 90, 40),
+        (5, 140, 60),
     ],
     chest_milestones: &[(5, 2)],
     awards_crown: false,
@@ -54,7 +54,7 @@ pub const TIER_GAUNTLET: ArenaTier = ArenaTier {
     min_level: 25,
     min_prestige: 1,
     or_unlock: true,
-    reward_bands: &[(5, 35, 22), (10, 145, 90)],
+    reward_bands: &[(5, 40, 22), (10, 160, 90)],
     chest_milestones: &[(5, 2), (10, 4)],
     awards_crown: false,
 };
@@ -66,7 +66,7 @@ pub const TIER_COLOSSEUM: ArenaTier = ArenaTier {
     min_level: 60,
     min_prestige: 1,
     or_unlock: true,
-    reward_bands: &[(5, 30, 20), (10, 90, 55), (15, 185, 120)],
+    reward_bands: &[(5, 34, 20), (10, 100, 55), (15, 205, 120)],
     chest_milestones: &[(5, 4), (10, 4), (15, 6)],
     awards_crown: false,
 };
@@ -79,11 +79,11 @@ pub const TIER_ABYSSAL: ArenaTier = ArenaTier {
     min_prestige: 2,
     or_unlock: true,
     reward_bands: &[
-        (5, 20, 12),
-        (10, 55, 30),
-        (15, 100, 60),
-        (20, 165, 105),
-        (25, 240, 160),
+        (5, 24, 12),
+        (10, 65, 30),
+        (15, 120, 60),
+        (20, 185, 105),
+        (25, 270, 160),
     ],
     chest_milestones: &[(10, 4), (20, 6), (25, 6)],
     awards_crown: false,
@@ -97,11 +97,11 @@ pub const TIER_GODSLAYER: ArenaTier = ArenaTier {
     min_prestige: 3,
     or_unlock: false,
     reward_bands: &[
-        (10, 25, 15),
-        (20, 70, 40),
-        (30, 130, 85),
-        (40, 210, 150),
-        (50, 320, 220),
+        (10, 30, 15),
+        (20, 85, 40),
+        (30, 155, 85),
+        (40, 235, 150),
+        (50, 350, 220),
     ],
     chest_milestones: &[(10, 4), (20, 6), (40, 8), (50, 9)],
     awards_crown: true,
@@ -565,34 +565,34 @@ pub fn arena_wave(round: u32) -> ArenaWave {
             enemy_crit_chance_pct: 0,
         },
         4..=6 => ArenaWave {
-            hp_multiplier: 1.4,
+            hp_multiplier: 1.3,
             enemy_dex_mod: 2,
             enemy_crit_chance_pct: 3,
         },
-        7..=9 => ArenaWave {
-            hp_multiplier: 2.0,
+        7..=10 => ArenaWave {
+            hp_multiplier: 1.8,
             enemy_dex_mod: 4,
             enemy_crit_chance_pct: 6,
         },
-        10..=15 => ArenaWave {
-            hp_multiplier: 3.0,
-            enemy_dex_mod: 6,
-            enemy_crit_chance_pct: 8,
+        11..=15 => ArenaWave {
+            hp_multiplier: 4.8,
+            enemy_dex_mod: 10,
+            enemy_crit_chance_pct: 18,
         },
         16..=25 => ArenaWave {
-            hp_multiplier: 4.5,
-            enemy_dex_mod: 9,
-            enemy_crit_chance_pct: 12,
+            hp_multiplier: 5.8,
+            enemy_dex_mod: 14,
+            enemy_crit_chance_pct: 20,
         },
         26..=40 => ArenaWave {
-            hp_multiplier: 6.5,
-            enemy_dex_mod: 13,
+            hp_multiplier: 5.8,
+            enemy_dex_mod: 14,
             enemy_crit_chance_pct: 18,
         },
         _ => ArenaWave {
-            hp_multiplier: 9.0,
+            hp_multiplier: 6.5,
             enemy_dex_mod: 18,
-            enemy_crit_chance_pct: 22,
+            enemy_crit_chance_pct: 19,
         },
     }
 }
@@ -635,17 +635,17 @@ pub fn compute_enemy_hit_at_round(
 
 pub const ARENA_TUNING: ArenaCombatTuning = ArenaCombatTuning {
     enemy_hp_base: 20,
-    enemy_hp_per_round: 20,
+    enemy_hp_per_round: 17,
     enemy_hp_max_hp_divisor: 2,
     enemy_hp_per_prestige: 50,
     enemy_attack_base: 4,
-    enemy_attack_per_round: 3,
+    enemy_attack_per_round: 2,
     enemy_attack_power_divisor: 2,
     enemy_attack_per_prestige: 8,
     player_dmg_power_divisor: 2,
-    enemy_dmg_defense_divisor: 3,
+    enemy_dmg_defense_divisor: 2,
     recovery_base: 4,
-    recovery_max_hp_divisor: 10,
+    recovery_max_hp_divisor: 8,
     max_turns: 1000,
 };
 
@@ -1397,59 +1397,59 @@ mod tests {
 
     #[test]
     fn pit_rewards_at_milestones() {
-        assert_eq!(TIER_PIT.reward_percentages_at_round(1), (10, 5));
-        assert_eq!(TIER_PIT.reward_percentages_at_round(3), (45, 24));
-        assert_eq!(TIER_PIT.reward_percentages_at_round(5), (110, 60));
+        assert_eq!(TIER_PIT.reward_percentages_at_round(1), (12, 5));
+        assert_eq!(TIER_PIT.reward_percentages_at_round(3), (55, 24));
+        assert_eq!(TIER_PIT.reward_percentages_at_round(5), (140, 60));
     }
 
     #[test]
     fn gauntlet_rewards_at_milestones() {
-        assert_eq!(TIER_GAUNTLET.reward_percentages_at_round(5), (35, 22));
-        assert_eq!(TIER_GAUNTLET.reward_percentages_at_round(10), (145, 90));
+        assert_eq!(TIER_GAUNTLET.reward_percentages_at_round(5), (40, 22));
+        assert_eq!(TIER_GAUNTLET.reward_percentages_at_round(10), (160, 90));
     }
 
     #[test]
     fn godslayer_rewards_at_milestones() {
-        assert_eq!(TIER_GODSLAYER.reward_percentages_at_round(10), (25, 15));
-        assert_eq!(TIER_GODSLAYER.reward_percentages_at_round(50), (320, 220));
+        assert_eq!(TIER_GODSLAYER.reward_percentages_at_round(10), (30, 15));
+        assert_eq!(TIER_GODSLAYER.reward_percentages_at_round(50), (350, 220));
     }
 
     #[test]
     fn interpolation_gauntlet_round_7() {
-        // Between r5 (35/22) and r10 (145/90), span = 5, step = 2
-        // gold: 35 + (145-35)*2/5 = 35 + 44 = 79
+        // Between r5 (40/22) and r10 (160/90), span = 5, step = 2
+        // gold: 40 + (160-40)*2/5 = 40 + 48 = 88
         // xp: 22 + (90-22)*2/5 = 22 + 27 = 49
-        assert_eq!(TIER_GAUNTLET.reward_percentages_at_round(7), (79, 49));
+        assert_eq!(TIER_GAUNTLET.reward_percentages_at_round(7), (88, 49));
     }
 
     #[test]
     fn interpolation_colosseum_round_12() {
-        // Between r10 (90/55) and r15 (185/120), span = 5, step = 2
-        // gold: 90 + (185-90)*2/5 = 90 + 38 = 128
+        // Between r10 (100/55) and r15 (205/120), span = 5, step = 2
+        // gold: 100 + (205-100)*2/5 = 100 + 42 = 142
         // xp: 55 + (120-55)*2/5 = 55 + 26 = 81
-        assert_eq!(TIER_COLOSSEUM.reward_percentages_at_round(12), (128, 81));
+        assert_eq!(TIER_COLOSSEUM.reward_percentages_at_round(12), (142, 81));
     }
 
     #[test]
     fn interpolation_godslayer_round_35() {
-        // Between r30 (130/85) and r40 (210/150), span = 10, step = 5
-        // gold: 130 + (210-130)*5/10 = 130 + 40 = 170
+        // Between r30 (155/85) and r40 (235/150), span = 10, step = 5
+        // gold: 155 + (235-155)*5/10 = 155 + 40 = 195
         // xp: 85 + (150-85)*5/10 = 85 + 32 = 117
-        assert_eq!(TIER_GODSLAYER.reward_percentages_at_round(35), (170, 117));
+        assert_eq!(TIER_GODSLAYER.reward_percentages_at_round(35), (195, 117));
     }
 
     #[test]
     fn interpolation_before_first_milestone() {
         // The Gauntlet first milestone is r5. At r3, interpolate from (0,0).
-        // gold: 35 * 3 / 5 = 21
+        // gold: 40 * 3 / 5 = 24
         // xp: 22 * 3 / 5 = 13
-        assert_eq!(TIER_GAUNTLET.reward_percentages_at_round(3), (21, 13));
+        assert_eq!(TIER_GAUNTLET.reward_percentages_at_round(3), (24, 13));
     }
 
     #[test]
     fn clamp_past_last_milestone() {
-        assert_eq!(TIER_PIT.reward_percentages_at_round(10), (110, 60));
-        assert_eq!(TIER_GAUNTLET.reward_percentages_at_round(50), (145, 90));
+        assert_eq!(TIER_PIT.reward_percentages_at_round(10), (140, 60));
+        assert_eq!(TIER_GAUNTLET.reward_percentages_at_round(50), (160, 90));
     }
 
     #[test]
@@ -1467,7 +1467,7 @@ mod tests {
         let (gold_reward, xp_reward) = TIER_PIT.compute_rewards(fee, entry.xp_to_next, 5);
         let net_gold = gold_reward as i64 - fee as i64;
         assert!(
-            net_gold >= 0 && net_gold <= 25,
+            net_gold >= 50 && net_gold <= 70,
             "net_gold = {} (fee={}, reward={})",
             net_gold,
             fee,
@@ -1789,9 +1789,26 @@ mod tests {
 
     #[test]
     fn enemy_hp_scales_with_new_tuning_constants() {
-        assert_eq!(ARENA_TUNING.enemy_hp_per_round, 20);
+        assert_eq!(ARENA_TUNING.enemy_hp_per_round, 17);
         assert_eq!(ARENA_TUNING.enemy_hp_max_hp_divisor, 2);
         assert_eq!(ARENA_TUNING.enemy_hp_per_prestige, 50);
+        assert_eq!(ARENA_TUNING.enemy_attack_per_round, 2);
+        assert_eq!(ARENA_TUNING.enemy_dmg_defense_divisor, 2);
+        assert_eq!(ARENA_TUNING.recovery_max_hp_divisor, 8);
+    }
+
+    #[test]
+    fn arena_wave_tuning_constants_are_pinned() {
+        assert_eq!(arena_wave(1).hp_multiplier, 1.0);
+        assert_eq!(arena_wave(4).hp_multiplier, 1.3);
+        assert_eq!(arena_wave(7).hp_multiplier, 1.8);
+        assert_eq!(arena_wave(10).hp_multiplier, 1.8);
+        assert_eq!(arena_wave(11).hp_multiplier, 4.8);
+        assert_eq!(arena_wave(16).hp_multiplier, 5.8);
+        assert_eq!(arena_wave(26).hp_multiplier, 5.8);
+        assert_eq!(arena_wave(41).hp_multiplier, 6.5);
+        assert_eq!(arena_wave(50).enemy_dex_mod, 18);
+        assert_eq!(arena_wave(50).enemy_crit_chance_pct, 19);
     }
 
     #[test]
@@ -1799,8 +1816,8 @@ mod tests {
         let r1 = compute_enemy_max_hp(1, 200, 0);
         let r10 = compute_enemy_max_hp(10, 200, 0);
         assert!(
-            r10 >= r1 * 4,
-            "round 10 enemy HP should be at least 4x round 1; got R1={} R10={}",
+            r10 >= r1 * 3,
+            "round 10 enemy HP should be at least 3x round 1; got R1={} R10={}",
             r1,
             r10
         );
@@ -1914,7 +1931,7 @@ mod tests {
     #[test]
     fn cash_out_preview_includes_gold_and_xp_amounts() {
         let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 5);
-        assert!(plain.contains("+110 gold"), "plain: {}", plain);
+        assert!(plain.contains("+140 gold"), "plain: {}", plain);
         assert!(plain.contains("+120 XP"), "plain: {}", plain);
     }
 
@@ -1938,7 +1955,7 @@ mod tests {
     #[test]
     fn cash_out_preview_colored_contains_amounts() {
         let (_plain, colored) = format_cash_out_preview(&TIER_GAUNTLET, 200, 300, 10);
-        assert!(colored.contains("290"), "colored: {}", colored);
+        assert!(colored.contains("320"), "colored: {}", colored);
         assert!(colored.contains("270"), "colored: {}", colored);
     }
 
@@ -2274,25 +2291,25 @@ mod tests {
     #[test]
     fn colosseum_rewards_before_first_milestone() {
         // First milestone at r5. At r3, interpolate from (0,0).
-        // gold: 30 * 3 / 5 = 18
+        // gold: 34 * 3 / 5 = 20
         // xp: 20 * 3 / 5 = 12
-        assert_eq!(TIER_COLOSSEUM.reward_percentages_at_round(3), (18, 12));
+        assert_eq!(TIER_COLOSSEUM.reward_percentages_at_round(3), (20, 12));
     }
 
     #[test]
     fn abyssal_rewards_interpolation_round_12() {
-        // Between r10 (55/30) and r15 (100/60), span=5, step=2
-        // gold: 55 + (100-55)*2/5 = 55 + 18 = 73
+        // Between r10 (65/30) and r15 (120/60), span=5, step=2
+        // gold: 65 + (120-65)*2/5 = 65 + 22 = 87
         // xp: 30 + (60-30)*2/5 = 30 + 12 = 42
-        assert_eq!(TIER_ABYSSAL.reward_percentages_at_round(12), (73, 42));
+        assert_eq!(TIER_ABYSSAL.reward_percentages_at_round(12), (87, 42));
     }
 
     #[test]
     fn godslayer_rewards_before_first_milestone() {
         // First milestone at r10. At r5, interpolate from (0,0).
-        // gold: 25 * 5 / 10 = 12
+        // gold: 30 * 5 / 10 = 15
         // xp: 15 * 5 / 10 = 7
-        assert_eq!(TIER_GODSLAYER.reward_percentages_at_round(5), (12, 7));
+        assert_eq!(TIER_GODSLAYER.reward_percentages_at_round(5), (15, 7));
     }
 
     // --- Reward computation edge cases ---
