@@ -86,6 +86,12 @@ sim-custom label classes strategies target_level min_tier="1" runs="3" parallel=
         --target-level {{target_level}} --parallel {{parallel}} \
         --tuning-label {{label}} --min-arena-tier {{min_tier}}
 
+sim-custom-seeded label classes strategies start_level target_level min_tier="4" runs="3" parallel="4": sim-image sim-sq-linux
+    SQ_BIN_HOST={{sim_dir}}/.sq-linux/sq SIM_IMAGE=shellquest-sim {{runner}} --runs {{runs}} --classes {{classes}} \
+        --strategies {{strategies}} --races Human \
+        --start-level {{start_level}} --target-level {{target_level}} --parallel {{parallel}} \
+        --tuning-label {{label}} --min-arena-tier {{min_tier}}
+
 # Build the balance-sim Docker image (dev-only). sq binary + sim code are mounted at run time, not baked in.
 sim-image:
     docker build -t shellquest-sim {{sim_dir}}

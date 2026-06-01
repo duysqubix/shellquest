@@ -32,8 +32,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--tuning-label", required=True)
     p.add_argument("--target-level", type=int, required=True)
+    p.add_argument("--start-level", type=int, default=1)
     p.add_argument("--max-ticks", type=int, required=True,
-                   help="0 = auto-derive from target-level")
+                   help="0 = auto-derive from target-level and start-level")
     p.add_argument("--snapshot-every", type=int, default=50)
     p.add_argument("--min-arena-tier", type=int, default=1,
                    choices=[1, 2, 3, 4, 5])
@@ -42,11 +43,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_simulation(args: argparse.Namespace) -> dict[str, Any]:
-    max_ticks = args.max_ticks or player.auto_max_ticks(args.target_level)
+    max_ticks = args.max_ticks or player.auto_max_ticks(args.target_level, args.start_level)
     result = player.simulate_one(
         args.cls, args.race, args.strategy, args.seed, args.tuning_label,
         db_path=Path(args.shard_out),
-        target_level=args.target_level, max_ticks=max_ticks,
+        target_level=args.target_level, start_level=args.start_level, max_ticks=max_ticks,
         snapshot_every=args.snapshot_every,
         min_arena_tier_index=args.min_arena_tier,
     )

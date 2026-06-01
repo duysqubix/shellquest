@@ -122,9 +122,9 @@ def _remove_container(container_name: str) -> None:
         pass
 
 
-def _worker(args: tuple[str, str, str, int, str, str, int, int, int, int]) -> dict[str, Any]:
+def _worker(args: tuple[str, str, str, int, str, str, int, int, int, int, int]) -> dict[str, Any]:
     (cls, race, strategy, seed, tuning_label, db_path,
-     target_level, max_ticks, snapshot_every, min_arena_tier_index) = args
+     target_level, start_level, max_ticks, snapshot_every, min_arena_tier_index) = args
     worker_db = Path(db_path).with_name(f"runs-w{seed}.db")
     # Mount only this per-character directory as /out. The container writes its
     # shard there, then the host moves it to worker_db so main()'s merge glob
@@ -156,6 +156,7 @@ def _worker(args: tuple[str, str, str, int, str, str, int, int, int, int]) -> di
         "--seed", str(seed),
         "--tuning-label", tuning_label,
         "--target-level", str(target_level),
+        "--start-level", str(start_level),
         "--max-ticks", str(max_ticks),
         "--snapshot-every", str(snapshot_every),
         "--min-arena-tier", str(min_arena_tier_index),
@@ -242,8 +243,10 @@ def main() -> int:
                    default=["greedy", "balanced", "conservative"])
     p.add_argument("--tuning-label", default="v1.24-soft")
     p.add_argument("--target-level", type=int, default=60)
+    p.add_argument("--start-level", type=int, default=1,
+                   help="Seed each character at this level. Level 1 keeps the original starter save; higher levels use Rust level-up stat and XP-curve math, no gear, and level-scaled starting gold.")
     p.add_argument("--max-ticks", type=int, default=0,
-                   help="0 = auto-derive from target-level")
+                   help="0 = auto-derive from target-level; with start-level > 1 uses max(500, (target-level - start-level) * 300)")
     p.add_argument("--snapshot-every", type=int, default=50)
     p.add_argument("--parallel", type=int, default=4)
     p.add_argument("--db", default=str(db.DEFAULT_DB_PATH))
@@ -253,7 +256,7 @@ def main() -> int:
                         "(1=Pit, 2=Gauntlet, 3=Colosseum, 4=Abyssal, 5=Godslayer)")
     args = p.parse_args()
 
-    max_ticks = args.max_ticks or player.auto_max_ticks(args.target_level)
+    max_ticks = args.max_ticks or player.auto_max_ticks(args.target_level, args.start_level)
 
     jobs = []
     seed = args.seed_base
@@ -262,14 +265,14 @@ def main() -> int:
             for strat in args.strategies:
                 for _ in range(args.runs):
                     jobs.append((cls, race, strat, seed, args.tuning_label,
-                                 args.db, args.target_level, max_ticks,
+                                 args.db, args.target_level, args.start_level, max_ticks,
                                  args.snapshot_every, args.min_arena_tier))
                     seed += 1
 
     tier_names = ["", "Pit", "Gauntlet", "Colosseum", "Abyssal", "Godslayer"]
     print(f"╭─ balance-sim ─────────────────────────────")
     print(f"│  {len(jobs)} sims × {args.parallel} workers")
-    print(f"│  target L{args.target_level} · max {max_ticks} ticks · arena ≥ {tier_names[args.min_arena_tier]}")
+    print(f"│  start L{args.start_level} → target L{args.target_level} · max {max_ticks} ticks · arena ≥ {tier_names[args.min_arena_tier]}")
     print(f"│  tuning_label: {args.tuning_label}")
     print(f"│  db: {args.db}")
     print(f"╰───────────────────────────────────────────")

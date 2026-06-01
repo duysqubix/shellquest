@@ -37,24 +37,83 @@ def _home_parent() -> str | None:
     return None
 
 
-def starter_save(cls: str, race: str, seed: int) -> dict[str, Any]:
+MAX_LEVEL = 150
+
+
+def xp_to_next_for_level(level: int) -> int:
+    if level <= 10:
+        return level * 30 + 40
+    if level <= 30:
+        return level * 32 + 30
+    if level <= 60:
+        return level * 45 + 80
+    if level <= 100:
+        return level * 80 + 200
+    if level <= 130:
+        return level * 120 + 400
+    return level * 170 + 800
+
+
+def title_for_level(level: int) -> str:
+    if level <= 3:
+        return "Terminal Novice"
+    if level <= 8:
+        return "Shell Apprentice"
+    if level <= 14:
+        return "Command Adept"
+    if level <= 22:
+        return "Pipe Weaver"
+    if level <= 30:
+        return "Script Sorcerer"
+    if level <= 40:
+        return "Kernel Knight"
+    if level <= 50:
+        return "Daemon Slayer"
+    if level <= 65:
+        return "Binary Sage"
+    if level <= 80:
+        return "System Architect"
+    if level <= 95:
+        return "Process Overlord"
+    if level <= 110:
+        return "Thread Titan"
+    if level <= 125:
+        return "Memory Monarch"
+    if level <= 140:
+        return "Stack Sovereign"
+    if level <= 149:
+        return "Root Demigod"
+    return "Root Overlord"
+
+
+def starting_gold_for_level(level: int) -> int:
+    if level <= 1:
+        return 10
+    return level * 150
+
+
+def starter_save(cls: str, race: str, seed: int, start_level: int = 1) -> dict[str, Any]:
+    if not 1 <= start_level <= MAX_LEVEL:
+        raise ValueError(f"start_level must be between 1 and {MAX_LEVEL}: {start_level}")
     bs, bd, bi = CLASS_BASE[cls]
     rs, rd, ri = RACE_BONUS[race]
-    strength = bs + rs
-    dexterity = bd + rd
-    intelligence = bi + ri
-    max_hp = 20 + strength * 2
+    level_gain = start_level - 1
+    level_one_strength = bs + rs
+    strength = level_one_strength + level_gain
+    dexterity = bd + rd + level_gain
+    intelligence = bi + ri + level_gain
+    max_hp = 20 + level_one_strength * 2 + 5 * level_gain
     return {
         "character": {
             "name": f"Sim-{seed}",
             "class": cls, "race": race,
-            "level": 1, "xp": 0, "xp_to_next": 70,
+            "level": start_level, "xp": 0, "xp_to_next": xp_to_next_for_level(start_level),
             "hp": max_hp, "max_hp": max_hp,
             "strength": strength, "dexterity": dexterity, "intelligence": intelligence,
-            "gold": 10, "kills": 0, "deaths": 0, "commands_run": 0,
+            "gold": starting_gold_for_level(start_level), "kills": 0, "deaths": 0, "commands_run": 0,
             "weapon": None, "armor": None, "ring": None,
             "inventory": [],
-            "title": "Terminal Novice",
+            "title": title_for_level(start_level),
             "prestige": 0, "subclass": None, "total_prestiges": 0,
             "tournament_wins": 0, "best_tournament_round": 0,
         },
@@ -108,6 +167,7 @@ class SimPlayer:
         cls: str, race: str, strategy_name: str, seed: int,
         tuning_label: str, db_path: Path,
         target_level: int = 100, max_ticks: int = 8000,
+        start_level: int = 1,
         snapshot_every: int = 50,
         min_arena_tier_index: int = 1,
     ):
@@ -119,6 +179,7 @@ class SimPlayer:
         self.seed = seed
         self.tuning_label = tuning_label
         self.rng = random.Random(seed)
+        self.start_level = start_level
         self.target_level = target_level
         self.max_ticks = max_ticks
         self.snapshot_every = snapshot_every
@@ -133,7 +194,7 @@ class SimPlayer:
         self.tick_no = 0
         self._enchant_failure_count = 0
         driver.set_invocation_recorder(self._record_sq_invocation)
-        driver.init_save(self.home, starter_save(cls, race, seed))
+        driver.init_save(self.home, starter_save(cls, race, seed, start_level=start_level))
 
     def cleanup(self) -> None:
         driver.set_invocation_recorder(None)
@@ -310,7 +371,10 @@ def simulate_one(
         p.cleanup()
 
 
-def auto_max_ticks(target_level: int) -> int:
+def auto_max_ticks(target_level: int, start_level: int = 1) -> int:
+    if start_level > 1:
+        remaining_levels = max(0, target_level - start_level)
+        return max(500, remaining_levels * 300)
     if target_level <= 25:  return 1500
     if target_level <= 40:  return 3000
     if target_level <= 60:  return 6000
