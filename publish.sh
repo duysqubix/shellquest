@@ -78,7 +78,9 @@ ok "Working tree clean"
 
 # ── Bump version ──
 info "Bumping version to ${NEW_VERSION}..."
-sed -i "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" Cargo.toml
+# Portable in-place edit (BSD/macOS sed needs a backup-suffix arg; GNU sed does not).
+# Use a temp file + mv so this works identically on both.
+sed "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
 cargo build --release 2>&1 | tail -1
 ok "Version bumped and built"
 
