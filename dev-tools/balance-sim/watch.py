@@ -6,17 +6,19 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import sqlite3
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from simulator import db
+db = cast(Any, importlib.import_module("simulator.db"))
 
 
-def query_state(conn: sqlite3.Connection) -> dict:
+def query_state(conn: sqlite3.Connection) -> dict[str, Any]:
     total = conn.execute("SELECT COUNT(*) FROM run").fetchone()[0]
     in_flight = conn.execute(
         "SELECT COUNT(*) FROM run WHERE ended_at IS NULL"
@@ -43,11 +45,12 @@ def query_state(conn: sqlite3.Connection) -> dict:
     }
 
 
-def query_recent_activity(conn: sqlite3.Connection, since: float) -> list[dict]:
+def query_recent_activity(conn: sqlite3.Connection, since: float) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT r.id, r.class, r.race, r.strategy, MAX(ts.tick_no) AS tick_no,
-               MAX(ts.level) AS level, MAX(ts.gold) AS gold
+        SELECT r.id, r.class, r.race, r.strategy,
+               COALESCE(r.ended_reason, 'RUNNING') AS status,
+               MAX(ts.tick_no) AS tick_no, MAX(ts.level) AS level, MAX(ts.gold) AS gold
           FROM run r LEFT JOIN tick_snapshot ts ON ts.run_id = r.id
          WHERE r.started_at >= ?
          GROUP BY r.id
@@ -57,7 +60,7 @@ def query_recent_activity(conn: sqlite3.Connection, since: float) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def render(state: dict, recent: list[dict], iter_no: int) -> None:
+def render(state: dict[str, Any], recent: list[dict[str, Any]], iter_no: int) -> None:
     sys.stdout.write("\033[2J\033[H")
     print(f"╭─ balance-sim watch · iter {iter_no} ──────────")
     print(f"│  Total runs in DB: {state['total']}")
@@ -71,9 +74,9 @@ def render(state: dict, recent: list[dict], iter_no: int) -> None:
         print(f"│  Tier mix: " + "  ".join(f"{t[0]}:{t[1]}" for t in state["tier_attempts"]))
     print(f"╰───────────────────────────────────────────")
     print()
-    print(f"{'RUN':>4} {'CLASS':<12} {'RACE':<7} {'STRAT':<14} {'TICKS':>6} {'LVL':>4} {'GOLD':>6}")
+    print(f"{'RUN':>4} {'CLASS':<12} {'RACE':<7} {'STRAT':<14} {'STATUS':<14} {'TICKS':>6} {'LVL':>4} {'GOLD':>6}")
     for r in recent:
-        print(f"{r['id']:>4} {r['class']:<12} {r['race']:<7} {r['strategy']:<14} "
+        print(f"{r['id']:>4} {r['class']:<12} {r['race']:<7} {r['strategy']:<14} {r['status']:<14} "
               f"{(r['tick_no'] or 0):>6} {(r['level'] or 0):>4} {(r['gold'] or 0):>6}")
     sys.stdout.flush()
 
