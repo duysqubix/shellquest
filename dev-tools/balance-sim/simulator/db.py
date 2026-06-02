@@ -6,20 +6,105 @@ via WAL mode so parallel runs can write concurrently without lock contention.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
+import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 BALANCE_SIM_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_DB_PATH = BALANCE_SIM_DIR / "runs.db"
 SCHEMA_PATH = BALANCE_SIM_DIR / "schema.sql"
+T = TypeVar("T")
 
 
-def open_db(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
+class RpcConnection:
+    def __init__(self, rpc_dir: Path):
+        self.rpc_dir = rpc_dir
+        self.request_dir = rpc_dir / "requests"
+        self.response_dir = rpc_dir / "responses"
+
+    def request(self, op: str, payload: dict[str, Any]) -> Any:
+        request_id = uuid.uuid4().hex
+        request_path = self.request_dir / f"{request_id}.json"
+        tmp_path = self.request_dir / f"{request_id}.tmp"
+        response_path = self.response_dir / f"{request_id}.json"
+        request = json.dumps({"op": op, "payload": payload}, separators=(",", ":"))
+        tmp_path.write_text(request)
+        tmp_path.rename(request_path)
+        deadline = time.monotonic() + 120.0
+        while not response_path.exists():
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"timed out waiting for live DB RPC response: {request_id}")
+            time.sleep(0.005)
+        response = json.loads(response_path.read_text())
+        response_path.unlink(missing_ok=True)
+        if not response.get("ok"):
+            raise RuntimeError(response.get("error", "live DB RPC failed"))
+        return response.get("result")
+
+
+def _db_lock_path(db_path: Path) -> Path:
+    return Path(str(db_path) + ".lockdir")
+
+
+def _connection_db_path(conn: sqlite3.Connection) -> Path:
+    row = conn.execute("PRAGMA database_list").fetchone()
+    if row is None or not row[2]:
+        raise RuntimeError("cannot resolve SQLite database path for write lock")
+    return Path(row[2])
+
+
+def _with_path_lock(db_path: Path, fn: Callable[[], T]) -> T:
+    lock_path = _db_lock_path(db_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + 120.0
+    while True:
+        try:
+            lock_path.mkdir()
+            break
+        except FileExistsError:
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+                if age > 600:
+                    lock_path.rmdir()
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"timed out waiting for SQLite write lock: {lock_path}")
+            time.sleep(0.01)
+    try:
+        return fn()
+    finally:
+        try:
+            lock_path.rmdir()
+        except FileNotFoundError:
+            pass
+
+
+def _with_write_lock(conn: sqlite3.Connection, fn: Callable[[], T]) -> T:
+    return _with_path_lock(_connection_db_path(conn), fn)
+
+
+def _execute_write(
+    conn: sqlite3.Connection,
+    sql: str,
+    parameters: tuple[Any, ...] = (),
+) -> sqlite3.Cursor:
+    return _with_write_lock(conn, lambda: conn.execute(sql, parameters))
+
+
+def open_db(db_path: Path = DEFAULT_DB_PATH) -> Any:
+    rpc_dir = os.environ.get("SQ_SIM_DB_RPC_DIR")
+    if rpc_dir:
+        return RpcConnection(Path(rpc_dir))
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path), timeout=60.0)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = sqlite3.connect(
+        str(db_path), timeout=60.0, isolation_level=None, check_same_thread=False,
+    )
+    _with_path_lock(db_path, lambda: conn.execute("PRAGMA journal_mode=WAL"))
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=60000")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -120,14 +205,16 @@ def merge_dbs(target_path: Path, source_paths: list[Path]) -> int:
     return merged_runs
 
 
-def init_schema(conn: sqlite3.Connection) -> None:
+def init_schema(conn: Any) -> None:
+    if isinstance(conn, RpcConnection):
+        return None
     ddl = SCHEMA_PATH.read_text()
-    conn.executescript(ddl)
+    _with_write_lock(conn, lambda: conn.executescript(ddl))
     conn.commit()
 
 
 def insert_run(
-    conn: sqlite3.Connection,
+    conn: Any,
     *,
     seed: int,
     cls: str,
@@ -137,7 +224,19 @@ def insert_run(
     target_level: int,
     max_ticks: int,
 ) -> int:
-    cur = conn.execute(
+    if isinstance(conn, RpcConnection):
+        result = conn.request("insert_run", {
+            "seed": seed,
+            "cls": cls,
+            "race": race,
+            "strategy": strategy,
+            "tuning_label": tuning_label,
+            "target_level": target_level,
+            "max_ticks": max_ticks,
+        })
+        return int(result)
+    cur = _execute_write(
+        conn,
         """
         INSERT INTO run (seed, class, race, strategy, tuning_label,
                          target_level, max_ticks, started_at)
@@ -147,18 +246,29 @@ def insert_run(
          target_level, max_ticks, time.time()),
     )
     conn.commit()
+    if cur.lastrowid is None:
+        raise RuntimeError("insert_run did not return a row id")
     return cur.lastrowid
 
 
 def finalize_run(
-    conn: sqlite3.Connection,
+    conn: Any,
     run_id: int,
     *,
-    final_state: dict,
+    final_state: dict[str, Any],
     total_ticks: int,
     ended_reason: str,
 ) -> None:
-    conn.execute(
+    if isinstance(conn, RpcConnection):
+        conn.request("finalize_run", {
+            "run_id": run_id,
+            "final_state": final_state,
+            "total_ticks": total_ticks,
+            "ended_reason": ended_reason,
+        })
+        return None
+    _execute_write(
+        conn,
         """
         UPDATE run
            SET ended_at = ?,
@@ -182,9 +292,15 @@ def finalize_run(
 
 
 def insert_tick_snapshot(
-    conn: sqlite3.Connection, run_id: int, tick_no: int, state: dict
+    conn: Any, run_id: int, tick_no: int, state: dict[str, Any]
 ) -> None:
-    conn.execute(
+    if isinstance(conn, RpcConnection):
+        conn.request("insert_tick_snapshot", {
+            "run_id": run_id, "tick_no": tick_no, "state": state,
+        })
+        return None
+    _execute_write(
+        conn,
         """
         INSERT OR REPLACE INTO tick_snapshot
         (run_id, tick_no, level, xp, hp, max_hp, gold, kills, deaths,
@@ -207,15 +323,25 @@ def insert_tick_snapshot(
 
 
 def insert_action(
-    conn: sqlite3.Connection,
+    conn: Any,
     run_id: int,
     tick_no: int,
     action: str,
     *,
-    details: dict | None = None,
+    details: dict[str, Any] | None = None,
     outcome: str | None = None,
 ) -> None:
-    conn.execute(
+    if isinstance(conn, RpcConnection):
+        conn.request("insert_action", {
+            "run_id": run_id,
+            "tick_no": tick_no,
+            "action": action,
+            "details": details,
+            "outcome": outcome,
+        })
+        return None
+    _execute_write(
+        conn,
         "INSERT INTO action_log (run_id, tick_no, action, details, outcome) "
         "VALUES (?, ?, ?, ?, ?)",
         (run_id, tick_no, action,
@@ -224,9 +350,15 @@ def insert_action(
 
 
 def insert_arena_attempt(
-    conn: sqlite3.Connection, run_id: int, tick_no: int, attempt: dict
+    conn: Any, run_id: int, tick_no: int, attempt: dict[str, Any]
 ) -> None:
-    conn.execute(
+    if isinstance(conn, RpcConnection):
+        conn.request("insert_arena_attempt", {
+            "run_id": run_id, "tick_no": tick_no, "attempt": attempt,
+        })
+        return None
+    _execute_write(
+        conn,
         """
         INSERT INTO arena_attempt
         (run_id, tick_no, character_level, tier, tier_index, entry_fee,
@@ -248,9 +380,15 @@ def insert_arena_attempt(
 
 
 def insert_item_event(
-    conn: sqlite3.Connection, run_id: int, tick_no: int, event: dict
+    conn: Any, run_id: int, tick_no: int, event: dict[str, Any]
 ) -> None:
-    conn.execute(
+    if isinstance(conn, RpcConnection):
+        conn.request("insert_item_event", {
+            "run_id": run_id, "tick_no": tick_no, "event": event,
+        })
+        return None
+    _execute_write(
+        conn,
         """
         INSERT INTO item_event
         (run_id, tick_no, event_type, item_name, rarity, slot,
@@ -265,7 +403,7 @@ def insert_item_event(
 
 
 def insert_sq_invocation(
-    conn: sqlite3.Connection,
+    conn: Any,
     run_id: int,
     tick_no: int,
     *,
@@ -276,7 +414,20 @@ def insert_sq_invocation(
     stderr: str | None,
     duration_ms: int | None,
 ) -> None:
-    conn.execute(
+    if isinstance(conn, RpcConnection):
+        conn.request("insert_sq_invocation", {
+            "run_id": run_id,
+            "tick_no": tick_no,
+            "argv": argv,
+            "cwd": cwd,
+            "exit_code": exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "duration_ms": duration_ms,
+        })
+        return None
+    _execute_write(
+        conn,
         """
         INSERT INTO sq_invocation
         (run_id, tick_no, argv, cwd, exit_code, stdout, stderr, duration_ms)
@@ -287,9 +438,15 @@ def insert_sq_invocation(
 
 
 def insert_overworld_encounter(
-    conn: sqlite3.Connection, run_id: int, tick_no: int, enc: dict
+    conn: Any, run_id: int, tick_no: int, enc: dict[str, Any]
 ) -> None:
-    conn.execute(
+    if isinstance(conn, RpcConnection):
+        conn.request("insert_overworld_encounter", {
+            "run_id": run_id, "tick_no": tick_no, "enc": enc,
+        })
+        return None
+    _execute_write(
+        conn,
         """
         INSERT INTO overworld_encounter
         (run_id, tick_no, character_level, kind, enemy_name, elite,
@@ -304,12 +461,16 @@ def insert_overworld_encounter(
 
 
 def insert_final_items(
-    conn: sqlite3.Connection, run_id: int, items: list[dict]
+    conn: Any, run_id: int, items: list[dict[str, Any]]
 ) -> None:
     """Persist a run's END-STATE items (see player.extract_final_items).
     One INSERT per item; the equipped flag is supplied by the caller."""
+    if isinstance(conn, RpcConnection):
+        conn.request("insert_final_items", {"run_id": run_id, "items": items})
+        return None
     for it in items:
-        conn.execute(
+        _execute_write(
+            conn,
             """
             INSERT INTO final_item
             (run_id, slot, equipped, name, rarity, power, enchant_level)
@@ -320,13 +481,49 @@ def insert_final_items(
         )
 
 
-def commit(conn: sqlite3.Connection) -> None:
+def commit(conn: Any) -> None:
+    if isinstance(conn, RpcConnection):
+        return None
     conn.commit()
 
 
-def close(conn: sqlite3.Connection) -> None:
+def close(conn: Any) -> None:
+    if isinstance(conn, RpcConnection):
+        return None
     try:
         conn.commit()
     except Exception:
         pass
     conn.close()
+
+
+def handle_rpc_request(conn: sqlite3.Connection, request: dict[str, Any]) -> Any:
+    op = request["op"]
+    payload = request.get("payload") or {}
+    if op == "insert_run":
+        return insert_run(conn, **payload)
+    if op == "finalize_run":
+        finalize_run(conn, **payload)
+        return None
+    if op == "insert_tick_snapshot":
+        insert_tick_snapshot(conn, **payload)
+        return None
+    if op == "insert_action":
+        insert_action(conn, **payload)
+        return None
+    if op == "insert_arena_attempt":
+        insert_arena_attempt(conn, **payload)
+        return None
+    if op == "insert_item_event":
+        insert_item_event(conn, **payload)
+        return None
+    if op == "insert_sq_invocation":
+        insert_sq_invocation(conn, **payload)
+        return None
+    if op == "insert_overworld_encounter":
+        insert_overworld_encounter(conn, **payload)
+        return None
+    if op == "insert_final_items":
+        insert_final_items(conn, **payload)
+        return None
+    raise ValueError(f"unknown live DB RPC op: {op}")

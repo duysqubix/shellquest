@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -94,24 +95,6 @@ def _container_timeout(max_ticks: int) -> int:
     return max(120, max_ticks * 2 // 100 + 120)
 
 
-def _unlink_db_artifacts(db_path: Path) -> None:
-    db_path.unlink(missing_ok=True)
-    Path(str(db_path) + "-wal").unlink(missing_ok=True)
-    Path(str(db_path) + "-shm").unlink(missing_ok=True)
-
-
-def _move_shard_artifacts(shard_path: Path, worker_db: Path) -> bool:
-    if not shard_path.exists():
-        return False
-    _unlink_db_artifacts(worker_db)
-    shutil.move(str(shard_path), str(worker_db))
-    for suffix in ("-wal", "-shm"):
-        sidecar = Path(str(shard_path) + suffix)
-        if sidecar.exists():
-            shutil.move(str(sidecar), str(worker_db) + suffix)
-    return True
-
-
 def _remove_container(container_name: str) -> None:
     try:
         subprocess.run(
@@ -122,21 +105,65 @@ def _remove_container(container_name: str) -> None:
         pass
 
 
+class _LiveDbFileRpc:
+    def __init__(self, db_path: Path):
+        self.conn = db.open_db(db_path)
+        db.init_schema(self.conn)
+        self.rpc_dir = Path(str(db_path) + ".rpc")
+        self.request_dir = self.rpc_dir / "requests"
+        self.response_dir = self.rpc_dir / "responses"
+        if self.rpc_dir.exists():
+            shutil.rmtree(self.rpc_dir)
+        self.request_dir.mkdir(parents=True)
+        self.response_dir.mkdir(parents=True)
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        self.thread.join(timeout=10)
+        db.close(self.conn)
+        shutil.rmtree(self.rpc_dir, ignore_errors=True)
+
+    def _serve(self) -> None:
+        while not self.stop_event.is_set() or any(self.request_dir.glob("*.json")):
+            requests = sorted(self.request_dir.glob("*.json"))
+            if not requests:
+                time.sleep(0.005)
+                continue
+            for request_path in requests:
+                response_path = self.response_dir / request_path.name
+                try:
+                    request = json.loads(request_path.read_text())
+                    request_path.unlink(missing_ok=True)
+                    result = db.handle_rpc_request(self.conn, request)
+                    response = {"ok": True, "result": result}
+                except Exception as e:
+                    response = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+                tmp_path = response_path.with_suffix(".tmp")
+                tmp_path.write_text(json.dumps(response, separators=(",", ":")))
+                tmp_path.rename(response_path)
+
+
+def _start_live_db_rpc(db_path: Path) -> _LiveDbFileRpc:
+    conn = db.open_db(db_path)
+    db.init_schema(conn)
+    db.close(conn)
+    rpc = _LiveDbFileRpc(db_path)
+    rpc.start()
+    return rpc
+
+
 def _worker(args: tuple[str, str, str, int, str, str, int, int, int, int, int, int]) -> dict[str, Any]:
     (cls, race, strategy, seed, tuning_label, db_path,
      target_level, start_level, start_prestige, max_ticks, snapshot_every,
      min_arena_tier_index) = args
-    worker_db = Path(db_path).with_name(f"runs-w{seed}.db")
-    # Mount only this per-character directory as /out. The container writes its
-    # shard there, then the host moves it to worker_db so main()'s merge glob
-    # still finds runs-w*.db without giving containers writable access to the
-    # balance-sim source directory or sibling shards.
-    out_dir = worker_db.parent / "_shards" / str(seed)
-    shutil.rmtree(out_dir, ignore_errors=True)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    _unlink_db_artifacts(worker_db)
-    shard_container_path = f"/out/{worker_db.name}"
-    shard_host_path = out_dir / worker_db.name
+    shared_db = Path(db_path).resolve()
+    db_dir = shared_db.parent
+    db_container_path = f"/db/{shared_db.name}"
     container_name = f"shellquest-sim-{seed}"
     sq_bin_host = os.environ.get(
         "SQ_BIN_HOST",
@@ -150,7 +177,7 @@ def _worker(args: tuple[str, str, str, int, str, str, int, int, int, int, int, i
         "--name", container_name,
         "-v", f"{sq_bin_host}:/opt/sq:ro",
         "-v", f"{sim_dir_host}:/sim:ro",
-        "-v", f"{out_dir}:/out",
+        "-v", f"{db_dir}:/db",
         sim_image,
         "python3", "/sim/simulator/container_main.py",
         "--class", cls, "--race", race, "--strategy", strategy,
@@ -162,24 +189,34 @@ def _worker(args: tuple[str, str, str, int, str, str, int, int, int, int, int, i
         "--max-ticks", str(max_ticks),
         "--snapshot-every", str(snapshot_every),
         "--min-arena-tier", str(min_arena_tier_index),
-        "--shard-out", shard_container_path,
+        "--shard-out", db_container_path,
     ]
+    rpc_dir_host = os.environ.get("SQ_SIM_DB_RPC_HOST")
+    if rpc_dir_host:
+        argv[argv.index(sim_image):argv.index(sim_image)] = [
+            "-e", f"SQ_SIM_DB_RPC_DIR=/db/{Path(rpc_dir_host).name}",
+        ]
     if not Path(sq_bin_host).is_file():
-        shutil.rmtree(out_dir, ignore_errors=True)
         message = ("docker infra failure (rc=125 daemon/run error): "
                    f"SQ_BIN_HOST mount source is not a file: {sq_bin_host}; "
                    "stderr: host preflight rejected sq binary mount; "
                    "stdout: <empty>")
         return _error_result(message, seed=seed, cls=cls, race=race,
-                             strategy=strategy, worker_db=worker_db)
+                             strategy=strategy, worker_db=shared_db)
     if not Path(sim_dir_host).is_dir():
-        shutil.rmtree(out_dir, ignore_errors=True)
         message = ("docker infra failure (rc=125 daemon/run error): "
                    f"SIM_DIR_HOST mount source is not a directory: {sim_dir_host}; "
                    "stderr: host preflight rejected sim code mount; "
                    "stdout: <empty>")
         return _error_result(message, seed=seed, cls=cls, race=race,
-                             strategy=strategy, worker_db=worker_db)
+                             strategy=strategy, worker_db=shared_db)
+    if not db_dir.is_dir():
+        message = ("docker infra failure (rc=125 daemon/run error): "
+                   f"DB directory mount source is not a directory: {db_dir}; "
+                   "stderr: host preflight rejected shared db directory mount; "
+                   "stdout: <empty>")
+        return _error_result(message, seed=seed, cls=cls, race=race,
+                             strategy=strategy, worker_db=shared_db)
     timeout = _container_timeout(max_ticks)
     try:
         _remove_container(container_name)
@@ -191,34 +228,15 @@ def _worker(args: tuple[str, str, str, int, str, str, int, int, int, int, int, i
         message = (f"container timeout after {timeout}s (max_ticks={max_ticks}; "
                    "budget=120s + 2s per 100 ticks)")
         return _error_result(message, seed=seed, cls=cls, race=race,
-                             strategy=strategy, worker_db=worker_db)
+                             strategy=strategy, worker_db=shared_db)
     except OSError as e:
         message = f"docker infra failure before start: {type(e).__name__}: {e}"
         return _error_result(message, seed=seed, cls=cls, race=race,
-                             strategy=strategy, worker_db=worker_db)
-    finally:
-        if 'proc' not in locals():
-            shutil.rmtree(out_dir, ignore_errors=True)
-
-    try:
-        shard_moved = _move_shard_artifacts(shard_host_path, worker_db)
-    except OSError as e:
-        shutil.rmtree(out_dir, ignore_errors=True)
-        message = f"docker infra failure moving shard: {type(e).__name__}: {e}"
-        return _error_result(message, seed=seed, cls=cls, race=race,
-                             strategy=strategy, worker_db=worker_db)
-    finally:
-        shutil.rmtree(out_dir, ignore_errors=True)
+                             strategy=strategy, worker_db=shared_db)
 
     result = parse_container_result(proc.returncode, proc.stdout, proc.stderr,
                                     seed=seed, cls=cls, race=race,
-                                    strategy=strategy, worker_db=worker_db)
-    if "error" not in result and not shard_moved:
-        message = ("docker infra failure: container reported success but did "
-                   f"not produce shard {shard_container_path}; "
-                   f"stderr: {_snippet(proc.stderr)}; stdout: {_snippet(proc.stdout)}")
-        return _error_result(message, seed=seed, cls=cls, race=race,
-                             strategy=strategy, worker_db=worker_db)
+                                    strategy=strategy, worker_db=shared_db)
     return result
 
 
@@ -281,37 +299,44 @@ def main() -> int:
     print(f"│  tuning_label: {args.tuning_label}")
     print(f"│  db: {args.db}")
     print(f"╰───────────────────────────────────────────")
+
+    shared_db = Path(args.db).resolve()
+    rpc = _start_live_db_rpc(shared_db)
+    previous_rpc_host = os.environ.get("SQ_SIM_DB_RPC_HOST")
+    os.environ["SQ_SIM_DB_RPC_HOST"] = str(rpc.rpc_dir)
+
     start = time.time()
     completed = 0
     successes = 0
     errors = 0
-    with mp.Pool(processes=args.parallel) as pool:
-        for result in pool.imap_unordered(_worker, jobs):
-            completed += 1
-            elapsed = time.time() - start
-            avg_per_sim = elapsed / completed
-            eta = avg_per_sim * (len(jobs) - completed) / max(1, args.parallel)
-            prefix = f"[{completed:>3d}/{len(jobs)} · {completed * 100 // len(jobs):>3d}% · ETA {_format_eta(eta)}]"
-            if "error" in result:
-                errors += 1
-                print(f"{prefix} ✗ {result['class']}-{result['race']}-{result['strategy']} seed={result['seed']}: {result['error']}")
-            else:
-                successes += 1
-                fs = result["final_state"]
-                end = result["ended_reason"]
-                icon = "✓" if end == "target_reached" else ("⏱" if end == "max_ticks" else "?")
-                print(f"{prefix} {icon} run={result['run_id']:<3d} L{fs['level']:<3d} "
-                      f"HP={fs['max_hp']:<4d} gold={fs['gold']:<6d} ticks={result['ticks']:<5d} {end}")
+    try:
+        with mp.Pool(processes=args.parallel) as pool:
+            for result in pool.imap_unordered(_worker, jobs):
+                completed += 1
+                elapsed = time.time() - start
+                avg_per_sim = elapsed / completed
+                eta = avg_per_sim * (len(jobs) - completed) / max(1, args.parallel)
+                prefix = f"[{completed:>3d}/{len(jobs)} · {completed * 100 // len(jobs):>3d}% · ETA {_format_eta(eta)}]"
+                if "error" in result:
+                    errors += 1
+                    print(f"{prefix} ✗ {result['class']}-{result['race']}-{result['strategy']} seed={result['seed']}: {result['error']}")
+                else:
+                    successes += 1
+                    fs = result["final_state"]
+                    end = result["ended_reason"]
+                    icon = "✓" if end == "target_reached" else ("⏱" if end == "max_ticks" else "?")
+                    print(f"{prefix} {icon} run={result['run_id']:<3d} L{fs['level']:<3d} "
+                          f"HP={fs['max_hp']:<4d} gold={fs['gold']:<6d} ticks={result['ticks']:<5d} {end}")
+    finally:
+        if previous_rpc_host is None:
+            os.environ.pop("SQ_SIM_DB_RPC_HOST", None)
+        else:
+            os.environ["SQ_SIM_DB_RPC_HOST"] = previous_rpc_host
+        rpc.stop()
     elapsed = time.time() - start
     print(f"\n✓ {successes}/{len(jobs)} succeeded, {errors} errors in {_format_eta(elapsed)}")
-    print(f"Merging {args.parallel}+ worker DBs into {args.db}...")
-    worker_dbs = sorted(Path(args.db).parent.glob("runs-w*.db"))
-    merged = db.merge_dbs(Path(args.db), worker_dbs)
-    print(f"Merged {merged} runs. Next: python3 dashboard.py --primary {args.tuning_label}")
-    for wdb in worker_dbs:
-        wdb.unlink(missing_ok=True)
-        Path(str(wdb) + "-wal").unlink(missing_ok=True)
-        Path(str(wdb) + "-shm").unlink(missing_ok=True)
+    print(f"Live results were written directly to {args.db}.")
+    print(f"Next: python3 dashboard.py --primary {args.tuning_label}")
     return 0
 
 
