@@ -198,7 +198,8 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     let boss_atk = state.active_boss.as_ref().unwrap().attack;
     let boss_dex_mod = state.active_boss.as_ref().unwrap().dex_mod;
     let boss_name = state.active_boss.as_ref().unwrap().name.clone();
-    let boss_xp = state.active_boss.as_ref().unwrap().xp_reward;
+    let boss_xp =
+        crate::character::scale_xp_gain(state.active_boss.as_ref().unwrap().xp_reward);
     let boss_gold = state.active_boss.as_ref().unwrap().gold_reward;
     let boss_dmg_dealt_total = state.active_boss.as_ref().unwrap().dmg_dealt_total;
     let boss_dmg_taken_total = state.active_boss.as_ref().unwrap().dmg_taken_total;

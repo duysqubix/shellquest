@@ -216,6 +216,23 @@ impl fmt::Display for Subclass {
 pub const MAX_LEVEL: u32 = 150;
 const LEVEL_ONE_XP_TO_NEXT: u32 = 70;
 
+/// Global XP-gain divisor. Every XP award in the game is scaled by this single
+/// knob via `scale_xp_gain` at the point the award is produced (overworld events,
+/// combat kills, the Void, bosses, and quests all divide before the value is
+/// both displayed AND applied), so the number a player sees always matches the
+/// number they gain. Raise it to slow earning further; lower it to speed it up.
+pub(crate) const XP_GAIN_DIVISOR: u32 = 2;
+
+/// Scales a raw XP award by `XP_GAIN_DIVISOR`. Any non-zero award yields at
+/// least 1 XP so a successful event never silently grants nothing after the
+/// division (e.g. a 5 XP gain becomes 1, not 0).
+pub(crate) fn scale_xp_gain(amount: u32) -> u32 {
+    if amount == 0 {
+        return 0;
+    }
+    (amount / XP_GAIN_DIVISOR).max(1)
+}
+
 pub fn dex_modifier(dexterity: i32) -> i32 {
     (dexterity - 10) / 2
 }
@@ -666,6 +683,18 @@ mod tests {
         assert!(leveled);
         assert_eq!(c.level, 2);
         assert_eq!(c.xp, 20);
+    }
+
+    #[test]
+    fn scale_xp_gain_divides_by_knob_with_floor_of_one() {
+        // Large gains divide cleanly by the global knob...
+        assert_eq!(scale_xp_gain(100), 100 / XP_GAIN_DIVISOR);
+        assert_eq!(scale_xp_gain(70), 70 / XP_GAIN_DIVISOR);
+        // ...any non-zero gain below the divisor floors at 1 (never silently zero)...
+        assert_eq!(scale_xp_gain(1), 1);
+        assert_eq!(scale_xp_gain(XP_GAIN_DIVISOR - 1).max(1), 1);
+        // ...and a zero gain stays zero.
+        assert_eq!(scale_xp_gain(0), 0);
     }
 
     #[test]

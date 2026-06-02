@@ -109,7 +109,8 @@ fn affinity_multiplier(class: &crate::character::Class, cmd: &str) -> f32 {
 /// Apply both zone scaling and class affinity to a base XP amount.
 fn final_xp(base: u32, danger: u32, class: &crate::character::Class, cmd: &str) -> u32 {
     let zone_scaled = scaled_xp(base, danger);
-    (zone_scaled as f32 * affinity_multiplier(class, cmd)).round() as u32
+    let scaled = (zone_scaled as f32 * affinity_multiplier(class, cmd)).round() as u32;
+    crate::character::scale_xp_gain(scaled)
 }
 
 const HOME_HEAL_INTERVAL_SECS: i64 = 30;
@@ -2561,8 +2562,12 @@ mod tests {
     #[test]
     fn final_xp_applies_both_bonuses() {
         use crate::character::Class;
-        // Wizard in danger-3 zone with python: base 20 * 1.5 (zone) * 1.5 (affinity) = 45
-        assert_eq!(final_xp(20, 3, &Class::Wizard, "python"), 45);
+        // Wizard in danger-3 zone with python: base 20 * 1.5 (zone) * 1.5 (affinity) = 45,
+        // then divided by the global XP knob.
+        assert_eq!(
+            final_xp(20, 3, &Class::Wizard, "python"),
+            crate::character::scale_xp_gain(45)
+        );
     }
 
     #[test]

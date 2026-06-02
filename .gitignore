@@ -18,3 +18,9 @@ dev-tools/balance-sim/.sq-linux/
 .dolt/
 *.db
 .beads-credential-key
+
+
+# Agent scratch (OhMyOpenCode session artifacts) — never commit
+.omo/
+graph.svg
+dev-tools/balance-sim/_shards/

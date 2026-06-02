@@ -925,7 +925,7 @@ fn build_commit(
     let xp_reward = if run.entry.level >= crate::character::MAX_LEVEL {
         0
     } else {
-        xp_reward
+        crate::character::scale_xp_gain(xp_reward)
     };
 
     let best_round = if run.rounds_cleared > character.best_tournament_round {

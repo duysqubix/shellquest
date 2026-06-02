@@ -929,7 +929,7 @@ fn cleanup_quest_scroll(game: &mut state::GameState) {
 fn quest_reward_amounts(game: &state::GameState) -> (u32, u32) {
     let level = game.character.level;
     (
-        QUEST_BASE_XP + level * QUEST_XP_PER_LEVEL,
+        character::scale_xp_gain(QUEST_BASE_XP + level * QUEST_XP_PER_LEVEL),
         QUEST_BASE_GOLD + level * QUEST_GOLD_PER_LEVEL,
     )
 }
