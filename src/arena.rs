@@ -444,12 +444,22 @@ pub fn format_cash_out_preview(
     rounds_cleared: u32,
 ) -> (String, String) {
     let (gold, xp) = tier.compute_rewards(entry_fee, xp_to_next, rounds_cleared);
-    let plain = format!("Cash Out now: +{} gold, +{} XP", gold, xp);
+    let net = gold as i64 - entry_fee as i64;
+    let plain = format!("Cash Out now: +{} gold, +{} XP (net: {:+} gold)", gold, xp, net);
+    let net_label = format!("(net: {:+} gold)", net);
+    let net_colored = if net > 0 {
+        net_label.green().bold()
+    } else if net < 0 {
+        net_label.red().bold()
+    } else {
+        net_label.dimmed()
+    };
     let colored = format!(
-        "{} {}, {}",
+        "{} {}, {} {}",
         "💰 Cash Out now:".yellow().bold(),
         format!("+{} gold", gold).yellow().bold(),
-        format!("+{} XP", xp).cyan().bold()
+        format!("+{} XP", xp).cyan().bold(),
+        net_colored
     );
     (plain, colored)
 }
@@ -1957,6 +1967,20 @@ mod tests {
         let (_plain, colored) = format_cash_out_preview(&TIER_GAUNTLET, 200, 300, 10);
         assert!(colored.contains("320"), "colored: {}", colored);
         assert!(colored.contains("270"), "colored: {}", colored);
+    }
+
+    #[test]
+    fn cash_out_preview_shows_positive_net_gold() {
+        // TIER_PIT fee 100, round 5 -> gold reward 140, net = 140 - 100 = +40
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 5);
+        assert!(plain.contains("net: +40 gold"), "plain: {}", plain);
+    }
+
+    #[test]
+    fn cash_out_preview_shows_negative_net_gold() {
+        // TIER_PIT fee 100, round 0 -> gold reward 0, net = 0 - 100 = -100
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 0);
+        assert!(plain.contains("net: -100 gold"), "plain: {}", plain);
     }
 
     // --- Arena tiers array ordering ---
