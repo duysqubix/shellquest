@@ -256,7 +256,7 @@ def cmd_arena(home: Path, tier_choice: int, max_rounds: int,
             chunks.append(data.decode("utf-8", errors="replace"))
         full = "".join(chunks)
         if sent_idx < len(inputs) and time.time() - last_send > 1.5:
-            prompts = (full.count("Choose [1-2]") + full.count("Select tier")
+            prompts = (full.count("Choose [1-") + full.count("Select tier")
                        + full.count("[y/N]"))
             if prompts >= sent_idx:
                 os.write(fd, inputs[sent_idx])
@@ -328,6 +328,11 @@ def parse_arena_output(text: str, character_level: int, tier: str,
             continue
         if "Round" in s and "cleared" in s.lower():
             rounds_won = max(rounds_won, cur_round)
+            continue
+        # Healer/quaff result lines are arena utility output, not combat
+        # exchanges — skip them so they never inflate enemy/player swing counts
+        # (the healer line starts "The healer…" and would otherwise be miscounted).
+        if s.startswith("The healer") or "You quaff" in s:
             continue
         if "CRITICAL" in s and "Your" in s:
             p_crits += 1
