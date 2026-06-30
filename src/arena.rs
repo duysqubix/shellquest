@@ -464,6 +464,26 @@ pub fn format_cash_out_preview(
     (plain, colored)
 }
 
+/// Build the player-HP overlay badge appended to arena player-attack lines.
+/// The monster's HP renders as a red `(HP: X/Y)`; this badge gives the player
+/// their own HP on the same line, marked with a distinct `❤` heart and
+/// fraction-tiered color (green/yellow/red) so it reads as a separate health
+/// gauge that never blends into the monster's bar.
+fn format_player_hp_overlay(player_hp: i32, max_hp: i32) -> String {
+    let hp = player_hp.max(0);
+    let denom = max_hp.max(1);
+    let frac = hp as f32 / denom as f32;
+    let body = format!("{}/{}", hp, max_hp);
+    let colored_body = if frac > 0.6 {
+        body.green()
+    } else if frac > 0.3 {
+        body.yellow()
+    } else {
+        body.red().bold()
+    };
+    format!("{} {}", "❤".red(), colored_body)
+}
+
 fn format_arena_journal_msg(
     outcome: &ArenaOutcome,
     tier_name: &str,
@@ -806,6 +826,11 @@ fn run_compact_combat(
                     enemy.max_hp,
                 )
             };
+            let colored = format!(
+                "{} {}",
+                colored,
+                format_player_hp_overlay(player_hp, entry.max_hp)
+            );
             turn_lines.push(CombatExchange { colored });
             if let Some(label) = signature_label {
                 let line = format!("   {} {}", "✨".cyan(), label.cyan().italic());
@@ -2640,6 +2665,57 @@ mod tests {
             "Expected total_turns > {} (max_turns), got {}",
             ARENA_TUNING.max_turns,
             result.total_turns
+        );
+    }
+
+    #[test]
+    fn player_hp_overlay_shows_heart_and_fraction() {
+        let s = format_player_hp_overlay(420, 600);
+        assert!(s.contains("❤"), "overlay should have heart marker: {}", s);
+        assert!(
+            s.contains("420/600"),
+            "overlay should show player HP fraction: {}",
+            s
+        );
+    }
+
+    #[test]
+    fn arena_player_attack_line_overlays_player_hp() {
+        use crate::character::Class;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let mut rng = StdRng::seed_from_u64(7);
+        let entry = ArenaEntrySnapshot {
+            level: 50,
+            xp_to_next: 5000,
+            hp: 600,
+            max_hp: 600,
+            attack_power: 200,
+            defense: 100,
+            prestige: 0,
+            gold: 5000,
+            intelligence: 40,
+            strength: 120,
+            dexterity: 60,
+        };
+        let mut enemy = ArenaEnemy {
+            name: "Test Bug".to_string(),
+            hp: 100,
+            max_hp: 100,
+            attack: 5,
+        };
+        let result = run_compact_combat(&entry, 600, &mut enemy, &Class::Warrior, 1, &mut rng);
+
+        // A player-attack line (which shows the monster's `(HP:` bar) must ALSO
+        // carry the player-HP overlay heart marker on the same line.
+        let overlaid = result.exchanges.iter().any(|ex| {
+            ex.colored.contains("(HP:") && ex.colored.contains("damage!") && ex.colored.contains("❤")
+        });
+        assert!(
+            overlaid,
+            "a player-attack line showing monster HP should overlay player HP (❤). Exchanges: {:#?}",
+            result.exchanges
         );
     }
 
