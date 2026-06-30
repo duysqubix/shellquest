@@ -305,6 +305,11 @@ pub struct ArenaRun {
     pub entry_fee: u32,
     pub rounds_cleared: u32,
     pub current_hp: i32,
+    /// Gold spent on the arena healer this run. Sunk cost: committed on every
+    /// natural outcome (including Defeat); only a hard Ctrl+C rolls it back.
+    pub healer_gold_spent: u32,
+    /// Inventory indices of potions quaffed this run, removed at commit time.
+    pub quaffed_potion_indices: Vec<usize>,
 }
 
 /// Final resolution of an arena run.
@@ -346,6 +351,10 @@ pub struct ArenaCommit {
     /// Tier display name used by `apply_arena_commit` to synthesize the
     /// post-resolution journal entry.
     pub tier_name: String,
+    /// Gold spent on the arena healer during the run (sunk cost, all outcomes).
+    pub healer_gold_spent: u32,
+    /// Inventory indices of potions quaffed during the run, removed on apply.
+    pub quaffed_potion_indices: Vec<usize>,
 }
 
 /// Reward-related output that must be rendered only after `state::save()`
@@ -985,6 +994,8 @@ fn build_commit(
         tournament_wins_increment,
         hp_set: Some(final_hp),
         tier_name: run.tier.name.to_string(),
+        healer_gold_spent: run.healer_gold_spent,
+        quaffed_potion_indices: run.quaffed_potion_indices.clone(),
     }
 }
 
@@ -995,6 +1006,22 @@ pub(crate) fn apply_arena_commit(
     let mut deferred: Vec<ArenaDeferredOutput> = Vec::new();
 
     game.character.gold = game.character.gold.saturating_sub(commit.fee);
+
+    // Sunk-cost healer payment + quaffed-potion removal apply on EVERY outcome
+    // (including Defeat), hoisted above the outcome match. Only a hard Ctrl+C
+    // (no commit) rolls these back. Remove potions by DESCENDING index BEFORE
+    // any chest items are pushed, so the indices stay valid.
+    game.character.gold = game
+        .character
+        .gold
+        .saturating_sub(commit.healer_gold_spent);
+    let mut quaffed = commit.quaffed_potion_indices.clone();
+    quaffed.sort_unstable();
+    for idx in quaffed.into_iter().rev() {
+        if idx < game.character.inventory.len() {
+            game.character.inventory.remove(idx);
+        }
+    }
 
     let final_total_gold: u32 = match commit.outcome {
         ArenaOutcome::Defeat { .. } => {
@@ -1081,6 +1108,33 @@ pub(crate) fn apply_arena_commit(
     deferred
 }
 
+/// Price the arena healer charges to restore the player to full HP:
+/// 25% of the run's entry fee.
+fn healer_price(entry_fee: u32) -> u32 {
+    entry_fee * 25 / 100
+}
+
+/// Whether the player can afford a healer visit. Spendable gold is the entry
+/// snapshot gold minus the entry fee (deducted at commit) minus any healer gold
+/// already spent this run.
+fn can_afford_healer(entry_gold: u32, entry_fee: u32, spent: u32, price: u32) -> bool {
+    entry_gold.saturating_sub(entry_fee + spent) >= price
+}
+
+/// Index of the strongest (highest-power) un-quaffed potion in the inventory,
+/// or None if no quaffable potion remains. First-found tie-break.
+fn strongest_unquaffed_potion(inventory: &[Item], quaffed: &[usize]) -> Option<usize> {
+    let mut best: Option<(usize, i32)> = None;
+    for (idx, item) in inventory.iter().enumerate() {
+        if item.slot == crate::character::ItemSlot::Potion && !quaffed.contains(&idx) {
+            if best.map_or(true, |(_, p)| item.power > p) {
+                best = Some((idx, item.power));
+            }
+        }
+    }
+    best.map(|(idx, _)| idx)
+}
+
 pub fn run_arena_session(
     character: &Character,
     tier: ArenaTier,
@@ -1096,6 +1150,8 @@ pub fn run_arena_session(
         entry_fee,
         rounds_cleared: 0,
         current_hp: entry.hp,
+        healer_gold_spent: 0,
+        quaffed_potion_indices: Vec::new(),
     };
 
     eprintln!();
@@ -1208,11 +1264,25 @@ pub fn run_arena_session(
         let (_plain_preview, colored_preview) =
             format_cash_out_preview(&tier, entry_fee, entry.xp_to_next, run.rounds_cleared);
         eprintln!("   {}", colored_preview);
-        eprintln!("   1) Continue");
-        eprintln!("   2) Cash Out");
-
+        let healer_cost = healer_price(entry_fee);
         loop {
-            let choice = prompt_choice("   Choose [1-2]: ");
+            let potion_count = character
+                .inventory
+                .iter()
+                .enumerate()
+                .filter(|(i, item)| {
+                    item.slot == crate::character::ItemSlot::Potion
+                        && !run.quaffed_potion_indices.contains(i)
+                })
+                .count();
+            eprintln!("   1) Continue");
+            eprintln!("   2) Cash Out");
+            eprintln!("   3) Visit Healer ({} gold) — heal to full", healer_cost);
+            if potion_count > 0 {
+                eprintln!("   4) Quaff strongest potion ({} in pack)", potion_count);
+            }
+            let max_choice = if potion_count > 0 { 4 } else { 3 };
+            let choice = prompt_choice(&format!("   Choose [1-{}]: ", max_choice));
             match choice.as_deref() {
                 Some("1") => break,
                 Some("2") => {
@@ -1225,8 +1295,55 @@ pub fn run_arena_session(
                         run.current_hp,
                     ));
                 }
+                Some("3") => {
+                    if !can_afford_healer(
+                        entry.gold,
+                        entry_fee,
+                        run.healer_gold_spent,
+                        healer_cost,
+                    ) {
+                        eprintln!(
+                            "   {} Not enough gold for the healer ({} gold).",
+                            "✗".red(),
+                            healer_cost
+                        );
+                        continue;
+                    }
+                    let hp_before = run.current_hp;
+                    run.healer_gold_spent += healer_cost;
+                    run.current_hp = entry.max_hp;
+                    let restored = run.current_hp - hp_before;
+                    let (_plain, colored) =
+                        crate::messages::healer(class, restored, run.current_hp, entry.max_hp);
+                    eprintln!("   {} ({} gold)", colored, healer_cost);
+                    continue;
+                }
+                Some("4") if potion_count > 0 => {
+                    if let Some(idx) =
+                        strongest_unquaffed_potion(&character.inventory, &run.quaffed_potion_indices)
+                    {
+                        let (power, potion_name) = {
+                            let potion = &character.inventory[idx];
+                            (potion.power, potion.name.clone())
+                        };
+                        let heal = crate::character::potion_heal_amount(power, entry.max_hp);
+                        let hp_before = run.current_hp;
+                        run.current_hp = (run.current_hp + heal).min(entry.max_hp);
+                        let restored = run.current_hp - hp_before;
+                        run.quaffed_potion_indices.push(idx);
+                        eprintln!(
+                            "   {} You quaff the {}! +{} HP. HP: {}/{}",
+                            "🧪".bold(),
+                            potion_name.green().bold(),
+                            restored,
+                            run.current_hp,
+                            entry.max_hp
+                        );
+                    }
+                    continue;
+                }
                 Some(_) => {
-                    eprintln!("   Invalid choice. Enter 1 or 2.");
+                    eprintln!("   Invalid choice. Enter 1-{}.", max_choice);
                     continue;
                 }
                 None => {
@@ -1251,6 +1368,52 @@ pub fn run_arena_session(
 mod tests {
     use super::*;
     use crate::character::{Class, Item, ItemSlot, Race, Rarity};
+
+    fn make_arena_item(slot: ItemSlot, power: i32) -> Item {
+        Item {
+            name: "Test Potion".to_string(),
+            slot,
+            power,
+            rarity: Rarity::Common,
+            enchant_level: 0,
+        }
+    }
+
+    #[test]
+    fn healer_price_is_25_percent_of_entry_fee() {
+        assert_eq!(healer_price(40), 10);
+        assert_eq!(healer_price(100), 25);
+        assert_eq!(healer_price(300), 75);
+        assert_eq!(healer_price(2500), 625);
+    }
+
+    #[test]
+    fn can_afford_healer_respects_fee_and_prior_spend() {
+        // gold 5000, fee 600, spent 0, price 150 -> available 4400 >= 150
+        assert!(can_afford_healer(5000, 600, 0, 150));
+        // gold 700, fee 600 -> available 100 < 150
+        assert!(!can_afford_healer(700, 600, 0, 150));
+        // gold 5000, fee 600, spent 4300 -> available 100 < 150
+        assert!(!can_afford_healer(5000, 600, 4300, 150));
+        // exact boundary: gold 750, fee 600 -> available 150 >= 150
+        assert!(can_afford_healer(750, 600, 0, 150));
+    }
+
+    #[test]
+    fn strongest_unquaffed_potion_picks_highest_power_skipping_quaffed() {
+        let potions = vec![
+            make_arena_item(ItemSlot::Potion, 5),  // idx 0
+            make_arena_item(ItemSlot::Weapon, 99), // idx 1 (not a potion)
+            make_arena_item(ItemSlot::Potion, 12), // idx 2 (strongest)
+            make_arena_item(ItemSlot::Potion, 8),  // idx 3
+        ];
+        assert_eq!(strongest_unquaffed_potion(&potions, &[]), Some(2));
+        assert_eq!(strongest_unquaffed_potion(&potions, &[2]), Some(3));
+        assert_eq!(strongest_unquaffed_potion(&potions, &[2, 3]), Some(0));
+        assert_eq!(strongest_unquaffed_potion(&potions, &[0, 2, 3]), None);
+        let no_potions = vec![make_arena_item(ItemSlot::Weapon, 10)];
+        assert_eq!(strongest_unquaffed_potion(&no_potions, &[]), None);
+    }
 
     fn make_character(level: u32, total_prestiges: u32, gold: u32) -> Character {
         let mut c = Character::new("Test".to_string(), Class::Warrior, Race::Human);
@@ -2037,6 +2200,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(25),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let deferred = apply_arena_commit(&mut game, &commit);
@@ -2069,6 +2234,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(45),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let _deferred = apply_arena_commit(&mut game, &commit);
@@ -2097,6 +2264,8 @@ mod tests {
             tournament_wins_increment: 1,
             hp_set: Some(80),
             tier_name: "Godslayer's Court".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let _deferred = apply_arena_commit(&mut game, &commit);
@@ -2121,6 +2290,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             tier_name: "The Pit".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let _deferred = apply_arena_commit(&mut game, &commit);
@@ -2147,6 +2318,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(10),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let deferred = apply_arena_commit(&mut game, &commit);
@@ -2182,6 +2355,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(10),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let _deferred = apply_arena_commit(&mut game, &commit);
@@ -2204,6 +2379,8 @@ mod tests {
             entry_fee: 100,
             rounds_cleared: 3,
             current_hp: 30,
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let commit = build_commit(&c, &run, ArenaOutcome::Defeat { rounds_cleared: 3 }, 25);
@@ -2224,6 +2401,8 @@ mod tests {
             entry_fee: 2500,
             rounds_cleared: 50,
             current_hp: 80,
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let commit = build_commit(&c, &run, ArenaOutcome::Victory { rounds_cleared: 50 }, 80);
@@ -2240,6 +2419,8 @@ mod tests {
             entry_fee: 100,
             rounds_cleared: 5,
             current_hp: 80,
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let commit = build_commit(&c, &run, ArenaOutcome::Victory { rounds_cleared: 5 }, 80);
@@ -2285,6 +2466,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let deferred = apply_arena_commit(&mut game, &commit);
@@ -2431,6 +2614,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(25),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let _deferred = apply_arena_commit(&mut game, &commit);
@@ -2463,6 +2648,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(25),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let _deferred = apply_arena_commit(&mut game, &commit);
@@ -2492,6 +2679,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let _deferred = apply_arena_commit(&mut game, &commit);
@@ -2527,6 +2716,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let deferred = apply_arena_commit(&mut game, &commit);
@@ -2559,6 +2750,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             tier_name: "The Pit".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let _deferred = apply_arena_commit(&mut game, &commit);
@@ -2731,6 +2924,8 @@ mod tests {
             entry_fee: 2500,
             rounds_cleared: 50,
             current_hp: 80,
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let commit = build_commit(&c, &run, ArenaOutcome::Victory { rounds_cleared: 50 }, 80);
@@ -2757,6 +2952,8 @@ mod tests {
             entry_fee: 2500,
             rounds_cleared: 10,
             current_hp: 80,
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let commit = build_commit(&c, &run, ArenaOutcome::CashOut { rounds_cleared: 10 }, 80);
@@ -2786,6 +2983,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             tier_name: "The Pit".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let _deferred = apply_arena_commit(&mut game, &commit);
@@ -2838,6 +3037,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let deferred = apply_arena_commit(&mut game, &commit);
@@ -2895,6 +3096,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(80),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let deferred = apply_arena_commit(&mut game, &commit);
@@ -2935,6 +3138,8 @@ mod tests {
             tournament_wins_increment: 0,
             hp_set: Some(25),
             tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![],
         };
 
         let deferred = apply_arena_commit(&mut game, &commit);
@@ -2944,5 +3149,132 @@ mod tests {
             "Defeat must never emit deferred output, got {:?}",
             deferred
         );
+    }
+
+    // --- Sunk-cost healer + quaff commit semantics ---
+
+    #[test]
+    fn build_commit_defeat_carries_healer_and_quaffed_sunk_cost() {
+        let c = make_character(10, 0, 500);
+        let entry = ArenaEntrySnapshot::from_character(&c);
+        let run = ArenaRun {
+            tier: TIER_PIT,
+            entry: entry.clone(),
+            entry_fee: 100,
+            rounds_cleared: 2,
+            current_hp: 10,
+            healer_gold_spent: 150,
+            quaffed_potion_indices: vec![0, 2],
+        };
+        // Even on Defeat (rewards zeroed), the sunk-cost fields must carry through.
+        let commit = build_commit(&c, &run, ArenaOutcome::Defeat { rounds_cleared: 2 }, 25);
+        assert_eq!(commit.healer_gold_spent, 150);
+        assert_eq!(commit.quaffed_potion_indices, vec![0, 2]);
+        assert_eq!(commit.gold_reward, 0, "Defeat still zeros rewards");
+    }
+
+    #[test]
+    fn apply_commit_deducts_healer_gold_on_defeat_sunk_cost() {
+        let mut game = GameState::new(make_character(10, 0, 500));
+        game.character.max_hp = 100;
+        let commit = ArenaCommit {
+            outcome: ArenaOutcome::Defeat { rounds_cleared: 2 },
+            fee: 50,
+            gold_reward: 0,
+            xp_reward: 0,
+            items: vec![],
+            kills: 0,
+            best_round: None,
+            tournament_wins_increment: 0,
+            hp_set: Some(25),
+            tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 120,
+            quaffed_potion_indices: vec![],
+        };
+        apply_arena_commit(&mut game, &commit);
+        // 500 - fee 50 - healer 120 = 330 (healer gold is sunk even on KO).
+        assert_eq!(game.character.gold, 330);
+    }
+
+    #[test]
+    fn apply_commit_removes_quaffed_potions_by_descending_index() {
+        use crate::character::{Item, ItemSlot, Rarity};
+        let mut game = GameState::new(make_character(10, 0, 500));
+        game.character.max_hp = 100;
+        game.character.hp = 80;
+        game.character.inventory.clear();
+        for n in ["A", "B", "C", "D"] {
+            game.character.inventory.push(Item {
+                name: n.to_string(),
+                slot: ItemSlot::Potion,
+                power: 5,
+                rarity: Rarity::Common,
+                enchant_level: 0,
+            });
+        }
+        let commit = ArenaCommit {
+            outcome: ArenaOutcome::CashOut { rounds_cleared: 1 },
+            fee: 0,
+            gold_reward: 0,
+            xp_reward: 0,
+            items: vec![],
+            kills: 0,
+            best_round: None,
+            tournament_wins_increment: 0,
+            hp_set: Some(80),
+            tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![0, 2],
+        };
+        apply_arena_commit(&mut game, &commit);
+        let remaining: Vec<&str> =
+            game.character.inventory.iter().map(|i| i.name.as_str()).collect();
+        // Removing indices 0 and 2 by DESCENDING order leaves B and D intact.
+        assert_eq!(remaining, vec!["B", "D"]);
+    }
+
+    #[test]
+    fn apply_commit_removes_quaffed_before_adding_chest_items() {
+        use crate::character::{Item, ItemSlot, Rarity};
+        let mut game = GameState::new(make_character(10, 0, 500));
+        game.character.max_hp = 100;
+        game.character.hp = 80;
+        game.character.inventory.clear();
+        for n in ["P0", "P1"] {
+            game.character.inventory.push(Item {
+                name: n.to_string(),
+                slot: ItemSlot::Potion,
+                power: 5,
+                rarity: Rarity::Common,
+                enchant_level: 0,
+            });
+        }
+        let chest = Item {
+            name: "ChestSword".to_string(),
+            slot: ItemSlot::Weapon,
+            power: 10,
+            rarity: Rarity::Rare,
+            enchant_level: 0,
+        };
+        let commit = ArenaCommit {
+            outcome: ArenaOutcome::CashOut { rounds_cleared: 1 },
+            fee: 0,
+            gold_reward: 0,
+            xp_reward: 0,
+            items: vec![chest],
+            kills: 0,
+            best_round: None,
+            tournament_wins_increment: 0,
+            hp_set: Some(80),
+            tier_name: "Test Tier".to_string(),
+            healer_gold_spent: 0,
+            quaffed_potion_indices: vec![0],
+        };
+        apply_arena_commit(&mut game, &commit);
+        let names: Vec<&str> =
+            game.character.inventory.iter().map(|i| i.name.as_str()).collect();
+        assert!(!names.contains(&"P0"), "P0 was quaffed and must be removed");
+        assert!(names.contains(&"P1"), "P1 should remain");
+        assert!(names.contains(&"ChestSword"), "chest item should be added");
     }
 }
