@@ -2944,7 +2944,7 @@ fn cmd_drink(name: &str) {
     }
 
     let item = game.character.inventory.remove(idx);
-    let heal = item.power;
+    let heal = character::potion_heal_amount(item.power, game.character.max_hp);
     let item_name = item.name.clone();
     game.character.heal(heal);
 

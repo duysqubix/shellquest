@@ -1,6 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Percent of max HP a potion restores per point of its `power`.
+pub const POTION_HEAL_PCT_PER_POWER: i32 = 3;
+
+/// Heal amount a potion restores: `max_hp * power * POTION_HEAL_PCT_PER_POWER / 100`,
+/// floored at 1, so potions scale with max HP and stay useful at every level.
+/// Overflow-safe: at L150 ~800 max_hp * 25 power * 3 = 60_000, far below i32::MAX.
+pub fn potion_heal_amount(power: i32, max_hp: i32) -> i32 {
+    (max_hp * power * POTION_HEAL_PCT_PER_POWER / 100).max(1)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Class {
     Wizard,
@@ -566,6 +576,27 @@ mod tests {
             rarity,
             enchant_level: 0,
         }
+    }
+
+    #[test]
+    fn potion_heal_pct_per_power_is_three() {
+        assert_eq!(POTION_HEAL_PCT_PER_POWER, 3);
+    }
+
+    #[test]
+    fn potion_heal_amount_scales_with_max_hp() {
+        // mid game: 300 max_hp, power 10 -> 300*10*3/100 = 90
+        assert_eq!(potion_heal_amount(10, 300), 90);
+        // end game: 800 max_hp, power 22 -> 800*22*3/100 = 528
+        assert_eq!(potion_heal_amount(22, 800), 528);
+        // early game: 54 max_hp, power 4 -> 54*4*3/100 = 6 (truncated)
+        assert_eq!(potion_heal_amount(4, 54), 6);
+    }
+
+    #[test]
+    fn potion_heal_amount_floors_at_one() {
+        // 20 max_hp, power 1 -> 20*1*3/100 = 0.6 -> 0 -> floored to 1
+        assert_eq!(potion_heal_amount(1, 20), 1);
     }
 
     // --- Character::new() ---
