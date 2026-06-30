@@ -451,9 +451,10 @@ pub fn format_cash_out_preview(
     entry_fee: u32,
     xp_to_next: u32,
     rounds_cleared: u32,
+    healer_gold_spent: u32,
 ) -> (String, String) {
     let (gold, xp) = tier.compute_rewards(entry_fee, xp_to_next, rounds_cleared);
-    let net = gold as i64 - entry_fee as i64;
+    let net = gold as i64 - entry_fee as i64 - healer_gold_spent as i64;
     let plain = format!("Cash Out now: +{} gold, +{} XP (net: {:+} gold)", gold, xp, net);
     let net_label = format!("(net: {:+} gold)", net);
     let net_colored = if net > 0 {
@@ -1261,11 +1262,16 @@ pub fn run_arena_session(
             "   Round {} cleared! Current HP: {}/{}",
             run.rounds_cleared, run.current_hp, entry.max_hp
         );
-        let (_plain_preview, colored_preview) =
-            format_cash_out_preview(&tier, entry_fee, entry.xp_to_next, run.rounds_cleared);
-        eprintln!("   {}", colored_preview);
         let healer_cost = healer_price(entry_fee);
         loop {
+            let (_plain_preview, colored_preview) = format_cash_out_preview(
+                &tier,
+                entry_fee,
+                entry.xp_to_next,
+                run.rounds_cleared,
+                run.healer_gold_spent,
+            );
+            eprintln!("   {}", colored_preview);
             let potion_count = character
                 .inventory
                 .iter()
@@ -2128,14 +2134,14 @@ mod tests {
 
     #[test]
     fn cash_out_preview_includes_gold_and_xp_amounts() {
-        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 5);
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 5, 0);
         assert!(plain.contains("+140 gold"), "plain: {}", plain);
         assert!(plain.contains("+120 XP"), "plain: {}", plain);
     }
 
     #[test]
     fn cash_out_preview_labels_the_choice() {
-        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 1);
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 1, 0);
         assert!(
             plain.to_lowercase().contains("cash out"),
             "plain: {}",
@@ -2145,14 +2151,14 @@ mod tests {
 
     #[test]
     fn cash_out_preview_round_zero_shows_zero_rewards() {
-        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 0);
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 0, 0);
         assert!(plain.contains("+0 gold"), "plain: {}", plain);
         assert!(plain.contains("+0 XP"), "plain: {}", plain);
     }
 
     #[test]
     fn cash_out_preview_colored_contains_amounts() {
-        let (_plain, colored) = format_cash_out_preview(&TIER_GAUNTLET, 200, 300, 10);
+        let (_plain, colored) = format_cash_out_preview(&TIER_GAUNTLET, 200, 300, 10, 0);
         assert!(colored.contains("320"), "colored: {}", colored);
         assert!(colored.contains("270"), "colored: {}", colored);
     }
@@ -2160,15 +2166,23 @@ mod tests {
     #[test]
     fn cash_out_preview_shows_positive_net_gold() {
         // TIER_PIT fee 100, round 5 -> gold reward 140, net = 140 - 100 = +40
-        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 5);
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 5, 0);
         assert!(plain.contains("net: +40 gold"), "plain: {}", plain);
     }
 
     #[test]
     fn cash_out_preview_shows_negative_net_gold() {
         // TIER_PIT fee 100, round 0 -> gold reward 0, net = 0 - 100 = -100
-        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 0);
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 0, 0);
         assert!(plain.contains("net: -100 gold"), "plain: {}", plain);
+    }
+
+    #[test]
+    fn cash_out_preview_net_subtracts_healer_gold() {
+        // TIER_PIT fee 100, round 5 -> gold 140; healer spent 90.
+        // net = 140 - 100 - 90 = -50.
+        let (plain, _colored) = format_cash_out_preview(&TIER_PIT, 100, 200, 5, 90);
+        assert!(plain.contains("net: -50 gold"), "plain: {}", plain);
     }
 
     // --- Arena tiers array ordering ---
