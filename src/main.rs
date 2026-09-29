@@ -1527,7 +1527,8 @@ fn cmd_sell(query: &str) {
             );
             return;
         }
-        n - 1
+        // N is the number `sq inventory` shows, not the position in the save file.
+        display::inventory_display_order(&game.character.inventory)[n - 1]
     } else {
         match find_inventory_item(&game, query) {
             Ok(Some(i)) => i,
@@ -1845,7 +1846,8 @@ fn cmd_identify(query: &str) {
         ItemLookup::Inventory(idx) => (
             &game.character.inventory[idx],
             display::ItemSource::Inventory {
-                index: idx + 1,
+                index: display::inventory_display_number(&game.character.inventory, idx)
+                    .unwrap_or(idx + 1),
                 total: total_inv,
             },
         ),
@@ -1862,10 +1864,13 @@ fn fuzzy_match_name(item_name: &str, query: &str) -> bool {
         .all(|token| name_lower.contains(token))
 }
 
+/// Storage indices of inventory items matching `query`, in the order `sq inventory`
+/// lists them, so "first match" and `name.N` mean what the player sees.
 fn find_inventory_items(game: &state::GameState, query: &str) -> Vec<usize> {
     let query_lower = query.to_lowercase();
     let inv = &game.character.inventory;
-    let mut matched: Vec<usize> = (0..inv.len())
+    let mut matched: Vec<usize> = display::inventory_display_order(inv)
+        .into_iter()
         .filter(|&i| {
             let name_lower = inv[i].name.to_lowercase();
             name_lower == query_lower
@@ -2631,6 +2636,18 @@ mod tests {
             rarity,
             enchant_level: 0,
         }
+    }
+
+    #[test]
+    fn name_matches_and_dot_n_follow_the_listed_order() {
+        // Stored worst-first; `sq inventory` lists the Legendary first.
+        let state = make_state_with_items(vec![
+            item_full("Old Blade", 4, Rarity::Common),
+            item_full("Kernel Blade", 40, Rarity::Legendary),
+        ]);
+        assert_eq!(find_inventory_items(&state, "blade"), vec![1, 0]);
+        assert_eq!(find_inventory_item(&state, "blade"), Ok(Some(1)));
+        assert_eq!(find_inventory_item(&state, "blade.2"), Ok(Some(0)));
     }
 
     #[test]

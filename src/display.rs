@@ -20,29 +20,54 @@ fn rarity_rank(r: &Rarity) -> u8 {
     }
 }
 
-pub fn group_inventory_by_slot(items: &[Item]) -> Vec<InventoryGroup<'_>> {
+/// Storage indices of `items` in the order `sq inventory` numbers them: weapons,
+/// armor, rings, potions; within a slot, best rarity then highest power first (ties
+/// keep storage order). Every numbered lookup (`sq sell N`, `name.N`, the "slot N"
+/// on an item card) resolves through this, so the number a player reads and the item
+/// a command acts on can't disagree.
+pub fn inventory_display_order(items: &[Item]) -> Vec<usize> {
     const DISPLAY_ORDER: [ItemSlot; 4] = [
         ItemSlot::Weapon,
         ItemSlot::Armor,
         ItemSlot::Ring,
         ItemSlot::Potion,
     ];
-    DISPLAY_ORDER
+    let mut order: Vec<usize> = Vec::with_capacity(items.len());
+    for slot in DISPLAY_ORDER {
+        let mut bucket: Vec<usize> = (0..items.len())
+            .filter(|&i| items[i].slot == slot)
+            .collect();
+        bucket.sort_by(|&a, &b| {
+            rarity_rank(&items[b].rarity)
+                .cmp(&rarity_rank(&items[a].rarity))
+                .then(items[b].power.cmp(&items[a].power))
+        });
+        order.extend(bucket);
+    }
+    order
+}
+
+/// The 1-based number `sq inventory` shows for the item at storage index `idx`.
+pub fn inventory_display_number(items: &[Item], idx: usize) -> Option<usize> {
+    inventory_display_order(items)
         .iter()
-        .map(|slot| {
-            let mut bucket: Vec<&Item> = items.iter().filter(|i| i.slot == *slot).collect();
-            bucket.sort_by(|a, b| {
-                rarity_rank(&b.rarity)
-                    .cmp(&rarity_rank(&a.rarity))
-                    .then(b.power.cmp(&a.power))
-            });
-            InventoryGroup {
-                slot: *slot,
-                items: bucket,
-            }
-        })
-        .filter(|g| !g.items.is_empty())
-        .collect()
+        .position(|&i| i == idx)
+        .map(|pos| pos + 1)
+}
+
+pub fn group_inventory_by_slot(items: &[Item]) -> Vec<InventoryGroup<'_>> {
+    let mut groups: Vec<InventoryGroup<'_>> = Vec::new();
+    for idx in inventory_display_order(items) {
+        let item = &items[idx];
+        match groups.last_mut() {
+            Some(group) if group.slot == item.slot => group.items.push(item),
+            _ => groups.push(InventoryGroup {
+                slot: item.slot,
+                items: vec![item],
+            }),
+        }
+    }
+    groups
 }
 
 // ── Rich inline color helpers (MUD-style) ──
@@ -964,6 +989,47 @@ mod tests {
             rarity,
             enchant_level: 0,
         }
+    }
+
+    /// Storage order deliberately differs from the order `sq inventory` shows.
+    fn mixed_inventory() -> Vec<Item> {
+        vec![
+            make_item("Potion A", ItemSlot::Potion, 1, Rarity::Common),
+            make_item("Plain Ring", ItemSlot::Ring, 3, Rarity::Common),
+            make_item("Old Sword", ItemSlot::Weapon, 4, Rarity::Common),
+            make_item("Kernel Blade", ItemSlot::Weapon, 40, Rarity::Legendary),
+            make_item("Tin Armor", ItemSlot::Armor, 2, Rarity::Uncommon),
+            make_item("Big Old Sword", ItemSlot::Weapon, 9, Rarity::Common),
+        ]
+    }
+
+    #[test]
+    fn inventory_display_order_is_slot_then_rarity_then_power() {
+        assert_eq!(
+            inventory_display_order(&mixed_inventory()),
+            vec![3, 5, 2, 4, 1, 0]
+        );
+    }
+
+    #[test]
+    fn inventory_listing_numbers_follow_the_display_order() {
+        let items = mixed_inventory();
+        let listed: Vec<&str> = group_inventory_by_slot(&items)
+            .iter()
+            .flat_map(|g| g.items.iter().map(|i| i.name.as_str()))
+            .collect();
+        let ordered: Vec<&str> = inventory_display_order(&items)
+            .iter()
+            .map(|&i| items[i].name.as_str())
+            .collect();
+        assert_eq!(listed, ordered);
+        assert_eq!(
+            inventory_display_number(&items, 3),
+            Some(1),
+            "the Legendary is listed first"
+        );
+        assert_eq!(inventory_display_number(&items, 0), Some(6));
+        assert_eq!(inventory_display_number(&items, 6), None);
     }
 
     #[test]
