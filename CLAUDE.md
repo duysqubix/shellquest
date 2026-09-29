@@ -1,6 +1,40 @@
-# Project Instructions for AI Agents
+# CLAUDE.md
 
-This file provides instructions and context for AI coding agents working on this project.
+`sq` (shellquest) is a passive RPG that lives in the terminal. It is a Rust CLI, and its shell hook runs `sq tick` after every command the player types. It ships as one binary built from flat modules in `src/`, with in-file unit tests. A dev-only Python balance simulator lives in `dev-tools/balance-sim/`.
+
+Knowledge shared by every coding agent lives in AGENTS.md, imported below. `src/CLAUDE.md` and `dev-tools/balance-sim/CLAUDE.md` import their directory's AGENTS.md, so those notes load when you work there.
+
+@AGENTS.md
+
+## Guardrails
+
+- **The developer's live character is off-limits.** `~/.shellquest/save.json` is a real save, and their shell hook ticks it before every prompt.
+  - Run every manual `sq` through `dev-tools/sq-sandbox`; the `sq-qa` skill has the workflow and scenario recipes.
+  - `.claude/hooks/guard-live-save.py` denies unsandboxed `sq` and `cargo run`, and asks before commands that name `~/.shellquest`.
+  - `cargo test` is safe: the tests never touch `$HOME`.
+- **Leave the installed binary alone.** `cargo install` and `sq update` replace `~/.cargo/bin/sq`, which the hook runs before every prompt. A broken build breaks the player's shell, so ask first.
+- **Publishing is irreversible.** Run `./publish.sh`, `just ship`, `cargo publish`, or `gh release` only when the user asks (the `release` skill). crates.io versions can't be deleted.
+- **Balance numbers are sim-validated, never tuned by feel.** Use the `balance-check` skill and commit as `fix(balance): … (sim-validated)` with before/after numbers.
+- **Old saves must keep loading.** Every new persisted field gets `#[serde(default)]`. Never rename or remove a persisted field without a migration.
+
+## Commands
+
+| Task | Command |
+|---|---|
+| Build | `cargo build` (about 3 s incremental) |
+| Test | `cargo test` (in-file unit tests, about 2 s) |
+| All gates before a commit | `just check`: rustfmt check, clippy, Rust tests, guard-hook tests |
+| Format / lint | `just fmt` / `just lint`. Clippy warnings are reported but not yet fatal; don't add new ones |
+| Play safely | `dev-tools/sq-sandbox new`, then `dev-tools/sq-sandbox status`, `… tick "git commit" -n 20`, `… tty -i 1 -i y -- arena` |
+| Balance sims (Docker) | `just sim-quick`, `just sim-pit <label>`, `just report <label>`; see `just --list` |
+
+## Working here
+
+- **Tasks:** track work in beads; see the Beads section below and in AGENTS.md. Don't use TodoWrite or markdown TODO lists.
+- **Commits:** conventional and atomic, straight to `master`, e.g. `feat(arena): …`, `fix(balance): …`, `docs(release-notes): …`, `chore(beads): …`.
+- **Releases:** batched into themed arcs (AGENTS.md → Release Cadence) and shipped with the `release` skill.
+- **Code invariants** (stderr output, plain/colored message pairs, a fast silent `tick`, arena commits): see AGENTS.md and src/AGENTS.md.
+- **Known problems:** the 2026-09-29 sweep filed its findings as beads epics (`bd list --label sweep`). Check the relevant epic before changing an area. The balance simulator is unreliable until `shellqeuest-dpl` closes.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
 ## Beads Issue Tracker
@@ -49,22 +83,3 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
-
-
-## Build & Test
-
-_Add your build and test commands here_
-
-```bash
-# Example:
-# npm install
-# npm test
-```
-
-## Architecture Overview
-
-_Add a brief overview of your project architecture_
-
-## Conventions & Patterns
-
-_Add your project-specific conventions here_
