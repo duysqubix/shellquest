@@ -212,7 +212,8 @@ fn prompt(msg: &str) -> String {
 }
 
 fn cmd_init() {
-    if state::save_path().exists() {
+    let replacing = state::save_path().exists();
+    if replacing {
         let answer = prompt(&format!(
             "{} A character already exists! Overwrite? [y/N] ",
             "⚠️".yellow()
@@ -357,7 +358,16 @@ fn cmd_init() {
         );
     }
 
-    match state::save(&game_state) {
+    let saved = state::lock(state::COMMAND_LOCK_TIMEOUT)
+        .map_err(|e| e.to_string())
+        .and_then(|lock| {
+            if !replacing && state::save_path().exists() {
+                // Created in another terminal while this one was prompting.
+                return Err("A character appeared while you were choosing; not overwriting it. Run `sq init` again to replace it.".to_string());
+            }
+            state::save_new(&game_state, &lock)
+        });
+    match saved {
         Ok(()) => {
             println!();
             println!(
@@ -488,29 +498,82 @@ fn sq_debug() -> bool {
 }
 
 fn cmd_tick(cmd: &str, cwd: &str, exit_code: i32, test_sage: bool) {
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
+    // A crates.io result fetched before (re)taking the save lock: the daily
+    // network call must never hold the lock other shells' ticks wait on.
+    let mut prefetched: Option<Option<String>> = None;
+    if !sq_debug() && !state::save_path().exists() {
+        return; // no character: stay silent and create nothing
+    }
+    loop {
+        let lock = match state::lock(state::TICK_LOCK_TIMEOUT) {
+            Ok(lock) => lock,
+            Err(e) => {
+                if sq_debug() {
+                    eprintln!("{} Tick lock failure: {}", "❌".bold(), e.to_string().red());
+                    std::process::exit(1);
+                }
+                if let state::LockError::Io(_) = e {
+                    // Not contention: a broken lock file would otherwise stop the game silently.
+                    eprintln!("{} sq: {}", "⚠️".yellow(), e);
+                }
+                return; // another sq holds the save; skip this tick rather than stall the prompt
+            }
+        };
+        let mut game = match state::load_locked(&lock) {
+            Ok(g) => g,
+            Err(e) => {
+                if sq_debug() {
+                    eprintln!("{} Tick load failure: {}", "❌".bold(), e.red());
+                    std::process::exit(1);
+                }
+                if state::save_path().exists() {
+                    // Unreadable (not missing): say so instead of silently doing nothing.
+                    eprintln!("{} sq: {}", "⚠️".yellow(), e);
+                }
+                return; // Silently skip if no character
+            }
+        };
+
+        if prefetched.is_none() && sage::update_check_due(&game) {
+            drop(lock);
+            prefetched = Some(sage::fetch_latest_version());
+            continue; // re-lock and reload: another shell may have saved meanwhile
+        }
+
+        events::tick(&mut game, cmd, cwd, exit_code);
+        if test_sage {
+            sage::force_show_sage(&mut game, prefetched.take());
+        } else {
+            sage::maybe_show_sage(&mut game, prefetched.take());
+        }
+        game.last_tick = chrono::Utc::now();
+
+        if let Err(e) = state::save(&game, &lock) {
+            eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
             if sq_debug() {
-                eprintln!("{} Tick load failure: {}", "❌".bold(), e.red());
                 std::process::exit(1);
             }
-            return; // Silently skip if no character
+        }
+        return;
+    }
+}
+
+/// Take the save lock and load the character for a read-modify-write command.
+/// Keep the returned lock alive until after `state::save`, and don't use this for
+/// commands that prompt the player (the lock would stall every shell's tick).
+fn load_for_update() -> Option<(state::SaveLock, state::GameState)> {
+    let lock = match state::lock(state::COMMAND_LOCK_TIMEOUT) {
+        Ok(lock) => lock,
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.to_string().red());
+            return None;
         }
     };
-
-    events::tick(&mut game, cmd, cwd, exit_code);
-    if test_sage {
-        sage::force_show_sage(&mut game);
-    } else {
-        sage::maybe_show_sage(&mut game);
-    }
-    game.last_tick = chrono::Utc::now();
-
-    if let Err(e) = state::save(&game) {
-        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
-        if sq_debug() {
-            std::process::exit(1);
+    match state::load_locked(&lock) {
+        Ok(game) => Some((lock, game)),
+        Err(e) => {
+            eprintln!("{} {}", "❌".bold(), e.red());
+            None
         }
     }
 }
@@ -746,7 +809,11 @@ fn cmd_prestige() {
     let sub_name = format!("{}", subclass);
     game.character.prestige(subclass);
 
-    match state::save(&game) {
+    // Locks only the final write; reloading to keep other shells' progress is x3p.2.
+    let saved = state::lock(state::COMMAND_LOCK_TIMEOUT)
+        .map_err(|e| e.to_string())
+        .and_then(|lock| state::save(&game, &lock));
+    match saved {
         Ok(()) => {
             println!();
             println!(
@@ -1043,12 +1110,8 @@ fn cmd_quest(action: Option<QuestAction>) {
         }
     }
 
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("{} {}", "❌".bold(), e.red());
-            return;
-        }
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
     };
 
     let now = chrono::Utc::now();
@@ -1111,7 +1174,7 @@ fn cmd_quest(action: Option<QuestAction>) {
         }
     }
 
-    if let Err(e) = state::save(&game) {
+    if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
@@ -1136,12 +1199,8 @@ fn cmd_shop() {
         return;
     }
 
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("{} {}", "❌".bold(), e.red());
-            return;
-        }
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
     };
 
     refresh_shop_if_needed(&mut game);
@@ -1190,7 +1249,7 @@ fn cmd_shop() {
     println!("  Shop refreshes daily at {}.", "midnight UTC".dimmed());
     println!();
 
-    if let Err(e) = state::save(&game) {
+    if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
@@ -1223,12 +1282,8 @@ fn cmd_buy(number: usize) {
         return;
     }
 
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("{} {}", "❌".bold(), e.red());
-            return;
-        }
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
     };
 
     refresh_shop_if_needed(&mut game);
@@ -1271,7 +1326,7 @@ fn cmd_buy(number: usize) {
         format!("{}", game.character.gold).yellow()
     );
 
-    if let Err(e) = state::save(&game) {
+    if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
@@ -1304,12 +1359,8 @@ fn cmd_sell(query: &str) {
         return;
     }
 
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("{} {}", "❌".bold(), e.red());
-            return;
-        }
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
     };
 
     if game.character.inventory.is_empty() {
@@ -1322,7 +1373,7 @@ fn cmd_sell(query: &str) {
     }
 
     if query.eq_ignore_ascii_case("junk") {
-        cmd_sell_junk(&mut game);
+        cmd_sell_junk(&mut game, &lock);
         return;
     }
 
@@ -1381,12 +1432,12 @@ fn cmd_sell(query: &str) {
         format!("{}", game.character.gold).yellow().bold(),
     );
 
-    if let Err(e) = state::save(&game) {
+    if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
 
-fn cmd_sell_junk(game: &mut state::GameState) {
+fn cmd_sell_junk(game: &mut state::GameState, lock: &state::SaveLock) {
     let inv = std::mem::take(&mut game.character.inventory);
     let result = sweep_junk(inv);
 
@@ -1417,7 +1468,7 @@ fn cmd_sell_junk(game: &mut state::GameState) {
         format!("{}", game.character.gold).yellow().bold(),
     );
 
-    if let Err(e) = state::save(game) {
+    if let Err(e) = state::save(game, lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
@@ -1501,12 +1552,8 @@ fn cmd_enchant(query: &str) {
         return;
     }
 
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("{} {}", "❌".bold(), e.red());
-            return;
-        }
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
     };
 
     let is_wizard = matches!(game.character.class, character::Class::Wizard);
@@ -1607,7 +1654,7 @@ fn cmd_enchant(query: &str) {
         format!("{}", game.character.gold).yellow().bold()
     );
 
-    if let Err(e) = state::save(&game) {
+    if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
@@ -2675,12 +2722,8 @@ fn cmd_equip(name: &str) {
         return;
     }
 
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("{} {}", "❌".bold(), e.red());
-            return;
-        }
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
     };
 
     let idx = match find_inventory_item(&game, name) {
@@ -2743,7 +2786,7 @@ fn cmd_equip(name: &str) {
         );
     }
 
-    if let Err(e) = state::save(&game) {
+    if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
@@ -2754,12 +2797,8 @@ fn cmd_wield(name: &str) {
         return;
     }
 
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("{} {}", "❌".bold(), e.red());
-            return;
-        }
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
     };
 
     let idx = match find_inventory_item(&game, name) {
@@ -2805,7 +2844,7 @@ fn cmd_wield(name: &str) {
         println!("{} Now wielding {}!", "⚔️".bold(), item_name.green().bold());
     }
 
-    if let Err(e) = state::save(&game) {
+    if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
@@ -2820,12 +2859,8 @@ fn cmd_remove(name: &str) {
         return;
     }
 
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("{} {}", "❌".bold(), e.red());
-            return;
-        }
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
     };
 
     let query = name.to_lowercase();
@@ -2898,7 +2933,7 @@ fn cmd_remove(name: &str) {
         );
     }
 
-    if let Err(e) = state::save(&game) {
+    if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
@@ -2909,12 +2944,8 @@ fn cmd_drink(name: &str) {
         return;
     }
 
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("{} {}", "❌".bold(), e.red());
-            return;
-        }
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
     };
 
     let idx = match find_inventory_item(&game, name) {
@@ -2957,7 +2988,7 @@ fn cmd_drink(name: &str) {
         game.character.max_hp
     );
 
-    if let Err(e) = state::save(&game) {
+    if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
@@ -2968,12 +2999,8 @@ fn cmd_drop_item(name: &str) {
         return;
     }
 
-    let mut game = match state::load() {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("{} {}", "❌".bold(), e.red());
-            return;
-        }
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
     };
 
     let idx = match find_inventory_item(&game, name) {
@@ -2999,7 +3026,7 @@ fn cmd_drop_item(name: &str) {
         item.name.red().bold()
     );
 
-    if let Err(e) = state::save(&game) {
+    if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
     }
 }
@@ -3010,9 +3037,16 @@ fn cmd_reset() {
         "💀".red().bold()
     ));
     if answer.to_lowercase() == "y" {
+        let _lock = match state::lock(state::COMMAND_LOCK_TIMEOUT) {
+            Ok(lock) => lock,
+            Err(e) => {
+                eprintln!("{} {}", "❌".bold(), e.to_string().red());
+                return;
+            }
+        };
         let path = state::save_path();
         if path.exists() {
-            match std::fs::remove_file(&path) {
+            match state::delete_save() {
                 Ok(()) => println!(
                     "{} Character deleted. Run {} to start over.",
                     "🗑️".bold(),
@@ -3170,7 +3204,11 @@ fn cmd_arena(from_deprecated: bool) {
             // user-visible is rendered until `state::save()` succeeds, so a save
             // failure leaves no stale prints behind.
             let deferred = arena::apply_arena_commit(&mut game, &commit);
-            if let Err(e) = state::save(&game) {
+            // Locks only the final write; reloading to keep other shells' progress is x3p.2.
+            let saved = state::lock(state::COMMAND_LOCK_TIMEOUT)
+                .map_err(|e| e.to_string())
+                .and_then(|lock| state::save(&game, &lock));
+            if let Err(e) = saved {
                 eprintln!("{} Failed to save arena results: {}", "❌".bold(), e.red());
                 return;
             }

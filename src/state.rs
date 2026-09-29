@@ -2,9 +2,25 @@ use crate::character::Character;
 use crate::journal::JournalEntry;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::io::Write;
-use std::path::PathBuf;
+use std::fs::{self, OpenOptions};
+use std::io::{ErrorKind, Write};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+/// How long `sq tick` waits for another sq process to finish with the save
+/// before skipping this tick. It runs before every prompt, so it must never stall.
+pub const TICK_LOCK_TIMEOUT: Duration = Duration::from_secs(1);
+/// How long other read-modify-write commands wait for the save lock.
+pub const COMMAND_LOCK_TIMEOUT: Duration = Duration::from_secs(10);
+
+const SAVE_FILE: &str = "save.json";
+const BACKUP_FILE: &str = "save.json.bak";
+const LOCK_FILE: &str = "save.lock";
+const NO_SAVE: &str = "No save file found. Run `sq init` to create a character.";
+/// Prefix of temp and staging files (`.save.json.<pid>.<nanos>.<n>.tmp`).
+const TEMP_PREFIX: &str = ".save.json.";
+/// Temp files older than this were abandoned by a crashed process.
+const STALE_TEMP_AGE: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GameState {
@@ -87,44 +103,317 @@ pub fn save_dir() -> PathBuf {
 }
 
 pub fn save_path() -> PathBuf {
-    save_dir().join("save.json")
+    save_dir().join(SAVE_FILE)
 }
 
-pub fn save(state: &GameState) -> Result<(), String> {
-    let dir = save_dir();
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create save dir: {}", e))?;
+/// Exclusive advisory lock on `~/.shellquest/save.lock` (`flock`-style, per open
+/// file; on NFS it is only as good as the mount's lock support).
+///
+/// Hold it across a whole load → mutate → save so concurrent sq processes
+/// (several shells ticking at once, a command racing a tick) can't lose each
+/// other's updates. Never hold it across an interactive prompt or a network
+/// call: every other shell's tick waits on it. Released on drop.
+pub struct SaveLock {
+    _file: fs::File,
+}
 
-    // Set directory permissions to 0o700 (owner only)
+#[derive(Debug)]
+pub enum LockError {
+    /// Another sq process held the lock for the whole timeout.
+    Busy,
+    /// The lock file or save directory can't be used (permissions, disk…).
+    Io(String),
+}
+
+impl std::fmt::Display for LockError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LockError::Busy => {
+                write!(
+                    f,
+                    "Another sq process is busy with your save; try again in a moment."
+                )
+            }
+            LockError::Io(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+pub fn lock(timeout: Duration) -> Result<SaveLock, LockError> {
+    lock_in(&save_dir(), timeout)
+}
+
+fn lock_in(dir: &Path, timeout: Duration) -> Result<SaveLock, LockError> {
+    ensure_dir(dir).map_err(LockError::Io)?;
+    let path = dir.join(LOCK_FILE);
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options
+        .open(&path)
+        .map_err(|e| LockError::Io(format!("Failed to open {}: {}", path.display(), e)))?;
+    // Best effort on purpose: the lock file is empty (no data to protect), and
+    // failing here would stop the game on filesystems that reject chmod.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
+        let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
     }
+    let deadline = Instant::now() + timeout;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(SaveLock { _file: file }),
+            Err(fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(5))
+            }
+            Err(fs::TryLockError::WouldBlock) => return Err(LockError::Busy),
+            Err(fs::TryLockError::Error(e)) => {
+                return Err(LockError::Io(format!(
+                    "Failed to lock {}: {}",
+                    path.display(),
+                    e
+                )))
+            }
+        }
+    }
+}
 
-    let json =
-        serde_json::to_string_pretty(state).map_err(|e| format!("Failed to serialize: {}", e))?;
+/// Remove a file; a missing file is fine, any other failure is reported.
+fn remove_if_exists(path: &Path) -> std::io::Result<()> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() != ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
 
-    // Atomic write: write to temp file then rename to prevent corruption from concurrent ticks
-    let tmp_path = save_path().with_extension("json.tmp");
-    let mut file =
-        fs::File::create(&tmp_path).map_err(|e| format!("Failed to create temp file: {}", e))?;
-    file.write_all(json.as_bytes())
-        .map_err(|e| format!("Failed to write temp file: {}", e))?;
-    file.sync_all()
-        .map_err(|e| format!("Failed to sync temp file: {}", e))?;
-    drop(file);
-    fs::rename(&tmp_path, save_path()).map_err(|e| format!("Failed to rename save: {}", e))?;
-
+/// Create the save directory (owner-only).
+fn ensure_dir(dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|e| format!("Failed to create save dir: {}", e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+    }
     Ok(())
 }
 
-pub fn load() -> Result<GameState, String> {
-    let path = save_path();
-    if !path.exists() {
-        return Err("No save file found. Run `sq init` to create a character.".to_string());
+/// Save the character. The caller holds the save lock (see [`SaveLock`]); the
+/// save being replaced is kept as the backup.
+pub fn save(state: &GameState, _lock: &SaveLock) -> Result<(), String> {
+    write_save(&save_dir(), state, true)
+}
+
+/// Save a brand-new character (`sq init`). The backup of any character this
+/// replaces is removed first, so no later recovery can bring it back.
+pub fn save_new(state: &GameState, _lock: &SaveLock) -> Result<(), String> {
+    let dir = save_dir();
+    remove_if_exists(&dir.join(BACKUP_FILE))
+        .map_err(|e| format!("Failed to remove the old backup: {}", e))?;
+    write_save(&dir, state, false)
+}
+
+/// Delete the character (`sq reset`, permadeath): the save and its backup.
+/// Call it with the save lock held.
+pub fn delete_save() -> std::io::Result<()> {
+    delete_save_in(&save_dir())
+}
+
+fn delete_save_in(dir: &Path) -> std::io::Result<()> {
+    // Delete the save even if the backup can't be removed; the next new character's
+    // first save refuses to start while a stale backup survives.
+    let backup = remove_if_exists(&dir.join(BACKUP_FILE));
+    fs::remove_file(dir.join(SAVE_FILE))?;
+    backup
+}
+
+fn write_save(dir: &Path, state: &GameState, keep_previous: bool) -> Result<(), String> {
+    ensure_dir(dir)?;
+    let json =
+        serde_json::to_string_pretty(state).map_err(|e| format!("Failed to serialize: {}", e))?;
+
+    // Atomic write: a temp file unique to this process, then rename over save.json.
+    // (A shared temp name let concurrent processes truncate each other's writes.)
+    reclaim_stale_temps(dir);
+    let tmp = write_temp(dir, json.as_bytes())?;
+    let current = dir.join(SAVE_FILE);
+    if keep_previous && current.exists() {
+        keep_backup(dir, &current);
+    } else if !current.exists() {
+        // A backup must belong to the current character (a fresh one has none).
+        if let Err(e) = remove_if_exists(&dir.join(BACKUP_FILE)) {
+            let _ = fs::remove_file(&tmp);
+            return Err(format!("Failed to remove a stale backup: {}", e));
+        }
     }
-    let data = fs::read_to_string(&path).map_err(|e| format!("Failed to read save: {}", e))?;
-    serde_json::from_str(&data).map_err(|e| format!("Failed to parse save: {}", e))
+    fs::rename(&tmp, &current).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("Failed to rename save: {}", e)
+    })
+}
+
+/// Write `bytes` to a new, uniquely named, owner-only file in `dir` and fsync it.
+fn write_temp(dir: &Path, bytes: &[u8]) -> Result<PathBuf, String> {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    for attempt in 0..16 {
+        let path = dir.join(format!(
+            "{}{}.{}.{}.tmp",
+            TEMP_PREFIX,
+            std::process::id(),
+            stamp,
+            attempt
+        ));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = match options.open(&path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("Failed to create temp file: {}", e)),
+        };
+        let written = file.write_all(bytes).and_then(|()| file.sync_all());
+        drop(file);
+        return match written {
+            Ok(()) => Ok(path),
+            Err(e) => {
+                let _ = fs::remove_file(&path);
+                Err(format!("Failed to write temp file: {}", e))
+            }
+        };
+    }
+    Err("Failed to create a unique temp file".to_string())
+}
+
+/// Remove temp/staging files a crashed sq left behind. Runs under the save lock;
+/// the age threshold keeps it away from a write that is still in progress.
+fn reclaim_stale_temps(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let Some(cutoff) = SystemTime::now().checked_sub(STALE_TEMP_AGE) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(TEMP_PREFIX) && name.ends_with(".tmp") {
+            let modified = entry.metadata().and_then(|m| m.modified());
+            if modified.is_ok_and(|t| t < cutoff) {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
+/// Keep the save being replaced as `save.json.bak`. A hard link means no data
+/// copy, and the rename swaps the backup in atomically, so it is never half-written.
+/// Best effort: without hard-link support the previous backup just stays.
+fn keep_backup(dir: &Path, current: &Path) {
+    let staging = dir.join(format!("{}bak.{}.tmp", TEMP_PREFIX, std::process::id()));
+    let _ = fs::remove_file(&staging);
+    if fs::hard_link(current, &staging).is_ok()
+        && fs::rename(&staging, dir.join(BACKUP_FILE)).is_err()
+    {
+        let _ = fs::remove_file(&staging);
+    }
+}
+
+enum SaveFile {
+    Parsed(Box<GameState>),
+    Unparseable { problem: String, bytes: Vec<u8> },
+}
+
+fn read_save(dir: &Path) -> Result<SaveFile, String> {
+    match fs::read(dir.join(SAVE_FILE)) {
+        Ok(bytes) => Ok(match serde_json::from_slice(&bytes) {
+            Ok(state) => SaveFile::Parsed(Box::new(state)),
+            Err(e) => SaveFile::Unparseable {
+                problem: e.to_string(),
+                bytes,
+            },
+        }),
+        Err(e) if e.kind() == ErrorKind::NotFound => Err(NO_SAVE.to_string()),
+        Err(e) => Err(format!("Failed to read save: {}", e)),
+    }
+}
+
+/// Load for reading. A save that won't parse is repaired under the save lock,
+/// so never call this while holding the lock (use [`load_locked`]).
+pub fn load() -> Result<GameState, String> {
+    let dir = save_dir();
+    match read_save(&dir)? {
+        SaveFile::Parsed(state) => Ok(*state),
+        SaveFile::Unparseable { .. } => {
+            let lock = lock_in(&dir, COMMAND_LOCK_TIMEOUT).map_err(|e| e.to_string())?;
+            load_locked_in(&dir, &lock)
+        }
+    }
+}
+
+/// Load while holding the save lock (tick and read-modify-write commands).
+pub fn load_locked(lock: &SaveLock) -> Result<GameState, String> {
+    load_locked_in(&save_dir(), lock)
+}
+
+fn load_locked_in(dir: &Path, _lock: &SaveLock) -> Result<GameState, String> {
+    match read_save(dir)? {
+        SaveFile::Parsed(state) => Ok(*state),
+        SaveFile::Unparseable { problem, bytes } => recover_from_backup(dir, &problem, &bytes),
+    }
+}
+
+/// save.json exists but doesn't parse, and the caller holds the save lock: restore
+/// the last good save, keep a copy of the damaged file, and tell the player once.
+/// The replacement is written before anything else changes, so a crash at any
+/// point leaves save.json and the backup in place and the next load retries.
+fn recover_from_backup(dir: &Path, problem: &str, damaged: &[u8]) -> Result<GameState, String> {
+    let failed = || Err(format!("Failed to parse save: {}", problem));
+    let Ok(backup) = fs::read(dir.join(BACKUP_FILE)) else {
+        return failed();
+    };
+    let Ok(state) = serde_json::from_slice::<GameState>(&backup) else {
+        return failed();
+    };
+    let replacement = write_temp(dir, &backup)?;
+    let kept = dir.join(format!(
+        "save.json.corrupt-{}",
+        Utc::now().format("%Y%m%dT%H%M%S%.3fZ")
+    ));
+    // Keep the damaged bytes (owner-only) before touching save.json; if that fails,
+    // leave everything as it is and let a later load retry.
+    let preserved = write_temp(dir, damaged).and_then(|copy| {
+        fs::rename(&copy, &kept).map_err(|e| {
+            let _ = fs::remove_file(&copy);
+            e.to_string()
+        })
+    });
+    if let Err(e) = preserved {
+        let _ = fs::remove_file(&replacement);
+        return Err(format!(
+            "Failed to parse save: {} (not restoring from the backup: could not keep a copy of the damaged file: {})",
+            problem, e
+        ));
+    }
+    fs::rename(&replacement, dir.join(SAVE_FILE)).map_err(|e| {
+        let _ = fs::remove_file(&replacement);
+        format!("Failed to restore save from backup: {}", e)
+    })?;
+    eprintln!(
+        "⚠️  sq: your save was unreadable ({}). Restored the last good copy; the damaged file is kept at {}",
+        problem,
+        kept.display()
+    );
+    Ok(state)
 }
 
 #[cfg(test)]
@@ -272,5 +561,224 @@ mod tests {
         assert!(restored.quest_phrase.is_none());
         assert!(restored.quest_scroll_path.is_none());
         assert!(!restored.quest_completed_today);
+    }
+
+    // ── persistence: temp files, backup, recovery, locking (shellqeuest-x3p.1) ──
+    // These use private *_in(dir) helpers on a scratch dir; they never touch $HOME.
+
+    fn scratch_dir(name: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "sq-state-{}-{}-{}",
+            name,
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn state_with_gold(gold: u32) -> GameState {
+        let mut state = GameState::new(Character::new("Saver".into(), Class::Warrior, Race::Human));
+        state.character.gold = gold;
+        state
+    }
+
+    fn gold_in(path: &Path) -> u32 {
+        let state: GameState = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        state.character.gold
+    }
+
+    fn load_in(dir: &Path) -> Result<GameState, String> {
+        let lock = lock_in(dir, Duration::ZERO).unwrap();
+        load_locked_in(dir, &lock)
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn save_leaves_no_temp_files_behind() {
+        let dir = scratch_dir("notemp");
+        write_save(&dir, &state_with_gold(1), true).unwrap();
+        write_save(&dir, &state_with_gold(2), true).unwrap();
+        let leftovers: Vec<_> = names_in(&dir)
+            .into_iter()
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp files left behind: {:?}",
+            leftovers
+        );
+        assert_eq!(gold_in(&dir.join(SAVE_FILE)), 2);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backup_holds_the_previous_save() {
+        let dir = scratch_dir("backup");
+        write_save(&dir, &state_with_gold(10), true).unwrap();
+        assert!(
+            !dir.join(BACKUP_FILE).exists(),
+            "a first save has nothing to back up"
+        );
+        write_save(&dir, &state_with_gold(20), true).unwrap();
+        assert_eq!(gold_in(&dir.join(BACKUP_FILE)), 10);
+        assert_eq!(gold_in(&dir.join(SAVE_FILE)), 20);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn corrupt_save_is_restored_from_backup_and_kept_aside() {
+        let dir = scratch_dir("recover");
+        write_save(&dir, &state_with_gold(10), true).unwrap();
+        write_save(&dir, &state_with_gold(20), true).unwrap();
+        fs::write(dir.join(SAVE_FILE), "{\"character\": trailing garbage").unwrap();
+
+        let state = load_in(&dir).expect("recovers from the backup");
+        assert_eq!(state.character.gold, 10);
+        assert_eq!(
+            gold_in(&dir.join(SAVE_FILE)),
+            10,
+            "save.json is repaired on disk"
+        );
+        assert_eq!(
+            gold_in(&dir.join(BACKUP_FILE)),
+            10,
+            "the backup is still there"
+        );
+        let kept: Vec<_> = names_in(&dir)
+            .into_iter()
+            .filter(|n| n.starts_with("save.json.corrupt-"))
+            .collect();
+        assert_eq!(kept.len(), 1, "the damaged file is kept for inspection");
+        assert_eq!(
+            fs::read_to_string(dir.join(&kept[0])).unwrap(),
+            "{\"character\": trailing garbage"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn invalid_utf8_save_still_reaches_recovery() {
+        let dir = scratch_dir("utf8");
+        write_save(&dir, &state_with_gold(7), true).unwrap();
+        write_save(&dir, &state_with_gold(8), true).unwrap();
+        fs::write(dir.join(SAVE_FILE), [0xff, 0xfe, 0x00, 0x7b]).unwrap();
+        assert_eq!(load_in(&dir).unwrap().character.gold, 7);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn corrupt_save_without_backup_reports_a_parse_error() {
+        let dir = scratch_dir("nobackup");
+        fs::write(dir.join(SAVE_FILE), "not json").unwrap();
+        let err = load_in(&dir).unwrap_err();
+        assert!(err.starts_with("Failed to parse save"), "{}", err);
+        assert_eq!(
+            fs::read_to_string(dir.join(SAVE_FILE)).unwrap(),
+            "not json",
+            "left untouched"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_save_reports_no_save() {
+        let dir = scratch_dir("missing");
+        assert_eq!(load_in(&dir).unwrap_err(), NO_SAVE);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_lock_is_exclusive_until_dropped() {
+        let dir = scratch_dir("lock");
+        let held = lock_in(&dir, Duration::ZERO).unwrap();
+        assert!(matches!(
+            lock_in(&dir, Duration::from_millis(30)),
+            Err(LockError::Busy)
+        ));
+        drop(held);
+        assert!(lock_in(&dir, Duration::ZERO).is_ok());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_removes_save_and_backup() {
+        let dir = scratch_dir("delete");
+        write_save(&dir, &state_with_gold(1), true).unwrap();
+        write_save(&dir, &state_with_gold(2), true).unwrap();
+        delete_save_in(&dir).unwrap();
+        assert!(!dir.join(SAVE_FILE).exists());
+        assert!(
+            !dir.join(BACKUP_FILE).exists(),
+            "a backup would resurrect a dead character"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn replacing_a_character_never_backs_up_the_old_one() {
+        // What save_new does: drop the backup, then write without keeping the previous save.
+        let dir = scratch_dir("new");
+        write_save(&dir, &state_with_gold(1), true).unwrap();
+        write_save(&dir, &state_with_gold(2), true).unwrap();
+        let _ = fs::remove_file(dir.join(BACKUP_FILE));
+        write_save(&dir, &state_with_gold(99), false).unwrap();
+        assert!(!dir.join(BACKUP_FILE).exists());
+        assert_eq!(gold_in(&dir.join(SAVE_FILE)), 99);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn first_save_after_a_delete_drops_a_stale_backup() {
+        let dir = scratch_dir("stale");
+        write_save(&dir, &state_with_gold(1), true).unwrap();
+        write_save(&dir, &state_with_gold(2), true).unwrap();
+        fs::remove_file(dir.join(SAVE_FILE)).unwrap(); // e.g. an older sq deleted only save.json
+        write_save(&dir, &state_with_gold(3), true).unwrap();
+        assert!(!dir.join(BACKUP_FILE).exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_still_removes_the_save_when_the_backup_is_already_gone() {
+        let dir = scratch_dir("delete-nobak");
+        write_save(&dir, &state_with_gold(1), true).unwrap();
+        assert!(!dir.join(BACKUP_FILE).exists());
+        delete_save_in(&dir).unwrap();
+        assert!(!dir.join(SAVE_FILE).exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn abandoned_temp_files_are_reclaimed_but_fresh_ones_are_not() {
+        let dir = scratch_dir("reclaim");
+        let old = dir.join(format!("{}999.1.0.tmp", TEMP_PREFIX));
+        let fresh = dir.join(format!("{}999.2.0.tmp", TEMP_PREFIX));
+        fs::write(&old, "left by a crash").unwrap();
+        fs::write(&fresh, "being written right now").unwrap();
+        let long_ago = SystemTime::now() - Duration::from_secs(3600);
+        fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+        write_save(&dir, &state_with_gold(1), true).unwrap();
+        assert!(!old.exists(), "abandoned temp file reclaimed");
+        assert!(
+            fresh.exists(),
+            "a temp file that may still be in use is left alone"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 }

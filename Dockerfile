@@ -1,5 +1,7 @@
 # ── Build stage ──
-FROM rust:1.86-slim AS builder
+# Latest stable 1.x on the same Debian release as the runtime stage (glibc must match);
+# Cargo.toml's rust-version (1.89) is the floor.
+FROM rust:1-slim-bookworm AS builder
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY src/ src/

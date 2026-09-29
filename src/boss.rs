@@ -288,8 +288,8 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
                     0,
                     0,
                 );
-                let path = crate::state::save_path();
-                let _ = std::fs::remove_file(&path);
+                // The save and its backup, so a recovery can never resurrect the dead.
+                let _ = crate::state::delete_save();
                 std::process::exit(0);
             } else {
                 state.character.die();

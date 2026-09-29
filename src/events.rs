@@ -659,8 +659,8 @@ fn handle_trap(state: &mut GameState, rng: &mut impl Rng) {
     if died {
         if state.permadeath {
             crate::display::print_permadeath_eulogy(&state.character, "a trap");
-            let path = crate::state::save_path();
-            let _ = std::fs::remove_file(&path);
+            // The save and its backup, so a recovery can never resurrect the dead.
+            let _ = crate::state::delete_save();
             std::process::exit(0);
         }
         state.character.die();
@@ -2075,8 +2075,8 @@ fn combat(
                         0,
                         0,
                     );
-                    let path = crate::state::save_path();
-                    let _ = std::fs::remove_file(&path);
+                    // The save and its backup, so a recovery can never resurrect the dead.
+                    let _ = crate::state::delete_save();
                     std::process::exit(0);
                 }
                 state.character.die();

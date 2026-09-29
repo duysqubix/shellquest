@@ -46,7 +46,7 @@ All Rust source code for the `sq` binary. Flat module structure — `main.rs` de
 - `GameState` (`state.rs`) — the persisted save root
 
 ### Testing Requirements
-- Tests are **in-file** `#[cfg(test)] mod tests` — no top-level `tests/` integration dir.
+- Unit tests are **in-file** `#[cfg(test)] mod tests`. Integration tests in `tests/` run the real binary with a temporary HOME; `tests/concurrent_saves.rs` runs 8 simultaneous ticks per round.
 - **~457 `#[test]` total** (456 run + 1 `#[ignore]`d, as of v1.28). Heaviest coverage: arena ~116, main ~72, character ~71, events ~57, zones ~37; `sage.rs` has none and `messages.rs` only 3. Add a guard test when adding a balance constant.
 - `cargo build` (or `cargo build --bin sq`) to compile; `cargo test` for the suite; `cargo clippy --all-targets` for lints (installed; pre-existing warnings are not yet fatal — don't add new ones). `just check` runs every gate.
 - Cargo cache quirk lives in the parent `../AGENTS.md`; manual QA runs only through `dev-tools/sq-sandbox` (never the real HOME) with the scenario recipes in `.claude/skills/sq-qa/SKILL.md` — don't duplicate here. Arena tests rely on seeded `StdRng`; combat fns take `&mut impl Rng` so they're deterministic in tests.
@@ -66,6 +66,10 @@ All Rust source code for the `sq` binary. Flat module structure — `main.rs` de
 - **Never store `ArenaRun` in `GameState`** (`ArenaRun`). It's transient; only the `ArenaCommit` touches the save.
 - **Deferred arena output renders only AFTER `state::save()` succeeds** (`ArenaDeferredOutput`, `render_arena_deferred_output`) — never inline during `apply_arena_commit`.
 - **MAX_LEVEL entrants get XP suppressed at the commit boundary** (`build_commit`, the `run.entry.level >= MAX_LEVEL` branch) — don't "fix" this; it's intentional.
+- **Read-modify-write commands hold the save lock from load to save.** Use `load_for_update()` in main.rs; it wraps `state::lock` and `state::load`.
+  - Never hold the lock across an interactive prompt or a network call, because every shell's tick waits on it. Tick uses `TICK_LOCK_TIMEOUT` (1 s) and skips on contention, and it fetches the daily crates.io version before locking.
+  - Arena and prestige still load before their prompts and save at the end without the lock; that is shellqeuest-x3p.2.
+  - Delete a character only with `state::delete_save()`, which also removes the backup; `sq init` uses `state::save_new()`.
 - **New save fields MUST be `#[serde(default)]`** (e.g. `Item::enchant_level`, the quest fields on `GameState`) or old `save.json` fails to load.
 - **Two-pass messages must stay in sync** — store `plain` in journal, print `colored`; never store ANSI text (it gets re-colored by `EventType` in `display.rs`).
 - **`tick` stays fast + silent**: no character → return silently (`cmd_tick` in `main.rs`); save failure only logs to stderr, never panics. **Exception**: when `SQ_DEBUG` is set (dev/sim diagnostics; mirrors `SQ_NO_PACING`), `cmd_tick` logs load/save failures with context and exits non-zero. Default (unset) behavior is unchanged.

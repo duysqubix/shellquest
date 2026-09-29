@@ -5,24 +5,28 @@ use rand::Rng;
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Check crates.io for the latest version (cached for 24 hours).
+/// True when the cached crates.io version is missing or older than 24 hours.
+pub fn update_check_due(state: &GameState) -> bool {
+    state
+        .last_version_check
+        .is_none_or(|last_check| (Utc::now() - last_check).num_hours() >= 24)
+}
+
+/// Apply a crates.io check to the save. `fetched` is what `fetch_latest_version`
+/// returned; tick fetches (at most daily, see `update_check_due`) BEFORE taking the
+/// save lock, because this runs under it and must never touch the network.
+/// With nothing fetched, the cached version answers.
 /// Returns true if a newer version is available.
-fn check_for_update(state: &mut GameState) -> bool {
+fn check_for_update(state: &mut GameState, fetched: Option<Option<String>>) -> bool {
     let now = Utc::now();
 
-    // Only check crates.io once every 24 hours
-    if let Some(last_check) = state.last_version_check {
-        if (now - last_check).num_hours() < 24 {
-            // Use cached result
-            return state
-                .latest_version
-                .as_ref()
-                .map_or(false, |v| v.as_str() != CURRENT_VERSION);
-        }
-    }
-
-    // Try to fetch latest version (with a short timeout so tick stays fast)
-    let latest = fetch_latest_version();
+    let Some(latest) = fetched else {
+        // Use cached result
+        return state
+            .latest_version
+            .as_ref()
+            .map_or(false, |v| v.as_str() != CURRENT_VERSION);
+    };
     state.last_version_check = Some(now);
 
     if let Some(ref ver) = latest {
@@ -34,7 +38,7 @@ fn check_for_update(state: &mut GameState) -> bool {
     }
 }
 
-fn fetch_latest_version() -> Option<String> {
+pub fn fetch_latest_version() -> Option<String> {
     let resp = ureq::builder()
         .timeout(std::time::Duration::from_secs(3))
         .build()
@@ -50,11 +54,11 @@ fn fetch_latest_version() -> Option<String> {
 }
 
 /// Force the sage to appear (for testing with --test-sage).
-pub fn force_show_sage(state: &mut GameState) {
+pub fn force_show_sage(state: &mut GameState, fetched: Option<Option<String>>) {
     let mut rng = rand::thread_rng();
 
     // Try a real version check, but show regardless
-    let _ = check_for_update(state);
+    let _ = check_for_update(state, fetched);
 
     let latest = state.latest_version.as_deref().unwrap_or("?.?.?");
 
@@ -96,11 +100,11 @@ pub fn force_show_sage(state: &mut GameState) {
 /// Maybe show the sage during a tick. Very rare, max 3 times per day.
 /// On the first tick a new version is detected, the sage appears immediately (guaranteed).
 /// Subsequent appearances for the same version fall back to 1/50 random, max 3/day.
-pub fn maybe_show_sage(state: &mut GameState) {
+pub fn maybe_show_sage(state: &mut GameState, fetched: Option<Option<String>>) {
     let mut rng = rand::thread_rng();
 
     // Check if update is actually available (cached every 24h)
-    if !check_for_update(state) {
+    if !check_for_update(state, fetched) {
         return;
     }
 
