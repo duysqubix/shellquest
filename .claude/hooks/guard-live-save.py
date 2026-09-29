@@ -144,12 +144,11 @@ def is_sq_path(word: str) -> bool:
     return os.path.basename(word) == "sq"
 
 
-def sq_args(words: list[str], sq_vars: set[str] = frozenset()) -> list[str] | None:
+def sq_args(words: list[str]) -> list[str] | None:
     """If this simple command runs the game binary, return its arguments."""
     if not words:
         return None
-    var = VARIABLE_REF.match(words[0])
-    if is_sq_path(words[0]) or (var and var.group(1) in sq_vars):
+    if is_sq_path(words[0]):
         return words[1:]
     if os.path.basename(words[0]) == "cargo":
         rest = [w for w in words[1:] if not w.startswith("+")]
@@ -292,7 +291,7 @@ def analyze(command: str, home: str, depth: int = 0, inherited: bool = False) ->
     tokens = tokenize(command)
     state = inherited
     stack: list[bool] = []
-    sq_vars: set[str] = set()
+    variables: dict[str, str] = {}  # NAME=value seen so far, for `$NAME args` in command position
     i = 0
     while i < len(tokens):
         start = i
@@ -305,9 +304,15 @@ def analyze(command: str, home: str, depth: int = 0, inherited: bool = False) ->
         standalone_assignment = bool(words) and all(ASSIGNMENT.match(w) for w in words)
         for w in words[1:] if words[:1] == ["export"] else words:
             name, sep, value = w.partition("=")
-            if sep and ASSIGNMENT.match(w) and is_sq_path(value.strip("'\"")):
-                sq_vars.add(name)  # e.g. SQ=./target/debug/sq; $SQ tick
+            if sep and ASSIGNMENT.match(w):
+                variables[name] = value  # e.g. SQ=./target/debug/sq; $SQ tick  or  RUN="cargo run"; $RUN tick
         words, override, unset = strip_prefix(list(words), home)
+        var = VARIABLE_REF.match(words[0]) if words else None
+        if var and var.group(1) in variables:  # expand a known variable in command position
+            try:
+                words = shlex.split(variables[var.group(1)]) + words[1:]
+            except ValueError:
+                pass
         if standalone_assignment and override:
             state = True  # `HOME=/x;` retargets HOME for the rest of this shell
         safe_env = (state or override) and not unset
@@ -355,7 +360,7 @@ def analyze(command: str, home: str, depth: int = 0, inherited: bool = False) ->
                 h, a = analyze(inline, home, depth + 1)
                 hits, asks = hits + h, asks + a
         else:
-            args = sq_args(words, sq_vars)
+            args = sq_args(words)
             if args is not None and touches_save(args) and not safe_env:
                 hits.append(" ".join(words))
 

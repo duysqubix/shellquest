@@ -104,6 +104,7 @@ class DeniesUnsandboxedSq(unittest.TestCase):
             "gtimeout 5 sq status",
             "watch -n1 sq status",
             "rtk proxy ./target/debug/sq status",
+            'RUN="cargo run"; $RUN tick',                           # command stored in a variable
         ]:
             with self.subTest(cmd=cmd):
                 self.assertEqual(verdict(cmd), "deny")
