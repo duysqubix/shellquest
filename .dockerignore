@@ -1,6 +1,6 @@
-target/
-.omc/
-.git/
-*.md
-LICENSE
-install.sh
+# The Dockerfile copies only Cargo.toml, Cargo.lock and src/. Allowlist them so the
+# build context stays small (no target/, .beads/, .sq-sandbox/, sim artifacts).
+*
+!Cargo.toml
+!Cargo.lock
+!src/

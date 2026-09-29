@@ -7,7 +7,8 @@ report := py + " " + sim_dir / "report.py"
 dashboard := py + " " + sim_dir / "dashboard.py"
 watcher := py + " " + sim_dir / "watch.py"
 # Empty by default so each sim-* run auto-labels as '<recipe>-<timestamp>' (kept separate
-# and selectable in the dashboard). Pass label=NAME to override / group runs intentionally.
+# and selectable in the dashboard). Pass a label POSITIONALLY to name/group runs: `just sim-quick my-run`
+# (`label=my-run` would be passed through literally).
 default_label := ""
 
 # List every recipe with its description (this is the default action when you run `just`).
@@ -18,9 +19,29 @@ default:
 build:
     cargo build --bin sq
 
-# Run the full Rust unit test suite (361 tests including all arena/wave/crit logic).
+# Run the full Rust unit test suite (in-file #[cfg(test)] modules; never touches $HOME).
 test:
     cargo test
+
+# Format all Rust code in place.
+fmt:
+    cargo fmt
+
+# Clippy over bins + tests. Pre-existing warnings are reported but not yet fatal.
+lint:
+    cargo clippy --all-targets
+
+# Every quality gate before committing: rustfmt check, clippy, Rust tests, Claude guard-hook tests.
+check:
+    cargo fmt --check
+    cargo clippy --all-targets
+    cargo test
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .claude/hooks
+
+# Run the dev build against a throwaway HOME (never your real save). Example: just sandbox new --class rogue; just sandbox tick "git commit" -n 20
+[positional-arguments]
+sandbox *args:
+    dev-tools/sq-sandbox "$@"
 
 # Fastest smoke test: 1 Warrior to L20, single worker. Runs in Docker (one container per character); requires the sim image + a linux sq.
 sim-quick label=default_label: sim-image sim-sq-linux
