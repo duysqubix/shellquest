@@ -145,22 +145,37 @@ class Sandbox:
             env["SQ_NO_PACING"] = "1"
         return env
 
-    def run(self, args: list[str], stdin: str | None = None, capture: bool = True) -> subprocess.CompletedProcess:
-        """Run sq and capture its output (stdout+stderr merged), with a timeout."""
+    def run(self, args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
+        """Run sq and capture its output (stdout+stderr merged), capped in time and size."""
         self.prepare()
-        try:
-            return subprocess.run(
-                [str(self.binary), *args],
-                cwd=self.workdir,
-                env=self.env(),
-                input=stdin,
-                text=True,
-                stdout=subprocess.PIPE if capture else None,
-                stderr=subprocess.STDOUT if capture else None,
-                timeout=RUN_TIMEOUT,
-            )
-        except subprocess.TimeoutExpired:
-            die(f"`sq {' '.join(args)}` did not finish within {RUN_TIMEOUT}s (an interactive prompt waiting for input?)")
+        proc = subprocess.Popen(
+            [str(self.binary), *args],
+            cwd=self.workdir,
+            env=self.env(),
+            stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        if stdin is not None:  # answers are tiny, so writing them up front can't fill the pipe
+            proc.stdin.write(stdin.encode())
+            proc.stdin.close()
+        out, start, fd, problem = bytearray(), time.monotonic(), proc.stdout.fileno(), None
+        while problem is None:
+            ready, _, _ = select.select([fd], [], [], 0.5)
+            if ready:
+                chunk = os.read(fd, 65536)
+                if not chunk:
+                    break
+                out += chunk
+            if len(out) > STREAM_LIMIT_BYTES:
+                problem = f"produced more than {STREAM_LIMIT_BYTES // 1_000_000} MB of output"
+            elif time.monotonic() - start > RUN_TIMEOUT:
+                problem = f"did not finish within {RUN_TIMEOUT}s"
+        if problem:
+            proc.kill()
+            proc.wait()
+            die(f"`sq {' '.join(args)}` {problem} (an interactive prompt looping on its input?)")
+        return subprocess.CompletedProcess(args, proc.wait(), out.decode("utf-8", errors="replace"), None)
 
     def stream(self, args: list[str]) -> int:
         """Pass sq's stdout/stderr through, killing it if it floods output or hangs."""
@@ -297,6 +312,8 @@ def cmd_new(sb: Sandbox, argv: list[str]) -> None:
     p.add_argument("--permadeath", action="store_true")
     p.add_argument("--sage", action="store_true", help="leave the crates.io version check armed (default: pre-seeded so ticks stay offline and quiet)")
     a = p.parse_args(argv)
+    if not a.name.strip() or any(ch in a.name for ch in "\r\n"):
+        die("--name must be a non-empty single line (sq init re-prompts forever otherwise)")
 
     sb.ensure_built()
     sb.wipe()
