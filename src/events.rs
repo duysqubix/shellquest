@@ -842,10 +842,8 @@ fn handle_familiar(state: &mut GameState, rng: &mut impl Rng) {
 }
 
 fn handle_passive_healer(state: &mut GameState, cwd: &str, now: chrono::DateTime<chrono::Utc>) {
-    if state.active_boss.is_some() {
-        return;
-    }
-
+    // Keeps working while a boss is up: a boss attacks every command for up to a
+    // day, and without healing one loss snowballed into the next.
     let last = match state.last_heal_at {
         Some(t) if t <= now => t,
         _ => {
@@ -2965,18 +2963,22 @@ mod tests {
     }
 
     #[test]
-    fn no_heal_during_boss() {
-        let mut state = healer_state(5);
-        let starting_hp = state.character.hp;
+    fn heals_during_a_boss_like_any_other_time() {
         let now = chrono::Utc::now();
         let original = now - chrono::Duration::seconds(5 * 60);
-        state.last_heal_at = Some(original);
-        state.active_boss = Some(minimal_boss());
+        let mut quiet = healer_state(5);
+        quiet.last_heal_at = Some(original);
+        let mut fighting = healer_state(5);
+        fighting.last_heal_at = Some(original);
+        fighting.active_boss = Some(minimal_boss());
+        let starting_hp = fighting.character.hp;
 
-        handle_passive_healer(&mut state, "/tmp/anywhere", now);
+        handle_passive_healer(&mut quiet, "/tmp/anywhere", now);
+        handle_passive_healer(&mut fighting, "/tmp/anywhere", now);
 
-        assert_eq!(state.character.hp, starting_hp);
-        assert_eq!(state.last_heal_at, Some(original));
+        assert!(fighting.character.hp > starting_hp);
+        assert_eq!(fighting.character.hp, quiet.character.hp);
+        assert_eq!(fighting.last_heal_at, quiet.last_heal_at);
     }
 
     #[test]

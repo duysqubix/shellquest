@@ -32,6 +32,16 @@ pub struct BossInfo {
 
 pub const BOSS_SPAWN_RATE: f64 = 1.0 / 500.0;
 pub const BOSS_MAX_PLAYER_DODGE_ADVANTAGE: i32 = 6;
+/// No boss appears below this level: under it a duel was nearly unwinnable (0-25%
+/// win rate at L10-15), and the roster's stats are a fair fight right at it.
+pub const BOSS_MIN_LEVEL: u32 = 25;
+/// Boss HP, attack and rewards grow with the player's level as
+/// (level + OFFSET) / (BOSS_MIN_LEVEL + OFFSET), roughly how player HP and attack
+/// grow, so a boss costs about the same share of a player's HP at L50 or L150 as
+/// at L25 instead of becoming trivial.
+pub const BOSS_SCALE_OFFSET: u32 = 5;
+/// Share of gold `sq flee` costs (dying to a boss costs 15% plus the level's XP).
+pub const BOSS_FLEE_GOLD_PERCENT: u32 = 10;
 
 pub const BOSS_ROSTER: &[(&str, i32, i32, u32, u32, i32)] = &[
     ("The Kernel Panic", 500, 48, 1450, 560, 6),
@@ -65,25 +75,79 @@ pub fn boss_roster() -> Vec<BossInfo> {
         .collect()
 }
 
-pub fn spawn_boss() -> Boss {
+/// How much stronger (and richer) than its roster entry a boss is at `level`.
+pub fn level_scale(level: u32) -> f64 {
+    (level.max(BOSS_MIN_LEVEL) + BOSS_SCALE_OFFSET) as f64
+        / (BOSS_MIN_LEVEL + BOSS_SCALE_OFFSET) as f64
+}
+
+/// A random roster boss scaled to a player of `level`.
+pub fn spawn_boss_for_level(level: u32) -> Boss {
     use rand::Rng;
 
     let mut rng = rand::thread_rng();
     let (name, hp, attack, xp_reward, gold_reward, dex_mod) =
         BOSS_ROSTER[rng.gen_range(0..BOSS_ROSTER.len())];
+    let scale = level_scale(level);
+    let hp = (hp as f64 * scale).round() as i32;
 
     Boss {
         name: name.to_string(),
         hp,
         max_hp: hp,
-        attack,
-        xp_reward,
-        gold_reward,
+        attack: (attack as f64 * scale).round() as i32,
+        xp_reward: (xp_reward as f64 * scale).round() as u32,
+        gold_reward: (gold_reward as f64 * scale).round() as u32,
         spawned_at: Utc::now(),
         dex_mod,
         dmg_dealt_total: 0,
         dmg_taken_total: 0,
     }
+}
+
+/// A roster boss at its base stats (the ones a player at `BOSS_MIN_LEVEL` meets).
+pub fn spawn_boss() -> Boss {
+    spawn_boss_for_level(BOSS_MIN_LEVEL)
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Flight {
+    /// Fled from the named boss, paying this much gold.
+    Fled { boss: String, cost: u32 },
+    /// The boss had already given up (stale, or the player is under the level
+    /// gate) and would have left on the next tick: it leaves now, for free.
+    AlreadyLeaving { boss: String },
+}
+
+/// `sq flee`: the active boss leaves and the player pays `BOSS_FLEE_GOLD_PERCENT` of
+/// their gold. None without a boss.
+pub fn flee(state: &mut crate::state::GameState) -> Option<Flight> {
+    use crate::journal::{EventType, JournalEntry};
+
+    let boss = state.active_boss.take()?;
+    crate::telemetry::emit_encounter(
+        "boss",
+        &boss.name,
+        false,
+        boss.dmg_dealt_total,
+        boss.dmg_taken_total,
+        "flee",
+        0,
+        0,
+    );
+    if boss.is_stale() || state.character.level < BOSS_MIN_LEVEL {
+        return Some(Flight::AlreadyLeaving { boss: boss.name });
+    }
+    let cost = state.character.gold * BOSS_FLEE_GOLD_PERCENT / 100;
+    state.character.gold -= cost;
+    state.add_journal(JournalEntry::new(
+        EventType::Combat,
+        format!("Fled from {}. -{} gold.", boss.name, cost),
+    ));
+    Some(Flight::Fled {
+        boss: boss.name,
+        cost,
+    })
 }
 
 impl Boss {
@@ -96,13 +160,13 @@ impl Boss {
 pub fn maybe_spawn(state: &mut crate::state::GameState) {
     use rand::Rng;
 
-    if state.active_boss.is_some() {
+    if state.active_boss.is_some() || state.character.level < BOSS_MIN_LEVEL {
         return;
     }
 
     let mut rng = rand::thread_rng();
     if rng.gen_ratio(1, 500) {
-        let boss = spawn_boss();
+        let boss = spawn_boss_for_level(state.character.level);
         crate::display::print_boss_spawn(&boss);
         state.active_boss = Some(boss);
     }
@@ -141,6 +205,24 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     }
 
     if state.active_boss.is_none() {
+        return;
+    }
+
+    // A boss from before the level gate (an older save), or one met after prestige
+    // reset the level: it doesn't fight anyone under the gate.
+    if state.character.level < BOSS_MIN_LEVEL {
+        let boss = state.active_boss.take().unwrap();
+        crate::telemetry::emit_encounter(
+            "boss",
+            &boss.name,
+            false,
+            boss.dmg_dealt_total,
+            boss.dmg_taken_total,
+            "flee",
+            0,
+            0,
+        );
+        crate::display::print_boss_flee(&boss.name, "loses interest in so small a foe and departs");
         return;
     }
 
@@ -271,26 +353,34 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
         let boss_dmg_taken_total = state.active_boss.as_ref().unwrap().dmg_taken_total;
         if died {
             if state.permadeath {
+                // A boss never ends a permadeath run: it leaves the player at 1 HP.
+                state.character.hp = 1;
                 crate::display::print_boss_tick(
                     state.active_boss.as_ref().unwrap(),
                     player_dmg,
                     Some(dmg),
                 );
                 print_signature_line(signature_label);
-                crate::display::print_permadeath_eulogy(&state.character, &boss_name);
+                crate::display::print_boss_flee(
+                    &boss_name,
+                    "stays its final blow, leaving you at 1 HP, and vanishes into the void",
+                );
+                state.add_journal(JournalEntry::new(
+                    EventType::Combat,
+                    format!("{} spared you at 1 HP and left.", boss_name),
+                ));
                 crate::telemetry::emit_encounter(
                     "boss",
                     &boss_name,
                     false,
                     boss_dmg_dealt_total,
                     boss_dmg_taken_total,
-                    "loss",
+                    "flee",
                     0,
                     0,
                 );
-                // The save and its backup, so a recovery can never resurrect the dead.
-                let _ = crate::state::delete_save();
-                std::process::exit(0);
+                state.active_boss = None;
+                return;
             } else {
                 state.character.die();
                 let gold_loss = gold_before * 15 / 100;
@@ -405,6 +495,130 @@ mod tests {
         assert_eq!(boss_damage_after_defense(12, 99), 1);
     }
 
+    fn state_at_level(level: u32) -> crate::state::GameState {
+        use crate::character::{Character, Class, Race};
+        let mut s = crate::state::GameState::new(Character::new(
+            "T".to_string(),
+            Class::Warrior,
+            Race::Human,
+        ));
+        s.character.level = level;
+        s
+    }
+
+    fn test_boss(hp: i32, attack: i32) -> Boss {
+        Boss {
+            name: "Test Colossus".to_string(),
+            hp,
+            max_hp: hp,
+            attack,
+            xp_reward: 900,
+            gold_reward: 350,
+            spawned_at: Utc::now(),
+            dex_mod: 30,
+            dmg_dealt_total: 0,
+            dmg_taken_total: 0,
+        }
+    }
+
+    #[test]
+    fn level_gate_and_scale_are_pinned() {
+        assert_eq!(BOSS_MIN_LEVEL, 25);
+        assert_eq!(BOSS_SCALE_OFFSET, 5);
+        assert_eq!(BOSS_FLEE_GOLD_PERCENT, 10);
+        assert_eq!(level_scale(1), 1.0);
+        assert_eq!(level_scale(BOSS_MIN_LEVEL), 1.0);
+        assert_eq!(level_scale(55), 2.0);
+        assert!((level_scale(150) - 155.0 / 30.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn scaled_bosses_stay_within_the_scaled_roster_band() {
+        let scale = level_scale(100);
+        for _ in 0..50 {
+            let boss = spawn_boss_for_level(100);
+            assert_eq!(boss.hp, boss.max_hp);
+            assert!((440.0 * scale).round() as i32 <= boss.hp);
+            assert!(boss.hp <= (540.0 * scale).round() as i32);
+            assert!((36.0 * scale).round() as i32 <= boss.attack);
+            assert!(boss.attack <= (54.0 * scale).round() as i32);
+            assert!(boss.xp_reward >= (1150.0 * scale).round() as u32);
+        }
+    }
+
+    #[test]
+    fn no_boss_spawns_below_the_level_gate() {
+        let mut state = state_at_level(BOSS_MIN_LEVEL - 1);
+        for _ in 0..20_000 {
+            maybe_spawn(&mut state);
+        }
+        assert!(state.active_boss.is_none());
+    }
+
+    #[test]
+    fn a_boss_under_the_level_gate_leaves_without_fighting() {
+        let mut state = state_at_level(3);
+        state.active_boss = Some(spawn_boss());
+        let hp = state.character.hp;
+        tick_boss(&mut state);
+        assert!(state.active_boss.is_none());
+        assert_eq!(state.character.hp, hp);
+        assert_eq!(state.character.deaths, 0);
+    }
+
+    #[test]
+    fn a_boss_never_kills_a_permadeath_character() {
+        let mut state = state_at_level(BOSS_MIN_LEVEL);
+        state.permadeath = true;
+        state.character.hp = 5;
+        state.active_boss = Some(test_boss(1_000_000, 500));
+        for _ in 0..200 {
+            if state.active_boss.is_none() {
+                break;
+            }
+            tick_boss(&mut state);
+        }
+        assert!(state.active_boss.is_none(), "the boss left");
+        assert_eq!(state.character.hp, 1);
+        assert_eq!(state.character.deaths, 0);
+    }
+
+    #[test]
+    fn fleeing_costs_a_tenth_of_the_gold_and_ends_the_fight() {
+        let mut state = state_at_level(BOSS_MIN_LEVEL);
+        assert_eq!(flee(&mut state), None, "nothing to flee from");
+        state.character.gold = 1_005;
+        state.active_boss = Some(test_boss(500, 40));
+        assert_eq!(
+            flee(&mut state),
+            Some(Flight::Fled {
+                boss: "Test Colossus".to_string(),
+                cost: 100
+            })
+        );
+        assert_eq!(state.character.gold, 905);
+        assert!(state.active_boss.is_none());
+    }
+
+    #[test]
+    fn fleeing_a_boss_that_would_leave_anyway_is_free() {
+        let mut stale = test_boss(500, 40);
+        stale.spawned_at = Utc::now() - chrono::Duration::hours(25);
+        for (level, boss) in [(BOSS_MIN_LEVEL, stale), (1, test_boss(500, 40))] {
+            let mut state = state_at_level(level);
+            state.character.gold = 1_000;
+            state.active_boss = Some(boss);
+            assert_eq!(
+                flee(&mut state),
+                Some(Flight::AlreadyLeaving {
+                    boss: "Test Colossus".to_string()
+                })
+            );
+            assert_eq!(state.character.gold, 1_000);
+            assert!(state.active_boss.is_none());
+        }
+    }
+
     #[test]
     fn spawn_boss_returns_boss_with_full_hp() {
         let boss = spawn_boss();
@@ -467,6 +681,7 @@ mod tests {
 
         let mut state =
             GameState::new(Character::new("T".to_string(), Class::Warrior, Race::Human));
+        state.character.level = BOSS_MIN_LEVEL;
         state.character.dexterity = 8;
         state.character.max_hp = 100_000;
         state.character.hp = 100_000;
@@ -501,5 +716,86 @@ mod tests {
             state.character.hp < hp0,
             "a boss must be able to land hits on a high-armor low-dex player (was un-hittable before)"
         );
+    }
+}
+
+/// Monte Carlo duels through the real `tick_boss`, by level and gear, as evidence
+/// for BOSS_MIN_LEVEL and BOSS_SCALE_OFFSET (the Docker balance sim can't measure
+/// boss fights until shellqeuest-dpl closes). Run:
+/// `cargo test --release duel_table -- --ignored --nocapture 2>/dev/null | grep DUEL`
+#[cfg(test)]
+mod duel_harness {
+    use super::*;
+    use crate::character::{Character, Class, Item, ItemSlot, Race, Rarity};
+    use crate::state::GameState;
+
+    fn gear(slot: ItemSlot, power: i32) -> Item {
+        Item {
+            name: "G".into(),
+            slot,
+            power,
+            rarity: Rarity::Rare,
+            enchant_level: 0,
+        }
+    }
+
+    fn player(class: Class, level: u32, gear_power: i32) -> GameState {
+        let mut s = GameState::new(Character::new("T".into(), class, Race::Human));
+        while s.character.level < level {
+            let need = s.character.xp_to_next - s.character.xp;
+            s.character.gain_xp(need);
+        }
+        if gear_power > 0 {
+            for slot in [ItemSlot::Weapon, ItemSlot::Armor, ItemSlot::Ring] {
+                s.character.equip(gear(slot, gear_power));
+            }
+        }
+        s.character.hp = s.character.max_hp;
+        s
+    }
+
+    #[test]
+    #[ignore]
+    fn duel_table() {
+        let classes = [
+            Class::Warrior,
+            Class::Wizard,
+            Class::Rogue,
+            Class::Ranger,
+            Class::Necromancer,
+        ];
+        for gear_power in [0, 7, 15] {
+            // Levels at or above the gate: below it the boss just leaves.
+            for level in [25, 35, 50, 75, 100, 150] {
+                let (mut wins, mut n, mut hp_lost, mut ticks) = (0, 0, 0.0, 0);
+                for class in classes.iter() {
+                    for _ in 0..300 {
+                        let mut s = player(class.clone(), level, gear_power);
+                        s.active_boss = Some(spawn_boss_for_level(level));
+                        let deaths = s.character.deaths;
+                        let max = s.character.max_hp as f64;
+                        let mut t = 0;
+                        while s.active_boss.is_some() && t < 500 {
+                            tick_boss(&mut s);
+                            t += 1;
+                        }
+                        n += 1;
+                        ticks += t;
+                        if s.character.deaths == deaths {
+                            wins += 1;
+                            hp_lost += (max - s.character.hp as f64) / max;
+                        }
+                    }
+                }
+                println!(
+                    "DUEL gear={:>2} L{:>3}: win {:>3}%  hp lost when won {:>3}%  ticks {:.1}",
+                    gear_power,
+                    level,
+                    wins * 100 / n,
+                    (hp_lost * 100.0 / wins.max(1) as f64) as i32,
+                    ticks as f64 / n as f64
+                );
+            }
+        }
     }
 }

@@ -146,6 +146,8 @@ enum Commands {
         /// Item name (or partial match)
         name: Vec<String>,
     },
+    /// Flee from the active world boss (costs 10% of your gold)
+    Flee,
     /// Prestige: reset to level 1 with a subclass and bonus stats
     Prestige,
     /// Reset your character (start over)
@@ -201,6 +203,7 @@ fn main() {
         Commands::Remove { name } => cmd_remove(&name.join(" ")),
         Commands::Drop { name } => cmd_drop_item(&name.join(" ")),
         Commands::Drink { name } => cmd_drink(&name.join(" ")),
+        Commands::Flee => cmd_flee(),
         Commands::Prestige => cmd_prestige(),
         Commands::Reset => cmd_reset(),
         Commands::Update => cmd_update(),
@@ -472,6 +475,8 @@ fn cmd_bestiary(_json: bool) {
             "tier_order": events::monster_tier_order(),
             "elite": events::elite_modifiers(),
             "boss_spawn_rate": boss::BOSS_SPAWN_RATE,
+            "boss_min_level": boss::BOSS_MIN_LEVEL,
+            "boss_scale_offset": boss::BOSS_SCALE_OFFSET,
         },
     });
 
@@ -3086,6 +3091,33 @@ fn cmd_remove(name: &str) {
 
     if let Err(e) = state::save(&game, &lock) {
         eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+    }
+}
+
+fn cmd_flee() {
+    let Some((lock, mut game)) = load_for_update() else {
+        return;
+    };
+    let Some(flight) = boss::flee(&mut game) else {
+        println!("{} There is no world boss to flee from.", "⚠️".yellow());
+        return;
+    };
+    if let Err(e) = state::save(&game, &lock) {
+        eprintln!("{} Failed to save: {}", "❌".bold(), e.red());
+        return;
+    }
+    match flight {
+        boss::Flight::Fled { boss, cost } => println!(
+            "{} You flee from {}, dropping {} gold as you run. It won't follow you.",
+            "🏃".bold(),
+            boss.red().bold(),
+            format!("{}", cost).yellow().bold()
+        ),
+        boss::Flight::AlreadyLeaving { boss } => println!(
+            "{} {} had already lost interest in you. It leaves, and you keep your gold.",
+            "👻".bold(),
+            boss.red().bold()
+        ),
     }
 }
 

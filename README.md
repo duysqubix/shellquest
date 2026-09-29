@@ -210,17 +210,19 @@ Every monster has an **HP pool**, and combat is a **multi-turn loop** that resol
 
 ## Bosses
 
-Five world bosses prowl the dungeon. They spawn at **1 in 500** commands. They do not announce their arrival. (Separate roster from the bestiary above.)
+Five world bosses prowl the dungeon. From **level 25**, they spawn at **1 in 500** commands. They do not announce their arrival. (Separate roster from the bestiary above.)
 
 | Boss | HP | Atk | XP | Gold |
 |------|:--:|:---:|:--:|:----:|
-| ☠️ The Kernel Panic | 100 | 22 | 900 | 350 |
-| 🌀 The Infinite Loop | 110 | 15 | 950 | 300 |
-| ⚡ SIGKILL Supreme | 90 | 25 | 800 | 320 |
-| 💀 The Memory Corruption | 95 | 20 | 850 | 310 |
-| 🕳️ Lord of /dev/null | 85 | 18 | 700 | 280 |
+| ☠️ The Kernel Panic | 500 | 48 | 725 | 560 |
+| 🌀 The Infinite Loop | 540 | 36 | 775 | 500 |
+| ⚡ SIGKILL Supreme | 470 | 54 | 662 | 520 |
+| 💀 The Memory Corruption | 490 | 46 | 700 | 510 |
+| 🕳️ Lord of /dev/null | 440 | 42 | 575 | 450 |
 
-Boss combat is the same HP-pool, INT-scaled-crit system as everything else. Loot is Rare/Epic/Legendary only — no Common scraps from a god. Stale bosses flee after 24 hours; if you ignore them, they leave.
+Those are their numbers at level 25. Bosses grow with you: HP, attack, XP and gold scale by (level + 5) / 30, so a level-150 hero meets a boss about 5× as tough, and it still costs a real chunk of HP.
+
+Boss combat is the same HP-pool, INT-scaled-crit system as everything else. Loot is Rare/Epic/Legendary only — no Common scraps from a god. Your passive healing keeps working mid-fight. Losing costs 15% of your gold and half your XP toward the next level; `sq flee` gets you out for 10% of your gold. Stale bosses leave after 24 hours. A boss never ends a permadeath run: its killing blow leaves you at 1 HP, and it departs.
 
 ---
 
@@ -316,6 +318,7 @@ Level 150. You can stop. You won't.
 | `sq wield <name>` | Wield a weapon |
 | `sq remove <name>` / `sq unequip <name>` | Send equipped gear back to inventory |
 | `sq drink <name>` | Drink a potion |
+| `sq flee` | Escape the active world boss (costs 10% of your gold) |
 | `sq drop <name>` | Permanently drop an item |
 | 🏠 `sq shop` | Browse the shop |
 | 🏠 `sq buy <n>` | Buy item by number from the shop |
