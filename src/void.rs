@@ -540,11 +540,7 @@ mod reshuffle_tests {
         let void_siblings: Vec<_> = fs::read_dir(save_root.path())
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with(VOID_DIR_NAME)
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with(VOID_DIR_NAME))
             .collect();
         assert_eq!(
             void_siblings.len(),

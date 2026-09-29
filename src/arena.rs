@@ -455,7 +455,10 @@ pub fn format_cash_out_preview(
 ) -> (String, String) {
     let (gold, xp) = tier.compute_rewards(entry_fee, xp_to_next, rounds_cleared);
     let net = gold as i64 - entry_fee as i64 - healer_gold_spent as i64;
-    let plain = format!("Cash Out now: +{} gold, +{} XP (net: {:+} gold)", gold, xp, net);
+    let plain = format!(
+        "Cash Out now: +{} gold, +{} XP (net: {:+} gold)",
+        gold, xp, net
+    );
     let net_label = format!("(net: {:+} gold)", net);
     let net_colored = if net > 0 {
         net_label.green().bold()
@@ -1012,10 +1015,7 @@ pub(crate) fn apply_arena_commit(
     // (including Defeat), hoisted above the outcome match. Only a hard Ctrl+C
     // (no commit) rolls these back. Remove potions by DESCENDING index BEFORE
     // any chest items are pushed, so the indices stay valid.
-    game.character.gold = game
-        .character
-        .gold
-        .saturating_sub(commit.healer_gold_spent);
+    game.character.gold = game.character.gold.saturating_sub(commit.healer_gold_spent);
     let mut quaffed = commit.quaffed_potion_indices.clone();
     quaffed.sort_unstable();
     for idx in quaffed.into_iter().rev() {
@@ -1302,12 +1302,8 @@ pub fn run_arena_session(
                     ));
                 }
                 Some("3") => {
-                    if !can_afford_healer(
-                        entry.gold,
-                        entry_fee,
-                        run.healer_gold_spent,
-                        healer_cost,
-                    ) {
+                    if !can_afford_healer(entry.gold, entry_fee, run.healer_gold_spent, healer_cost)
+                    {
                         eprintln!(
                             "   {} Not enough gold for the healer ({} gold).",
                             "✗".red(),
@@ -1325,9 +1321,10 @@ pub fn run_arena_session(
                     continue;
                 }
                 Some("4") if potion_count > 0 => {
-                    if let Some(idx) =
-                        strongest_unquaffed_potion(&character.inventory, &run.quaffed_potion_indices)
-                    {
+                    if let Some(idx) = strongest_unquaffed_potion(
+                        &character.inventory,
+                        &run.quaffed_potion_indices,
+                    ) {
                         let (power, potion_name) = {
                             let potion = &character.inventory[idx];
                             (potion.power, potion.name.clone())
@@ -2917,7 +2914,9 @@ mod tests {
         // A player-attack line (which shows the monster's `(HP:` bar) must ALSO
         // carry the player-HP overlay heart marker on the same line.
         let overlaid = result.exchanges.iter().any(|ex| {
-            ex.colored.contains("(HP:") && ex.colored.contains("damage!") && ex.colored.contains("❤")
+            ex.colored.contains("(HP:")
+                && ex.colored.contains("damage!")
+                && ex.colored.contains("❤")
         });
         assert!(
             overlaid,
@@ -3241,8 +3240,12 @@ mod tests {
             quaffed_potion_indices: vec![0, 2],
         };
         apply_arena_commit(&mut game, &commit);
-        let remaining: Vec<&str> =
-            game.character.inventory.iter().map(|i| i.name.as_str()).collect();
+        let remaining: Vec<&str> = game
+            .character
+            .inventory
+            .iter()
+            .map(|i| i.name.as_str())
+            .collect();
         // Removing indices 0 and 2 by DESCENDING order leaves B and D intact.
         assert_eq!(remaining, vec!["B", "D"]);
     }
@@ -3285,8 +3288,12 @@ mod tests {
             quaffed_potion_indices: vec![0],
         };
         apply_arena_commit(&mut game, &commit);
-        let names: Vec<&str> =
-            game.character.inventory.iter().map(|i| i.name.as_str()).collect();
+        let names: Vec<&str> = game
+            .character
+            .inventory
+            .iter()
+            .map(|i| i.name.as_str())
+            .collect();
         assert!(!names.contains(&"P0"), "P0 was quaffed and must be removed");
         assert!(names.contains(&"P1"), "P1 should remain");
         assert!(names.contains(&"ChestSword"), "chest item should be added");

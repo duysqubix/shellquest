@@ -1131,7 +1131,10 @@ pub fn transmute(class: &Class, tool: &str, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("You bend the stream with {}. Text becomes form. +{} XP", tool, xp),
+            format!(
+                "You bend the stream with {}. Text becomes form. +{} XP",
+                tool, xp
+            ),
             format!(
                 "You bend the stream with {}. Text becomes {}. {}",
                 tool.blue(),
@@ -1144,7 +1147,10 @@ pub fn transmute(class: &Class, tool: &str, xp: u32) -> Msg {
             format!("You hammer the data into shape with {}. {}", tool.red(), x),
         ),
         Class::Rogue => (
-            format!("A clean {} pass — the data confesses its secrets. +{} XP", tool, xp),
+            format!(
+                "A clean {} pass — the data confesses its secrets. +{} XP",
+                tool, xp
+            ),
             format!(
                 "A clean {} pass — the data {}. {}",
                 tool.yellow(),
@@ -1153,11 +1159,21 @@ pub fn transmute(class: &Class, tool: &str, xp: u32) -> Msg {
             ),
         ),
         Class::Ranger => (
-            format!("You channel {} to reshape the wild stream. +{} XP", tool, xp),
-            format!("You channel {} to reshape the wild stream. {}", tool.green(), x),
+            format!(
+                "You channel {} to reshape the wild stream. +{} XP",
+                tool, xp
+            ),
+            format!(
+                "You channel {} to reshape the wild stream. {}",
+                tool.green(),
+                x
+            ),
         ),
         Class::Necromancer => (
-            format!("You transmute dead bytes with {}. They obey. +{} XP", tool, xp),
+            format!(
+                "You transmute dead bytes with {}. They obey. +{} XP",
+                tool, xp
+            ),
             format!(
                 "You transmute {} bytes with {}. {}",
                 "dead".magenta().bold(),
@@ -1172,7 +1188,10 @@ pub fn commune(class: &Class, xp: u32) -> Msg {
     let x = color_xp(xp);
     match class {
         Class::Wizard => (
-            format!("You commune with your past commands. Memory grants power. +{} XP", xp),
+            format!(
+                "You commune with your past commands. Memory grants power. +{} XP",
+                xp
+            ),
             format!(
                 "You commune with your {}. Memory grants power. {}",
                 "past commands".blue().bold(),
@@ -1180,7 +1199,10 @@ pub fn commune(class: &Class, xp: u32) -> Msg {
             ),
         ),
         Class::Warrior => (
-            format!("You review old battles in the history. Lessons sharpen you. +{} XP", xp),
+            format!(
+                "You review old battles in the history. Lessons sharpen you. +{} XP",
+                xp
+            ),
             format!(
                 "You review {} in the history. {}",
                 "old battles".red().bold(),
@@ -1189,14 +1211,25 @@ pub fn commune(class: &Class, xp: u32) -> Msg {
         ),
         Class::Rogue => (
             format!("You retrace your steps. No trail forgotten. +{} XP", xp),
-            format!("You retrace your steps. {}. {}", "No trail forgotten".yellow(), x),
+            format!(
+                "You retrace your steps. {}. {}",
+                "No trail forgotten".yellow(),
+                x
+            ),
         ),
         Class::Ranger => (
             format!("You read the tracks of your own passage. +{} XP", xp),
-            format!("You read the {} of your own passage. {}", "tracks".green(), x),
+            format!(
+                "You read the {} of your own passage. {}",
+                "tracks".green(),
+                x
+            ),
         ),
         Class::Necromancer => (
-            format!("You raise old commands from the history. They still serve. +{} XP", xp),
+            format!(
+                "You raise old commands from the history. They still serve. +{} XP",
+                xp
+            ),
             format!(
                 "You {} old commands from the history. {}",
                 "raise".magenta().bold(),
@@ -1211,11 +1244,22 @@ pub fn command_daemon(class: &Class, xp: u32, gold: u32) -> Msg {
     let g = color_gold(gold);
     match class {
         Class::Wizard => (
-            format!("You bind the daemon to your will. +{} XP, +{} gold", xp, gold),
-            format!("You {} the daemon to your will. {}, {}", "bind".blue().bold(), x, g),
+            format!(
+                "You bind the daemon to your will. +{} XP, +{} gold",
+                xp, gold
+            ),
+            format!(
+                "You {} the daemon to your will. {}, {}",
+                "bind".blue().bold(),
+                x,
+                g
+            ),
         ),
         Class::Warrior => (
-            format!("You wrestle the daemon into service. +{} XP, +{} gold", xp, gold),
+            format!(
+                "You wrestle the daemon into service. +{} XP, +{} gold",
+                xp, gold
+            ),
             format!(
                 "You wrestle the {} into service. {}, {}",
                 "daemon".red().bold(),
@@ -1224,7 +1268,10 @@ pub fn command_daemon(class: &Class, xp: u32, gold: u32) -> Msg {
             ),
         ),
         Class::Rogue => (
-            format!("You slip the daemon a quiet order. It complies. +{} XP, +{} gold", xp, gold),
+            format!(
+                "You slip the daemon a quiet order. It complies. +{} XP, +{} gold",
+                xp, gold
+            ),
             format!(
                 "You slip the daemon a {} order. {}, {}",
                 "quiet".yellow().dimmed(),
@@ -1233,11 +1280,17 @@ pub fn command_daemon(class: &Class, xp: u32, gold: u32) -> Msg {
             ),
         ),
         Class::Ranger => (
-            format!("You tame the background daemon. It heeds you. +{} XP, +{} gold", xp, gold),
+            format!(
+                "You tame the background daemon. It heeds you. +{} XP, +{} gold",
+                xp, gold
+            ),
             format!("You {} the background daemon. {}, {}", "tame".green(), x, g),
         ),
         Class::Necromancer => (
-            format!("You command the daemon from beyond. It cannot refuse. +{} XP, +{} gold", xp, gold),
+            format!(
+                "You command the daemon from beyond. It cannot refuse. +{} XP, +{} gold",
+                xp, gold
+            ),
             format!(
                 "You {} the daemon from beyond. {}, {}",
                 "command".magenta().bold(),
@@ -1254,19 +1307,35 @@ pub fn raw_power_loot(class: &Class, item_desc: &str) -> Msg {
     match class {
         Class::Wizard => (
             format!("You bind raw disk blocks into form: {}", item_desc),
-            format!("You {} raw disk blocks into form: {}", "bind".blue().bold(), item_desc),
+            format!(
+                "You {} raw disk blocks into form: {}",
+                "bind".blue().bold(),
+                item_desc
+            ),
         ),
         Class::Warrior => (
             format!("You hammer the disk into submission: {}", item_desc),
-            format!("You {} the disk into submission: {}", "hammer".red().bold(), item_desc),
+            format!(
+                "You {} the disk into submission: {}",
+                "hammer".red().bold(),
+                item_desc
+            ),
         ),
         Class::Rogue => (
             format!("You skim the raw blocks clean: {}", item_desc),
-            format!("You {} the raw blocks clean: {}", "skim".yellow(), item_desc),
+            format!(
+                "You {} the raw blocks clean: {}",
+                "skim".yellow(),
+                item_desc
+            ),
         ),
         Class::Ranger => (
             format!("You wrangle the raw stream of blocks: {}", item_desc),
-            format!("You {} the raw stream of blocks: {}", "wrangle".green(), item_desc),
+            format!(
+                "You {} the raw stream of blocks: {}",
+                "wrangle".green(),
+                item_desc
+            ),
         ),
         Class::Necromancer => (
             format!("You command the dead sectors to rise: {}", item_desc),
@@ -1289,28 +1358,48 @@ pub fn raw_power_backfire(class: &Class, dmg: i32, hp: i32, max_hp: i32) -> Msg 
                 "The raw write rebounds! The spell recoils through you. -{} HP. HP: {}/{}",
                 dmg, hp, max_hp
             ),
-            format!("The raw write {}! The spell recoils. -{} HP: {}", "rebounds".red().bold(), d, h),
+            format!(
+                "The raw write {}! The spell recoils. -{} HP: {}",
+                "rebounds".red().bold(),
+                d,
+                h
+            ),
         ),
         Class::Warrior => (
             format!(
                 "The blocks scream back and gash your hands! -{} HP. HP: {}/{}",
                 dmg, hp, max_hp
             ),
-            format!("The blocks {} and gash your hands! -{} HP: {}", "scream back".red().bold(), d, h),
+            format!(
+                "The blocks {} and gash your hands! -{} HP: {}",
+                "scream back".red().bold(),
+                d,
+                h
+            ),
         ),
         Class::Rogue => (
             format!(
                 "You misjudge the offset. The disk cuts you. -{} HP. HP: {}/{}",
                 dmg, hp, max_hp
             ),
-            format!("You misjudge the offset. The disk {} you. -{} HP: {}", "cuts".red(), d, h),
+            format!(
+                "You misjudge the offset. The disk {} you. -{} HP: {}",
+                "cuts".red(),
+                d,
+                h
+            ),
         ),
         Class::Ranger => (
             format!(
                 "The stream thrashes loose and lashes you! -{} HP. HP: {}/{}",
                 dmg, hp, max_hp
             ),
-            format!("The stream thrashes loose and {} you! -{} HP: {}", "lashes".red(), d, h),
+            format!(
+                "The stream thrashes loose and {} you! -{} HP: {}",
+                "lashes".red(),
+                d,
+                h
+            ),
         ),
         Class::Necromancer => (
             format!(
@@ -1332,24 +1421,64 @@ pub fn cleanse(class: &Class, heal: i32, hp: i32, max_hp: i32) -> Msg {
     let h = color_hp(hp, max_hp);
     match class {
         Class::Wizard => (
-            format!("You clear the slate. The mind quiets. +{} HP. HP: {}/{}", heal, hp, max_hp),
-            format!("You clear the slate. The {} quiets. +{} HP: {}", "mind".blue(), heal, h),
+            format!(
+                "You clear the slate. The mind quiets. +{} HP. HP: {}/{}",
+                heal, hp, max_hp
+            ),
+            format!(
+                "You clear the slate. The {} quiets. +{} HP: {}",
+                "mind".blue(),
+                heal,
+                h
+            ),
         ),
         Class::Warrior => (
-            format!("You wipe the field clean and steady your breath. +{} HP. HP: {}/{}", heal, hp, max_hp),
-            format!("You wipe the field clean and {} your breath. +{} HP: {}", "steady".red(), heal, h),
+            format!(
+                "You wipe the field clean and steady your breath. +{} HP. HP: {}/{}",
+                heal, hp, max_hp
+            ),
+            format!(
+                "You wipe the field clean and {} your breath. +{} HP: {}",
+                "steady".red(),
+                heal,
+                h
+            ),
         ),
         Class::Rogue => (
-            format!("Fresh screen, fresh cover. You exhale. +{} HP. HP: {}/{}", heal, hp, max_hp),
-            format!("Fresh screen, fresh {}. You exhale. +{} HP: {}", "cover".yellow().dimmed(), heal, h),
+            format!(
+                "Fresh screen, fresh cover. You exhale. +{} HP. HP: {}/{}",
+                heal, hp, max_hp
+            ),
+            format!(
+                "Fresh screen, fresh {}. You exhale. +{} HP: {}",
+                "cover".yellow().dimmed(),
+                heal,
+                h
+            ),
         ),
         Class::Ranger => (
-            format!("You clear the brush from your view. The path opens. +{} HP. HP: {}/{}", heal, hp, max_hp),
-            format!("You clear the {} from your view. +{} HP: {}", "brush".green(), heal, h),
+            format!(
+                "You clear the brush from your view. The path opens. +{} HP. HP: {}/{}",
+                heal, hp, max_hp
+            ),
+            format!(
+                "You clear the {} from your view. +{} HP: {}",
+                "brush".green(),
+                heal,
+                h
+            ),
         ),
         Class::Necromancer => (
-            format!("You banish the clutter to the void. Stillness returns. +{} HP. HP: {}/{}", heal, hp, max_hp),
-            format!("You {} the clutter to the void. +{} HP: {}", "banish".magenta().bold(), heal, h),
+            format!(
+                "You banish the clutter to the void. Stillness returns. +{} HP. HP: {}/{}",
+                heal, hp, max_hp
+            ),
+            format!(
+                "You {} the clutter to the void. +{} HP: {}",
+                "banish".magenta().bold(),
+                heal,
+                h
+            ),
         ),
     }
 }
@@ -2245,10 +2374,7 @@ pub fn void_mob_intro(class: &Class, mob_name: &str) -> Msg {
             ),
         ),
         Class::Warrior => (
-            format!(
-                "The Void spits out a {}. It wants a fight.",
-                mob_name
-            ),
+            format!("The Void spits out a {}. It wants a fight.", mob_name),
             format!(
                 "The {} spits out a {}. It wants a fight.",
                 "Void".magenta().bold(),

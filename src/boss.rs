@@ -198,8 +198,7 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     let boss_atk = state.active_boss.as_ref().unwrap().attack;
     let boss_dex_mod = state.active_boss.as_ref().unwrap().dex_mod;
     let boss_name = state.active_boss.as_ref().unwrap().name.clone();
-    let boss_xp =
-        crate::character::scale_xp_gain(state.active_boss.as_ref().unwrap().xp_reward);
+    let boss_xp = crate::character::scale_xp_gain(state.active_boss.as_ref().unwrap().xp_reward);
     let boss_gold = state.active_boss.as_ref().unwrap().gold_reward;
     let boss_dmg_dealt_total = state.active_boss.as_ref().unwrap().dmg_dealt_total;
     let boss_dmg_taken_total = state.active_boss.as_ref().unwrap().dmg_taken_total;
@@ -260,76 +259,76 @@ pub fn tick_boss(state: &mut crate::state::GameState) {
     let boss_attack_mod = boss_dex_mod + state.character.total_prestiges as i32;
     let player_dodge_mod =
         effective_boss_target_dodge_mod(state.character.dex_mod(), boss_attack_mod);
-    let boss_dmg =
-        if crate::character::attack_lands(dodge_roll, boss_attack_mod, player_dodge_mod) {
-            let dmg = boss_damage_after_defense(boss_atk, player_defense);
-            let gold_before = state.character.gold;
-            let died = state.character.take_damage(dmg);
-            if let Some(boss) = state.active_boss.as_mut() {
-                boss.dmg_taken_total += dmg;
+    let boss_dmg = if crate::character::attack_lands(dodge_roll, boss_attack_mod, player_dodge_mod)
+    {
+        let dmg = boss_damage_after_defense(boss_atk, player_defense);
+        let gold_before = state.character.gold;
+        let died = state.character.take_damage(dmg);
+        if let Some(boss) = state.active_boss.as_mut() {
+            boss.dmg_taken_total += dmg;
+        }
+        let boss_dmg_dealt_total = state.active_boss.as_ref().unwrap().dmg_dealt_total;
+        let boss_dmg_taken_total = state.active_boss.as_ref().unwrap().dmg_taken_total;
+        if died {
+            if state.permadeath {
+                crate::display::print_boss_tick(
+                    state.active_boss.as_ref().unwrap(),
+                    player_dmg,
+                    Some(dmg),
+                );
+                print_signature_line(signature_label);
+                crate::display::print_permadeath_eulogy(&state.character, &boss_name);
+                crate::telemetry::emit_encounter(
+                    "boss",
+                    &boss_name,
+                    false,
+                    boss_dmg_dealt_total,
+                    boss_dmg_taken_total,
+                    "loss",
+                    0,
+                    0,
+                );
+                let path = crate::state::save_path();
+                let _ = std::fs::remove_file(&path);
+                std::process::exit(0);
+            } else {
+                state.character.die();
+                let gold_loss = gold_before * 15 / 100;
+                crate::display::print_boss_tick(
+                    state.active_boss.as_ref().unwrap(),
+                    player_dmg,
+                    Some(dmg),
+                );
+                print_signature_line(signature_label);
+                crate::display::print_boss_flee(
+                    &boss_name,
+                    "laughs as you fall... and vanishes into the void",
+                );
+                state.add_journal(crate::journal::JournalEntry::new(
+                    crate::journal::EventType::Death,
+                    format!(
+                        "{} fled after you fell. XP reset, -{} gold.",
+                        boss_name, gold_loss
+                    ),
+                ));
+                crate::telemetry::emit_encounter(
+                    "boss",
+                    &boss_name,
+                    false,
+                    boss_dmg_dealt_total,
+                    boss_dmg_taken_total,
+                    "loss",
+                    0,
+                    0,
+                );
+                state.active_boss = None;
+                return;
             }
-            let boss_dmg_dealt_total = state.active_boss.as_ref().unwrap().dmg_dealt_total;
-            let boss_dmg_taken_total = state.active_boss.as_ref().unwrap().dmg_taken_total;
-            if died {
-                if state.permadeath {
-                    crate::display::print_boss_tick(
-                        state.active_boss.as_ref().unwrap(),
-                        player_dmg,
-                        Some(dmg),
-                    );
-                    print_signature_line(signature_label);
-                    crate::display::print_permadeath_eulogy(&state.character, &boss_name);
-                    crate::telemetry::emit_encounter(
-                        "boss",
-                        &boss_name,
-                        false,
-                        boss_dmg_dealt_total,
-                        boss_dmg_taken_total,
-                        "loss",
-                        0,
-                        0,
-                    );
-                    let path = crate::state::save_path();
-                    let _ = std::fs::remove_file(&path);
-                    std::process::exit(0);
-                } else {
-                    state.character.die();
-                    let gold_loss = gold_before * 15 / 100;
-                    crate::display::print_boss_tick(
-                        state.active_boss.as_ref().unwrap(),
-                        player_dmg,
-                        Some(dmg),
-                    );
-                    print_signature_line(signature_label);
-                    crate::display::print_boss_flee(
-                        &boss_name,
-                        "laughs as you fall... and vanishes into the void",
-                    );
-                    state.add_journal(crate::journal::JournalEntry::new(
-                        crate::journal::EventType::Death,
-                        format!(
-                            "{} fled after you fell. XP reset, -{} gold.",
-                            boss_name, gold_loss
-                        ),
-                    ));
-                    crate::telemetry::emit_encounter(
-                        "boss",
-                        &boss_name,
-                        false,
-                        boss_dmg_dealt_total,
-                        boss_dmg_taken_total,
-                        "loss",
-                        0,
-                        0,
-                    );
-                    state.active_boss = None;
-                    return;
-                }
-            }
-            Some(dmg)
-        } else {
-            None
-        };
+        }
+        Some(dmg)
+    } else {
+        None
+    };
 
     crate::display::print_boss_tick(state.active_boss.as_ref().unwrap(), player_dmg, boss_dmg);
     print_signature_line(signature_label);

@@ -2056,8 +2056,7 @@ fn combat(
 
         let player_defense = state.character.defense();
         let dodge_roll: i32 = rng.gen_range(1..=20);
-        let player_dodge_mod =
-            effective_player_dodge_mod(state.character.dex_mod(), enemy_dex_mod);
+        let player_dodge_mod = effective_player_dodge_mod(state.character.dex_mod(), enemy_dex_mod);
         if crate::character::attack_lands(dodge_roll, enemy_dex_mod, player_dodge_mod) {
             let damage = (monster_atk - player_defense / 3).max(1);
             total_damage_taken += damage;
