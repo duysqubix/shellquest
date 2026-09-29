@@ -1,9 +1,9 @@
-<!-- Generated: 2026-04-09 | Updated: 2026-05-30 -->
+<!-- Generated: 2026-04-09 | Updated: 2026-09-29 -->
 
 # shellquest
 
 ## Purpose
-A passive RPG that lives in your terminal. Every shell command you run triggers game events — combat encounters, loot drops, zone travel, XP gains, and more. Installed as the `sq` CLI binary, it hooks into your shell's prompt to intercept commands via `sq tick` and progresses your character automatically. Features 34 zones, a daily Void quest (portal opens at `$HOME`, maze reshuffles at UTC midnight), and a 5-tier arena gauntlet. Published to crates.io, GitHub releases, and Docker Hub.
+A passive RPG that lives in your terminal. Every shell command you run triggers game events — combat encounters, loot drops, zone travel, XP gains, and more. Installed as the `sq` CLI binary, it hooks into your shell's prompt to intercept commands via `sq tick` and progresses your character automatically. Features 34 zones, a daily Void quest (portal opens at `$HOME`, maze reshuffles at UTC midnight), and a 5-tier arena gauntlet. Published to crates.io and GitHub releases (the `Dockerfile` builds a local play/sim image; nothing pushes it to Docker Hub).
 
 ## Key Files
 
@@ -13,7 +13,9 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 | `Dockerfile` | Multi-stage build: rust builder + debian-slim runtime with tini entrypoint |
 | `install.sh` | Curl-pipe installer: clones repo, `cargo install`, auto-installs shell hook |
 | `publish.sh` | Release script: version bump, commit, push, `gh release` (notes from `release-notes/vX.Y.Z.md`), `cargo publish` |
-| `justfile` | Task runner — `just build`/`test`/`ship` + `just sim-*` recipes that drive the balance simulator |
+| `justfile` | Task runner: `just check` (all gates), `build`/`test`/`fmt`/`lint`, `sandbox`, `ship`, and the `sim-*` recipes that drive the balance simulator |
+| `dev-tools/sq-sandbox` | Runs the dev `sq` against a throwaway HOME for manual QA (stdlib Python); see Testing Requirements |
+| `CLAUDE.md`, `.claude/` | Claude Code setup: CLAUDE.md imports this file. `.claude/` holds permission rules, the live-save guard hook (plus its tests), and the skills `sq-qa`, `balance-check`, and `release` |
 | `README.md` | User-facing documentation |
 | `LICENSE` | MIT license |
 
@@ -38,46 +40,22 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - **Combat telemetry**: under `SQ_DEBUG`, `combat()` and `tick_boss()` emit one `SQ_ENCOUNTER` line per resolved fight to stderr (`src/telemetry.rs` owns the helper). The sim parses these. Silent when `SQ_DEBUG` unset.
 
 ### Testing Requirements
-- `cargo build` to verify compilation (`cargo clippy` is not installed in the current toolchain — skip it)
-- **Known cargo cache quirk**: `cargo build --bin sq` sometimes reports `Finished … (0 crates compiled)` while the on-disk `target/debug/sq` is stale relative to source — this happens when the test profile was rebuilt but the prod binary fingerprint went out of sync. If a freshly-edited change is missing from manual QA on `target/debug/sq`, run `cargo clean -p shellquest && cargo build --bin sq` to force a full prod rebuild (~3s, eats ~250MB of cache). Observed in v1.18 and v1.20 manual QA cycles.
-- `cargo test` to run the unit test suite. Manual testing is also required for CLI flow:
-  - `sq init` → create character
-  - `sq status` → view sheet
-  - `sq tick --cmd "git commit" --cwd "." --exit-code 0` → trigger craft event
-  - `sq tick --cmd "bad" --cwd "." --exit-code 1` → trigger trap (25% chance — run several times)
-  - `cd ~ && sq shop` → shop only works from home directory; shows numbered item list
-  - `cd ~ && sq buy 1` → buy item by **number** (1-indexed), not by name
-  - Force boss spawn for testing: temporarily set `gen_ratio(1, 1)` in `maybe_spawn()` in `src/boss.rs`, run `sq tick --cmd "ls" --cwd "." --exit-code 0`, then revert
-  - Boss state lives at `active_boss` in the save file — can be cleared manually via JSON edit of `~/.shellquest/save.json`
-  - Test permadeath mode: set `"permadeath": true` in save.json, set `"hp": 1`, run `sq tick --cmd "bad" --cwd "." --exit-code 1` — eulogy should print, save file should be deleted
-  - Test class messages: run `sq tick --cmd "git commit" --cwd "." --exit-code 0` then `sq journal` — message should reflect your class flavor (Wizard: grimoire/arcane, Warrior: battle-scroll, etc.)
-  - Test zone XP scaling: run ticks from `$HOME` (danger 1) vs `/tmp` (danger 3) — XP in journal should be ~1.5× higher in /tmp
-  - Test sage update notification: set `"last_announced_version": null` in save.json and `"latest_version": "99.0.0"` — sage should appear on next tick guaranteed (without the 1/50 random gate)
-  - Test enchant: `cd ~ && sq enchant <equipped item>` — verify +1 power, gold deducted, `[Enchanted +N]` tag (max +5). Wizards can enchant from any directory; other classes only from `$HOME`.
-  - Test identify: `sq id <name>` from any directory — read-only card, no save write, no tick consumed.
-  - Test junk sweep: `cd ~ && sq sell junk` — sells all Common + Uncommon, never Rare and up.
-  - **Void quest QA**:
-    - `cd ~ && sq quest` — should reveal the quest and open the portal (creates `~/.shellquest/the_void/`).
-    - Navigate into the maze, find `lost_scroll_NNNN.txt`, read the phrase.
-    - `cd ~ && sq quest answer <phrase>` — should claim reward (Rare+ loot, XP, gold) and remove the scroll.
-    - `cd ~ && sq quest answer wrongphrase` — should reject with a hint.
-    - Run `sq quest` again same day — should show quest already completed.
-    - Set `quest_refreshed` to yesterday in save.json, run `sq quest` — should reshuffle the maze.
-  - **Arena QA** (combat is paced ~1.5s/line + wave-escalating since v1.24):
-    - `sq arena` (interactive) — verify tier selection, paced combat loop, banked-gold preview, and cash-out.
-    - `SQ_NO_PACING=1 sq arena` — disables the 1.5s pacing for fast manual QA (combat resolves instantly).
-    - `echo "y" | sq arena` — verify rejection of non-interactive input (should fail if not a TTY).
-    - `sq arena` -> select tier -> cash out at Round 1 — verify gold/XP gain and journal entry.
-    - `sq arena` -> get KO'd — verify loss of entry fee, HP set to 25% of max HP at entry, "Knocked out" CLI summary, and journal entry "Arena KO in {tier} after N rounds. Fee: N gold."
-    - Chest overflow: fill inventory (20 items), win arena with loot — verify rejected items convert to half-sell-value gold.
-    - Interruption: `Ctrl+C` during a run — verify no state is saved (rollback behavior).
+- **Gates:** `just check` runs everything: `cargo fmt --check`, `cargo clippy --all-targets`, `cargo test`, and the guard-hook tests.
+  - Tests are in-file `#[cfg(test)]` modules; they never touch `$HOME`.
+  - Clippy is installed. Its pre-existing warnings are reported but not yet fatal; don't add new ones.
+- **Manual QA never uses the real HOME.** The maintainer plays this game: `~/.shellquest/save.json` is a live character, and their shell hook ticks it before every prompt.
+  - Never run `sq`, `target/*/sq`, or `cargo run` against the real HOME, and never edit `~/.shellquest` by hand.
+  - Use `dev-tools/sq-sandbox`. It runs the dev build with `HOME=<repo>/.sq-sandbox/home` and `SQ_NO_PACING=1`, and provides `new` (non-interactive character creation), `set` / `show` (edit and inspect the sandbox save, including `@now-1d` timestamps), `tick "<cmd>" -n N`, `boss`, and `tty` (drives the arena through a pseudo-terminal).
+  - Scenario recipes live in `.claude/skills/sq-qa/SKILL.md`, plain markdown that any agent can follow. They cover class flavor, traps, zone XP, shop, enchant, identify, junk sweep, bosses, permadeath, sage, the Void quest, and every arena path (cash-out, KO, Ctrl-C rollback, chest overflow, TTY refusal).
+  - Claude Code enforces all this with `.claude/hooks/guard-live-save.py`.
+- **Known cargo cache quirk:** `cargo build --bin sq` sometimes reports `Finished … (0 crates compiled)` while `target/debug/sq` is stale relative to source. It happens when the test profile was rebuilt but the prod binary's fingerprint went out of sync. If a fresh edit is missing from a manual QA run, run `cargo clean -p shellquest && cargo build --bin sq`. The rebuild takes about 3 s but discards roughly 250 MB of cache. Observed in the v1.18 and v1.20 QA cycles.
 
 ### Common Patterns
 - Serde for all data structures (JSON serialization)
 - `colored` crate for terminal output with rarity-tiered styling
 - `rand::Rng` with `gen_ratio()` for probability-based event triggers
 - Two-pass message formatting: plain text for journal storage, colored for terminal display
-- Auto-equip logic: new item replaces equipped if higher power, otherwise goes to inventory (capped at 20)
+- Loot is never auto-equipped: drops go to the inventory via `add_to_inventory()` (cap 20). When full, it drops the weakest Common–Rare item by raw power (Epic/Legendary are never dropped). Players equip with `sq equip`/`sq wield`
 - **Arena Transactions**: Arena results are committed atomically at the end of a session. Runs are not resumable. Hard interruptions result in a rollback to the pre-arena state (including the entry fee).
 
 ### Release Cadence (effective post-v1.22.0)
@@ -92,7 +70,7 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - `release-notes/` is the canonical source. Re-sync GitHub at any time: `gh release edit vX.Y.Z --notes-file release-notes/vX.Y.Z.md`. See `release-notes/README.md` for the voice rules.
 
 ### Balance Tuning
-- Gameplay numbers are validated empirically by the simulator in `dev-tools/balance-sim/` (Python, dev-only). Each simulated character runs in its own Docker container (`just sim-*` recipes; one container per character for filesystem isolation). Use `just sim-*` to run sweeps before/after a balance change; never tune by feel alone.
+- Gameplay numbers are validated empirically by the simulator in `dev-tools/balance-sim/` (Python, dev-only). Each simulated character runs in its own Docker container (`just sim-*` recipes; one container per character for filesystem isolation). Use `just sim-*` to run sweeps before/after a balance change; never tune by feel alone. The baseline-vs-change workflow and the `(sim-validated)` commit convention are written up in `.claude/skills/balance-check/SKILL.md`. **Caveat (2026-09-29):** the simulator has known fidelity defects (beads epic `shellqeuest-dpl`): arena results are misparsed, there is no simulated clock, and it runs almost no overworld fights. Until that epic closes, treat arena, boss and death-rate numbers as unvalidated.
 
 ## Dependencies
 
@@ -104,7 +82,7 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 - `serde` / `serde_json` 1.x — Save file serialization
 - `chrono` 0.4.x — Timestamps for journal entries and last tick tracking
 - `ureq` 2.x — Blocking HTTP client for the sage's crates.io version check
-- `strsim` 0.11.x — Fuzzy string matching for item-name lookup (`equip`/`sell`/`identify`)
+- `strsim` 0.11.x — Levenshtein suggestions for mistyped `sq help <topic>` names (help.rs only; item lookup is substring/token matching in main.rs)
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
 

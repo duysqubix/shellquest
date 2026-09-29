@@ -6,6 +6,17 @@
 ## Purpose
 Dev-only "black-mirror" balance simulator. Runs many compressed shellquest lifetimes in parallel; **each simulated character runs inside its own Docker container** (image `shellquest-sim`) for true OS-level filesystem isolation. Inside each container the harness drives the real `sq` binary as a subprocess (tick → equip → enchant → arena) and persists every metric — plus every raw `sq` invocation — directly into the shared `runs.db` while the sweep is still running. **Python 3.10+, stdlib only — no external deps** (containers are launched via stdlib `subprocess` + `docker run`, deliberately not docker-py). Not shipped in the `sq` binary.
 
+> **Known defects (2026-09-29 sweep, beads epic `shellqeuest-dpl`).** Read the epic before trusting sim numbers. Defects include:
+> - arena outcome and crit parsing is wrong;
+> - there is no simulated clock;
+> - almost no overworld fights happen;
+> - runs killed at the container budget are never finalized;
+> - an enchant lockout stops arena entry;
+> - potions are destroyed by "equip";
+> - two sweeps on one `runs.db` collide.
+>
+> The container isolation described below is also weaker than stated: the rw `/db` mount is this directory itself.
+
 **Why containers?** `sq` is expected to gain real-filesystem reach (events that read/write/traverse arbitrary host paths). A tempdir `$HOME` no longer isolates that — a container is a true filesystem jail. The container **never mounts host root**; that is the whole point.
 
 ## Layout
