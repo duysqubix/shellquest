@@ -56,4 +56,4 @@ The developer plays this game. `~/.shellquest/save.json` is their live character
 
 - **Release QA.** Before a release, run every recipe row above that the release touches. This table is the project's manual-QA checklist; AGENTS.md points here.
 - **Balance questions.** "Is X too strong?" needs the simulator, not a handful of sandbox ticks; see the `balance-check` skill.
-- **Real-shell behavior** (hook codegen, prompt latency) needs an interactive shell under a pseudo-terminal (e.g. python's `pty`), with HOME and ZDOTDIR pointing into the sandbox. Prefix `PATH="$PWD/target/debug:$PATH"` so the hook calls the dev build, not the installed `~/.cargo/bin/sq`. Never touch the developer's rc files.
+- **Real-shell behavior** (what the hook ticks, rc upgrades) is covered by `tests/shell_hooks/test_shell_hooks.py`. It installs the hook into a temp HOME with the real binary and drives zsh/bash through a pty with a fake `sq` logger; extend it rather than poking at a live shell. Never touch the developer's rc files.

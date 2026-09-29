@@ -77,9 +77,11 @@ cargo install shellquest
 Then add the shell hook:
 
 ```bash
-sq hook --shell zsh >> ~/.zshrc   # or bash, fish
+sq hook --shell zsh --install   # or bash, fish
 source ~/.zshrc
 ```
+
+`--install` adds one small block to your rc file that loads the hook from `sq` itself, so hook fixes arrive with each new version. Upgrading from an older version? Run the same command: it replaces the old hook in place and keeps a backup of your rc file.
 
 <details>
 <summary>One-liner (auto-installs hook)</summary>
@@ -99,7 +101,7 @@ Detects your shell and wires everything up automatically.
 git clone https://github.com/duysqubix/shellquest.git
 cd shellquest
 cargo install --path .
-sq hook --shell zsh >> ~/.zshrc
+sq hook --shell zsh --install
 ```
 
 </details>
@@ -321,12 +323,12 @@ Level 150. You can stop. You won't.
 | 🏠 `sq enchant <name>` | Burn gold for +power on equipped gear *(Wizards: anywhere)* |
 | `sq arena` | Enter the 5-tier combat gauntlet |
 | `sq prestige` | Ascend at level 150 |
-| `sq hook --shell zsh` | Print shell hook code (zsh / bash / fish); `--install` writes it for you |
+| `sq hook --shell zsh` | Print the shell hook (zsh / bash / fish); `--install` adds it to your rc file and upgrades older hooks |
 | `sq update` | Update via cargo |
 | `sq reset` | Delete your character (permanent) |
 | `sq tournament` | Deprecated — use `sq arena` |
 | 🏠 `sq quest` / `sq quest answer <phrase>` | Daily Void quest — open the portal, find the scroll, claim your reward |
-| `sq tick --cmd ...` | Internal — called by the shell hook on every command |
+| `sq tick --cmd ...` | Internal — called by the shell hook once per command you run |
 
 > 🏠 = must be in your `$HOME` directory. Shops don't follow you into the dungeon. (Wizards enchant anywhere.)
 

@@ -68,18 +68,13 @@ install_hook() {
     local shell_type="$1"
     local rc_file="$2"
 
-    if [ ! -f "$rc_file" ]; then
-        touch "$rc_file"
+    # sq installs a small loader block, upgrades hooks older versions pasted in
+    # (backing the file up first) and leaves an existing current hook alone.
+    if "$BINARY_NAME" hook --shell "$shell_type" --install --file "$rc_file"; then
+        ok "Shell hook ready in $rc_file"
+    else
+        warn "Could not install the hook automatically; run: $BINARY_NAME hook --shell $shell_type --install"
     fi
-
-    if grep -q "__sq_hook" "$rc_file" 2>/dev/null; then
-        ok "Shell hook already installed in $rc_file"
-        return
-    fi
-
-    echo "" >> "$rc_file"
-    $BINARY_NAME hook --shell "$shell_type" >> "$rc_file"
-    ok "Shell hook added to $rc_file"
 }
 
 case "$CURRENT_SHELL" in
@@ -99,7 +94,7 @@ case "$CURRENT_SHELL" in
         ;;
     *)
         warn "Unknown shell '$CURRENT_SHELL'. Add the hook manually:"
-        echo -e "    ${DIM}$BINARY_NAME hook --shell zsh >> ~/.zshrc${RESET}"
+        echo -e "    ${DIM}$BINARY_NAME hook --shell zsh --install${RESET}"
         ;;
 esac
 

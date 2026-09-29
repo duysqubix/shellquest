@@ -4,6 +4,7 @@ mod character;
 mod display;
 mod events;
 mod help;
+mod hook;
 mod journal;
 mod loot;
 mod messages;
@@ -17,6 +18,7 @@ use character::{Class, Race};
 use clap::{Parser, Subcommand};
 use colored::*;
 use std::io::{self, IsTerminal, Write};
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(
@@ -73,6 +75,9 @@ enum Commands {
         /// Force the update sage to appear (for testing)
         #[arg(long, hide = true)]
         test_sage: bool,
+        /// Version of the shell hook calling (`hook::VERSION`); older hooks pass none
+        #[arg(long, hide = true, default_value_t = 0)]
+        hook: u32,
     },
     /// Print or install the shell hook
     Hook {
@@ -178,7 +183,8 @@ fn main() {
             cwd,
             exit_code,
             test_sage,
-        } => cmd_tick(&cmd, &cwd, exit_code, test_sage),
+            hook,
+        } => cmd_tick(&cmd, &cwd, exit_code, test_sage, hook),
         Commands::Hook {
             shell,
             install,
@@ -382,7 +388,7 @@ fn cmd_init() {
             println!();
             println!(
                 "  Run {} to install the shell hook.",
-                "sq hook --shell zsh".cyan()
+                "sq hook --shell zsh --install".cyan()
             );
             println!("  Run {} to see your character.", "sq status".cyan());
             println!(
@@ -497,7 +503,7 @@ fn sq_debug() -> bool {
     telemetry::sq_debug_enabled()
 }
 
-fn cmd_tick(cmd: &str, cwd: &str, exit_code: i32, test_sage: bool) {
+fn cmd_tick(cmd: &str, cwd: &str, exit_code: i32, test_sage: bool, hook_version: u32) {
     // A crates.io result fetched before (re)taking the save lock: the daily
     // network call must never hold the lock other shells' ticks wait on.
     let mut prefetched: Option<Option<String>> = None;
@@ -540,6 +546,17 @@ fn cmd_tick(cmd: &str, cwd: &str, exit_code: i32, test_sage: bool) {
             continue; // re-lock and reload: another shell may have saved meanwhile
         }
 
+        if hook_version < hook::VERSION
+            && game.hook_notice_version < hook::VERSION
+            && io::stdin().is_terminal()
+            && io::stderr().is_terminal()
+        {
+            // Called by a hook that older versions appended to the rc file verbatim.
+            // Told once, where the player can see it (sq 1.0's hook discards stderr).
+            print_hook_upgrade_notice();
+            game.hook_notice_version = hook::VERSION;
+        }
+
         events::tick(&mut game, cmd, cwd, exit_code);
         if test_sage {
             sage::force_show_sage(&mut game, prefetched.take());
@@ -578,139 +595,256 @@ fn load_for_update() -> Option<(state::SaveLock, state::GameState)> {
     }
 }
 
-fn hook_code(shell: &str) -> Option<String> {
+/// One-time notice for players whose rc file still holds a hook older versions
+/// appended verbatim (it re-ticks the previous command on an empty Enter).
+fn print_hook_upgrade_notice() {
+    let shell = std::env::var("SHELL")
+        .ok()
+        .and_then(|s| s.rsplit('/').next().map(str::to_string))
+        .filter(|s| hook::code(s).is_some())
+        .unwrap_or_else(|| "<bash|zsh|fish>".to_string());
+    eprintln!(
+        "{} Your shellquest hook is out of date: it counts an empty Enter as a repeat of your last command.\n   Run {} to upgrade it (your rc file is backed up first).",
+        "🪝".bold(),
+        format!("sq hook --shell {} --install", shell).cyan()
+    );
+}
+
+/// The rc files a shell reads, in the order `--install` considers them.
+fn rc_candidates(shell: &str) -> Vec<PathBuf> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
     match shell {
-        "bash" => Some(
-            r#"
-# shellquest (sq) — passive terminal RPG hook
-__sq_hook() {
-    local exit_code=$?
-    local cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]* *//')
-    local first=$(printf '%s' "$cmd" | awk '{print $1}')
-    [ "$first" = "sq" ] && return
-    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
-}
-PROMPT_COMMAND="__sq_hook;$PROMPT_COMMAND"
-"#
-            .to_string(),
-        ),
-        "zsh" => Some(
-            r#"
-# shellquest (sq) — passive terminal RPG hook
-__sq_hook() {
-    local exit_code=$?
-    local cmd=$(fc -ln -1)
-    local first=${cmd[(w)1]}
-    [[ "$first" == "sq" ]] && return
-    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
-}
-precmd_functions+=(__sq_hook)
-"#
-            .to_string(),
-        ),
-        "fish" => Some(
-            r#"
-# shellquest (sq) — passive terminal RPG hook
-function __sq_hook --on-event fish_postexec
-    set -l cmd $argv[1]
-    set -l exit_code $status
-    set -l first (string split -m1 ' ' $cmd)[1]
-    [ "$first" = "sq" ]; and return
-    sq tick --cmd "$cmd" --cwd "$PWD" --exit-code "$exit_code"
-end
-"#
-            .to_string(),
-        ),
-        _ => None,
+        "zsh" => vec![home.join(".zshrc"), home.join(".zshrc_local")],
+        "bash" => vec![home.join(".bashrc"), home.join(".bash_profile")],
+        "fish" => vec![home.join(".config/fish/config.fish")],
+        _ => Vec::new(),
     }
 }
 
-fn default_rc_file(shell: &str) -> Option<String> {
-    let home = dirs::home_dir()?;
-    match shell {
-        "bash" => Some(home.join(".bashrc").to_string_lossy().to_string()),
-        "zsh" => Some(home.join(".zshrc").to_string_lossy().to_string()),
-        "fish" => Some(
-            home.join(".config/fish/config.fish")
-                .to_string_lossy()
-                .to_string(),
-        ),
-        _ => None,
+/// Create a file that doesn't exist yet, trying `name(0)`, `name(1)`, ... in turn.
+/// It starts out readable only by the player; callers set its final permissions.
+fn create_unique(name: impl Fn(u32) -> PathBuf) -> std::io::Result<(PathBuf, std::fs::File)> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
     }
+    for n in 0..100 {
+        let path = name(n);
+        match options.open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "no free file name",
+    ))
+}
+
+/// Replace an rc file's contents, which were `original` when the change was planned,
+/// keeping a copy of the original next to it. The new text goes to a temp file beside
+/// the file's real path and is renamed over it, so a crash can't leave the file
+/// half-written and a symlinked rc file (a dotfiles repo) stays a symlink. The file
+/// keeps its permissions. Returns the backup's path.
+fn rewrite_rc(path: &Path, original: &[u8], contents: &str) -> Result<PathBuf, String> {
+    use std::io::Write;
+    let fail =
+        |what: &str, e: std::io::Error| format!("could not {} {}: {}", what, path.display(), e);
+    let real = std::fs::canonicalize(path).map_err(|e| fail("resolve", e))?;
+    if std::fs::read(&real).map_err(|e| fail("read", e))? != original {
+        return Err(format!(
+            "{} changed while sq was reading it; run this again",
+            path.display()
+        ));
+    }
+    let permissions = std::fs::metadata(&real)
+        .map_err(|e| fail("read", e))?
+        .permissions();
+
+    let stamp = chrono::Local::now().format("%Y%m%d%H%M%S");
+    let (backup, mut file) = create_unique(|n| {
+        let suffix = if n == 0 {
+            String::new()
+        } else {
+            format!("-{}", n)
+        };
+        PathBuf::from(format!("{}.sq-backup-{}{}", path.display(), stamp, suffix))
+    })
+    .map_err(|e| fail("back up", e))?;
+    file.write_all(original)
+        .and_then(|()| file.sync_all())
+        .and_then(|()| file.set_permissions(permissions.clone()))
+        .map_err(|e| fail("back up", e))?;
+
+    let dir = real.parent().unwrap_or(Path::new("."));
+    let name = real
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let (tmp, mut file) =
+        create_unique(|n| dir.join(format!("{}.sq-tmp-{}-{}", name, std::process::id(), n)))
+            .map_err(|e| fail("write", e))?;
+    let written = file
+        .write_all(contents.as_bytes())
+        .and_then(|()| file.sync_all())
+        .and_then(|()| file.set_permissions(permissions))
+        .and_then(|()| std::fs::rename(&tmp, &real));
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(fail("write", e));
+    }
+    Ok(backup)
 }
 
 fn cmd_hook(shell: &str, install: bool, file: Option<String>) {
-    let code = match hook_code(shell) {
-        Some(c) => c,
-        None => {
-            eprintln!(
-                "{} Unknown shell: {}. Supported: bash, zsh, fish",
-                "❌".bold(),
-                shell.red()
-            );
-            return;
-        }
+    let (Some(code), Some(loader)) = (hook::code(shell), hook::loader(shell)) else {
+        eprintln!(
+            "{} Unknown shell: {}. Supported: bash, zsh, fish",
+            "❌".bold(),
+            shell.red()
+        );
+        std::process::exit(2);
     };
 
     if !install {
-        // Just print the hook code
+        // Printed for `eval "$(sq hook --shell <sh>)"` (what --install writes) or pasting.
         print!("{}", code);
         return;
     }
 
-    // Install mode: write to file
-    let target = file.or_else(|| default_rc_file(shell));
-    let target = match target {
-        Some(t) => t,
-        None => {
-            eprintln!(
-                "{} Could not determine rc file for shell: {}",
-                "❌".bold(),
-                shell.red()
-            );
-            return;
-        }
+    let fail = |e: String| -> ! {
+        eprintln!("{} {}", "❌".bold(), e.red());
+        std::process::exit(1);
     };
 
-    // Check if hook already installed
-    if let Ok(contents) = std::fs::read_to_string(&target) {
-        if contents.contains("__sq_hook") {
-            println!(
-                "{} Hook already installed in {}",
+    // The explicit file first, then the shell's usual rc files: a hook from an older
+    // version may live in any of them. Each file that has one is upgraded in place
+    // (login and interactive shells may read different files); the hook registers
+    // itself once per shell however many files load it.
+    let mut files: Vec<PathBuf> = file.iter().map(PathBuf::from).collect();
+    files.extend(rc_candidates(shell));
+    let Some(target) = files.first().cloned() else {
+        fail(format!("Could not determine an rc file for {}", shell));
+    };
+
+    let mut seen: Vec<PathBuf> = Vec::new();
+    let mut upgrades = Vec::new();
+    let mut installed_in = Vec::new();
+    let target_identity = std::fs::canonicalize(&target).unwrap_or_else(|_| target.clone());
+    let mut target_has_hook = false;
+    for path in &files {
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => fail(format!("Could not read {}: {}", path.display(), e)),
+        };
+        // The same file under two names (symlink, relative path) is handled once.
+        let identity = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+        if seen.contains(&identity) {
+            continue;
+        }
+        let is_target = identity == target_identity;
+        seen.push(identity);
+        // Hooks are plain ASCII, so a file with other bytes elsewhere can still be
+        // searched and appended to; it just isn't rewritten from a lossy copy.
+        match hook::plan_rc(shell, &String::from_utf8_lossy(&bytes)) {
+            hook::RcPlan::Absent => continue,
+            hook::RcPlan::Unrecognized => fail(format!(
+                "{} has a shellquest hook this version doesn't recognize (edited by hand?).\n   Remove it, then run this command again, or replace it with these lines yourself:\n\n{}",
+                path.display(),
+                loader
+            )),
+            hook::RcPlan::Present { current: true, .. } => installed_in.push(path.clone()),
+            hook::RcPlan::Present {
+                current: false,
+                with_loader,
+            } => {
+                if std::str::from_utf8(&bytes).is_err() {
+                    fail(format!(
+                        "{} isn't UTF-8 text, so sq won't rewrite it. Replace the old hook in it with these lines yourself:\n\n{}",
+                        path.display(),
+                        loader
+                    ));
+                }
+                upgrades.push((path.clone(), bytes, with_loader));
+            }
+        }
+        target_has_hook |= is_target;
+    }
+
+    for path in &installed_in {
+        println!(
+            "{} Hook already installed in {}",
+            "✓".green().bold(),
+            path.display().to_string().cyan()
+        );
+    }
+    for (path, original, contents) in &upgrades {
+        match rewrite_rc(path, original, contents) {
+            Ok(backup) => println!(
+                "{} Upgraded the shellquest hook in {} (backup: {})",
                 "✓".green().bold(),
-                target.cyan()
-            );
-            return;
+                path.display().to_string().cyan(),
+                backup.display()
+            ),
+            Err(e) => fail(format!(
+                "Failed to upgrade the hook: {}\n   Replace the old hook in {} with these lines yourself:\n\n{}",
+                e,
+                path.display(),
+                loader
+            )),
         }
     }
 
-    // Append hook
-    use std::fs::OpenOptions;
-    match OpenOptions::new().create(true).append(true).open(&target) {
-        Ok(mut f) => {
-            use std::io::Write;
-            if let Err(e) = f.write_all(code.as_bytes()) {
-                eprintln!(
-                    "{} Failed to write hook: {}",
-                    "❌".bold(),
-                    e.to_string().red()
-                );
-                return;
-            }
-            println!("{} Hook installed to {}", "✓".green().bold(), target.cyan());
-            println!(
-                "  Run {} or restart your terminal to activate.",
-                format!("source {}", target).dimmed()
-            );
+    // An explicit --file always ends up with the loader; otherwise the default rc
+    // file gets one only when no file has a hook yet.
+    let append = if file.is_some() {
+        !target_has_hook
+    } else {
+        installed_in.is_empty() && upgrades.is_empty()
+    };
+    let activate = if append {
+        if let Some(dir) = target.parent() {
+            let _ = std::fs::create_dir_all(dir); // fish's config dir may not exist yet
         }
-        Err(e) => {
-            eprintln!(
-                "{} Failed to open {}: {}",
-                "❌".bold(),
-                target,
-                e.to_string().red()
-            );
+        let existing = std::fs::read(&target).unwrap_or_default();
+        let separator = if existing.is_empty() {
+            ""
+        } else if existing.ends_with(b"\n") {
+            "\n"
+        } else {
+            "\n\n"
+        };
+        use std::io::Write;
+        let appended = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&target)
+            .and_then(|mut f| f.write_all(format!("{}{}", separator, loader).as_bytes()));
+        if let Err(e) = appended {
+            fail(format!("Failed to write {}: {}", target.display(), e));
         }
+        println!(
+            "{} Hook installed to {}",
+            "✓".green().bold(),
+            target.display().to_string().cyan()
+        );
+        Some(target.clone())
+    } else {
+        upgrades.first().map(|(path, ..)| path.clone())
+    };
+    if let Some(path) = activate {
+        println!(
+            "  Open a new terminal to activate it (or run {}).",
+            format!("source {}", path.display()).dimmed()
+        );
     }
 }
 

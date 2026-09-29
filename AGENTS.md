@@ -33,7 +33,13 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 ### Working In This Directory
 - Binary name is `sq` (not `shellquest`) — defined in `[[bin]]` in Cargo.toml
 - Save data lives at `~/.shellquest/save.json`. Writes go to a per-process temp file that is renamed into place, while an exclusive lock on `save.lock` is held. The previous save is kept as `save.json.bak` (hard link), and a save that won't parse is restored from it automatically.
-- Shell hook uses `precmd`/`PROMPT_COMMAND`/`fish_postexec` to call `sq tick` synchronously after every command
+- The shell hook (`src/hook.rs`) calls `sq tick --hook=2` synchronously once per command that actually ran. Empty Enter, Ctrl-C at the prompt and new shells never tick.
+  - zsh: `preexec` + `precmd` via add-zsh-hook.
+  - bash: ticks when the newest history entry changes, so it needs history. On bash >= 4.4 a `PS0` marker also ignores entries read in from other shells.
+  - fish: `fish_postexec`.
+  - `sq hook --install` writes a loader (`eval "$(sq hook --shell X)"`) between `# >>> shellquest hook (X) >>>` markers. It upgrades, in place, the exact hooks older versions pasted into any of the shell's rc files (backup first), and refuses anything else with instructions.
+  - Old hooks (no `--hook`) get a one-time upgrade notice at an interactive prompt.
+  - `tests/shell_hooks/` drives real zsh/bash through a pty.
 - All game output goes to **stderr** (`eprintln!`) so it doesn't interfere with piped stdout
 - The `tick` subcommand must remain fast and silent on error (no character = silent return) — **unless `SQ_DEBUG` is set** (dev/sim diagnostics), in which case tick logs load/save failures with context and exits non-zero. Default behavior (SQ_DEBUG unset) is unchanged.
 - **Read-only catalog commands**: `sq items --json` and `sq bestiary --json` dump the static loot tables / boss roster + monster bestiary as JSON (no save access, any cwd, exit 0). The balance-sim dashboard consumes them for its Items/Bestiary tabs. Source of truth = `loot.rs` / `boss.rs` / `events.rs` const data.
@@ -41,7 +47,7 @@ A passive RPG that lives in your terminal. Every shell command you run triggers 
 
 ### Testing Requirements
 - **Gates:** `just check` runs everything: `cargo fmt --check`, `cargo clippy --all-targets`, `cargo test`, and the guard-hook tests.
-  - Unit tests are in-file `#[cfg(test)]` modules. Integration tests live in `tests/` and drive the real binary (`CARGO_BIN_EXE_sq`) with a temporary HOME. None of them touch the real `$HOME`.
+  - Unit tests are in-file `#[cfg(test)]` modules. Integration tests live in `tests/` and drive the real binary (`CARGO_BIN_EXE_sq`) with a temporary HOME. `tests/shell_hooks/` (Python, stdlib) drives real interactive shells through a pty. None of them touch the real `$HOME`.
   - Clippy is installed. Its pre-existing warnings are reported but not yet fatal; don't add new ones.
 - **Manual QA never uses the real HOME.** The maintainer plays this game: `~/.shellquest/save.json` is a live character, and their shell hook ticks it before every prompt.
   - Never run `sq`, `target/*/sq`, or `cargo run` against the real HOME, and never edit `~/.shellquest` by hand.

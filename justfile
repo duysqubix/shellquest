@@ -31,12 +31,13 @@ fmt:
 lint:
     cargo clippy --all-targets
 
-# Every quality gate before committing: rustfmt check, clippy, Rust tests, Claude guard-hook tests.
+# Every quality gate before committing: rustfmt check, clippy, Rust tests, Claude guard-hook tests, shell-hook end-to-end tests.
 check:
     cargo fmt --check
     cargo clippy --all-targets
     cargo test
     PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .claude/hooks
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/shell_hooks
 
 # Run the dev build against a throwaway HOME (never your real save). Example: just sandbox new --class rogue; just sandbox tick "git commit" -n 20
 [positional-arguments]

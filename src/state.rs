@@ -61,6 +61,9 @@ pub struct GameState {
     pub active_boss: Option<crate::boss::Boss>,
     #[serde(default)]
     pub permadeath: bool,
+    /// Hook version the player was last told to upgrade from (see `hook::VERSION`).
+    #[serde(default)]
+    pub hook_notice_version: u32,
 }
 
 impl GameState {
@@ -84,6 +87,7 @@ impl GameState {
             last_heal_at: None,
             active_boss: None,
             permadeath: false,
+            hook_notice_version: 0,
         }
     }
 
