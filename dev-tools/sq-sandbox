@@ -118,12 +118,30 @@ class Sandbox:
 
     def ensure_built(self) -> None:
         if self.build:
-            cmd = ["cargo", "build", "--quiet", "--bin", "sq"] + (["--release"] if self.release else [])
-            # Real environment on purpose: cargo/rustup live under the real HOME.
-            if subprocess.run(cmd, cwd=REPO).returncode != 0:
-                die("cargo build failed")
+            self._cargo_build()
+            if self._stale():
+                # The cargo cache quirk from AGENTS.md: the build reports fresh while the
+                # binary is older than the sources. QA against stale code is worse than slow.
+                note("binary is older than the sources although cargo reported it fresh; rebuilding from clean")
+                subprocess.run(["cargo", "clean", "--quiet", "-p", "shellquest"], cwd=REPO)
+                self._cargo_build()
+                if self._stale():
+                    die(f"{self.binary} is still older than src/ after a clean rebuild")
         if not self.binary.exists():
             die(f"{self.binary} not found (drop --no-build or run cargo build)")
+
+    def _cargo_build(self) -> None:
+        cmd = ["cargo", "build", "--quiet", "--bin", "sq"] + (["--release"] if self.release else [])
+        # Real environment on purpose: cargo/rustup live under the real HOME.
+        if subprocess.run(cmd, cwd=REPO).returncode != 0:
+            die("cargo build failed")
+
+    def _stale(self) -> bool:
+        if not self.binary.exists():
+            return False  # reported by the caller
+        sources = [*(REPO / "src").rglob("*.rs"), REPO / "Cargo.toml", REPO / "Cargo.lock"]
+        newest = max(src.stat().st_mtime for src in sources if src.exists())
+        return self.binary.stat().st_mtime < newest
 
     def prepare(self) -> None:
         # Stamp only directories this tool creates (or that are empty), so a stray
