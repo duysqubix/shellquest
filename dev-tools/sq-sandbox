@@ -1,0 +1,634 @@
+#!/usr/bin/env python3
+"""Run the dev build of `sq` against a throwaway HOME.
+
+The developer plays this game: ~/.shellquest/save.json is a live character and
+their shell hook ticks it before every prompt. Every manual `sq` run made while
+developing goes through this wrapper so it lands in an isolated sandbox instead.
+
+  dev-tools/sq-sandbox new [--name N] [--class C] [--race R] [--permadeath]
+  dev-tools/sq-sandbox status                  # any other args pass through to sq
+  dev-tools/sq-sandbox tick "git commit" [-n 20] [--exit-code 1] [--cwd /tmp/x]
+  dev-tools/sq-sandbox set character.level=60 character.gold=50000 quest_refreshed=@now-1d
+  dev-tools/sq-sandbox show [character.inventory]
+  dev-tools/sq-sandbox boss ["kernel panic"] [--age 25h]   # spawn a world boss now
+  dev-tools/sq-sandbox tty --input 1 --input c -- arena
+  dev-tools/sq-sandbox run reset               # `run` forces passthrough (sq reset)
+  dev-tools/sq-sandbox path | reset            # print (creating it) / wipe the sandbox
+
+Wrapper options go before the command:
+  --release     use target/release/sq (default: target/debug/sq)
+  --no-build    skip `cargo build` (default: build first, a no-op when fresh)
+  --home DIR    sandbox HOME (default: $SQ_SANDBOX_HOME or <repo>/.sq-sandbox/home)
+  --in DIR      working directory for sq (default: the sandbox HOME, so the
+                home-only commands shop/buy/sell/enchant/quest work)
+  --paced       keep the arena's 1.5 s pacing (default: SQ_NO_PACING=1)
+
+Keep the sandbox path free of zone keywords (tmp, var, private, target, src,
+dev, ...): zones.rs matches path segments before it checks for $HOME, so a
+HOME under e.g. /var/folders would not register as Home Village.
+
+Stdlib only; Python 3.10+.
+"""
+
+from __future__ import annotations
+
+import argparse
+import codecs
+import datetime
+import fcntl
+import json
+import os
+import pty
+import pwd
+import re
+import select
+import shutil
+import signal
+import struct
+import subprocess
+import sys
+import tempfile
+import termios
+import time
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+RUN_TIMEOUT = 120  # seconds, for runs whose output is captured
+STREAM_LIMIT_BYTES = 4_000_000  # sq's interactive prompts loop forever on closed stdin
+STREAM_LIMIT_SECONDS = 300
+DEFAULT_HOME = REPO / ".sq-sandbox" / "home"
+MARKER = ".sq-sandbox-home"
+
+# Menu order of `sq init` (src/main.rs cmd_init). `new` verifies the result, so
+# a reordered menu fails loudly instead of creating the wrong character.
+CLASSES = ["wizard", "warrior", "rogue", "ranger", "necromancer"]
+RACES = ["human", "elf", "dwarf", "orc", "goblin"]
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[()][0-9A-Za-z]")
+
+
+def die(msg: str, code: int = 1) -> None:
+    print(f"sq-sandbox: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def note(msg: str) -> None:
+    print(f"[sq-sandbox] {msg}", file=sys.stderr)
+
+
+def real_home() -> Path:
+    # Resolve from the password database, not $HOME, so an already-overridden
+    # HOME can't trick the safety checks.
+    return Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+
+
+class Sandbox:
+    def __init__(self, home: Path, release: bool, build: bool, workdir: Path | None, paced: bool):
+        self.home = home.expanduser().resolve()
+        self.release = release
+        self.build = build
+        self.workdir = workdir.expanduser().resolve() if workdir else self.home
+        self.paced = paced
+        self._check_home()
+
+    def _check_home(self) -> None:
+        real = real_home()
+        if self.home == Path("/") or self.home == real or real.is_relative_to(self.home):
+            die(f"refusing to use {self.home} as the sandbox: it would contain your real home")
+        if self.home.is_relative_to(real / ".shellquest"):
+            die(f"refusing to use {self.home}: it is inside your live save directory")
+        if REPO.is_relative_to(self.home):
+            die(f"refusing to use {self.home} as the sandbox: it contains this repository")
+
+    def _check_tree(self) -> None:
+        """The save must live inside the sandbox: no symlinks toward a real save."""
+        for path in (self.home / ".shellquest", self.save_path):
+            if path.is_symlink():
+                die(f"{path} is a symlink; refusing (it could point at a real save)")
+            if path.exists() and not path.resolve().is_relative_to(self.home):
+                die(f"{path} resolves outside the sandbox; refusing")
+
+    @property
+    def save_path(self) -> Path:
+        return self.home / ".shellquest" / "save.json"
+
+    @property
+    def binary(self) -> Path:
+        return REPO / "target" / ("release" if self.release else "debug") / "sq"
+
+    def ensure_built(self) -> None:
+        if self.build:
+            cmd = ["cargo", "build", "--quiet", "--bin", "sq"] + (["--release"] if self.release else [])
+            # Real environment on purpose: cargo/rustup live under the real HOME.
+            if subprocess.run(cmd, cwd=REPO).returncode != 0:
+                die("cargo build failed")
+        if not self.binary.exists():
+            die(f"{self.binary} not found (drop --no-build or run cargo build)")
+
+    def prepare(self) -> None:
+        # Stamp only directories this tool creates (or that are empty), so a stray
+        # --home can never turn an existing directory into something `reset` deletes.
+        marker = self.home / MARKER
+        if not self.home.exists():
+            self.home.mkdir(parents=True)
+            marker.touch()
+        elif not marker.exists():
+            if any(self.home.iterdir()):
+                die(f"{self.home} is not empty and was not created by sq-sandbox; pick a new or empty directory")
+            marker.touch()
+        self._check_tree()
+
+    def env(self) -> dict[str, str]:
+        env = dict(os.environ)
+        env["HOME"] = str(self.home)
+        if not self.paced:
+            env["SQ_NO_PACING"] = "1"
+        return env
+
+    def run(self, args: list[str], stdin: str | None = None, capture: bool = True) -> subprocess.CompletedProcess:
+        """Run sq and capture its output (stdout+stderr merged), with a timeout."""
+        self.prepare()
+        try:
+            return subprocess.run(
+                [str(self.binary), *args],
+                cwd=self.workdir,
+                env=self.env(),
+                input=stdin,
+                text=True,
+                stdout=subprocess.PIPE if capture else None,
+                stderr=subprocess.STDOUT if capture else None,
+                timeout=RUN_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            die(f"`sq {' '.join(args)}` did not finish within {RUN_TIMEOUT}s (an interactive prompt waiting for input?)")
+
+    def stream(self, args: list[str]) -> int:
+        """Pass sq's stdout/stderr through, killing it if it floods output or hangs."""
+        self.prepare()
+        proc = subprocess.Popen(
+            [str(self.binary), *args], cwd=self.workdir, env=self.env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        sinks = {proc.stdout.fileno(): sys.stdout.buffer, proc.stderr.fileno(): sys.stderr.buffer}
+        live, total, start, reason = set(sinks), 0, time.monotonic(), None
+        while live and reason is None:
+            ready, _, _ = select.select(list(live), [], [], 0.5)
+            for fd in ready:
+                chunk = os.read(fd, 65536)
+                if not chunk:
+                    live.discard(fd)
+                    continue
+                sinks[fd].write(chunk)
+                sinks[fd].flush()
+                total += len(chunk)
+            if total > STREAM_LIMIT_BYTES:
+                reason = f"more than {STREAM_LIMIT_BYTES // 1_000_000} MB of output"
+            elif time.monotonic() - start > STREAM_LIMIT_SECONDS:
+                reason = f"still running after {STREAM_LIMIT_SECONDS}s"
+        if reason:
+            proc.kill()
+            proc.wait()
+            note(
+                f"killed sq: {reason}. It is probably an interactive prompt looping on closed stdin; "
+                "pipe the answers in, e.g. printf '1\\ny\\n' | dev-tools/sq-sandbox prestige"
+            )
+            return 124
+        return proc.wait()
+
+    def load(self) -> dict:
+        self._check_tree()
+        if not self.save_path.exists():
+            die("no sandbox character yet; create one with: dev-tools/sq-sandbox new")
+        return json.loads(self.save_path.read_text())
+
+    def load_raw(self) -> str:
+        self.load()  # existence and symlink checks
+        return self.save_path.read_text()
+
+    def save_checked(self, data: dict, previous: str) -> None:
+        """Save, then make sure sq itself can still load it; restore the previous save if not."""
+        self.save(data)
+        probe = self.run(["status"])
+        if "Failed to parse save" in probe.stdout:
+            fd, tmp = tempfile.mkstemp(dir=self.save_path.parent, prefix=".save.", suffix=".sandbox-tmp")
+            with os.fdopen(fd, "w") as f:
+                f.write(previous)
+            os.replace(tmp, self.save_path)
+            detail = next((line for line in probe.stdout.splitlines() if "Failed to parse save" in line), "")
+            die(f"sq cannot load the edited save, so it was restored. {detail.strip()}")
+
+    def load_or_none(self) -> dict | None:
+        try:
+            return json.loads(self.save_path.read_text())
+        except (OSError, ValueError):
+            return None
+
+    def save(self, data: dict) -> None:
+        self._check_tree()
+        # mkstemp creates the file exclusively (never follows a planted symlink).
+        fd, tmp = tempfile.mkstemp(dir=self.save_path.parent, prefix=".save.", suffix=".sandbox-tmp")
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(data, indent=2))
+        os.replace(tmp, self.save_path)
+
+    def wipe(self) -> None:
+        if not self.home.exists():
+            return
+        if not (self.home / MARKER).exists() and any(self.home.iterdir()):
+            die(f"{self.home} has no {MARKER} marker; not deleting a directory this tool did not create")
+        shutil.rmtree(self.home)
+
+    def check_sq_args(self, argv: list[str]) -> None:
+        """Refuse sq invocations that reach outside the sandbox, whatever the entry point."""
+        first = next((a for a in argv if not a.startswith("-")), "")
+        if first == "update":
+            die("`sq update` reinstalls the real binary via cargo; not available in the sandbox")
+        if first == "hook":
+            target = None
+            for j, a in enumerate(argv):
+                if a.startswith("--file="):
+                    target = a.split("=", 1)[1]
+                elif a == "--file" and j + 1 < len(argv):
+                    target = argv[j + 1]
+            if target is not None:
+                resolved = (self.workdir / Path(target).expanduser()).resolve()
+                if not resolved.is_relative_to(self.home):
+                    die(f"`hook --file {target}` would write outside the sandbox ({resolved})")
+
+
+# ── state summaries ──────────────────────────────────────────────────────────
+
+
+def snapshot(data: dict | None) -> dict:
+    if not data:
+        return {}
+    c = data.get("character", {})
+    boss = data.get("active_boss")
+    return {
+        "level": c.get("level"),
+        "xp": c.get("xp"),
+        "hp": f"{c.get('hp')}/{c.get('max_hp')}",
+        "gold": c.get("gold"),
+        "kills": c.get("kills"),
+        "deaths": c.get("deaths"),
+        "inventory": len(c.get("inventory") or []),
+        "boss": f"{boss['name']} {boss['hp']}/{boss['max_hp']}" if boss else "-",
+    }
+
+
+def describe_delta(before: dict | None, after: dict | None) -> str:
+    if after is None:
+        return "save file is gone (permadeath death or reset?)"
+    b, a = snapshot(before), snapshot(after)
+    parts = []
+    for key, now in a.items():
+        was = b.get(key)
+        parts.append(f"{key} {now}" if was in (None, now) else f"{key} {was}→{now}")
+    return ", ".join(parts)
+
+
+# ── commands ─────────────────────────────────────────────────────────────────
+
+
+def cmd_new(sb: Sandbox, argv: list[str]) -> None:
+    p = argparse.ArgumentParser(prog="sq-sandbox new", description="Wipe the sandbox and create a character via `sq init`.")
+    p.add_argument("--name", default="Tester")
+    p.add_argument("--class", dest="cls", default="warrior", choices=CLASSES)
+    p.add_argument("--race", default="human", choices=RACES)
+    p.add_argument("--permadeath", action="store_true")
+    p.add_argument("--sage", action="store_true", help="leave the crates.io version check armed (default: pre-seeded so ticks stay offline and quiet)")
+    a = p.parse_args(argv)
+
+    sb.ensure_built()
+    sb.wipe()
+    answers = f"{a.name}\n{CLASSES.index(a.cls) + 1}\n{RACES.index(a.race) + 1}\n{'y' if a.permadeath else 'n'}\n"
+    result = sb.run(["init"], stdin=answers)
+    if result.returncode != 0 or not sb.save_path.exists():
+        die(f"sq init failed (exit {result.returncode}):\n{result.stdout}")
+
+    data = sb.load()
+    got = (str(data["character"].get("class", "")).lower(), str(data["character"].get("race", "")).lower())
+    if got != (a.cls, a.race):
+        die(f"sq init produced {got}, expected {(a.cls, a.race)}: the init menu order changed; update CLASSES/RACES in {__file__}")
+
+    if not a.sage:
+        version = sb.run(["--version"]).stdout.split()[-1]
+        data["last_version_check"] = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        data["latest_version"] = version
+        sb.save(data)
+
+    note(f"new {a.cls} {a.race} '{a.name}'{' (permadeath)' if a.permadeath else ''} at HOME={sb.home}")
+    print(describe_delta(None, sb.load_or_none()))
+
+
+def cmd_tick(sb: Sandbox, argv: list[str]) -> None:
+    p = argparse.ArgumentParser(prog="sq-sandbox tick", description="Simulate the shell hook: run `sq tick` for a command, N times.")
+    p.add_argument("command", help='the shell command the "player" ran, e.g. "git commit -m x"')
+    p.add_argument("-n", "--count", type=int, default=1)
+    p.add_argument("--exit-code", type=int, default=0)
+    p.add_argument("--cwd", help="directory string passed to sq (default: sandbox HOME = Home Village); zones are matched on this string")
+    p.add_argument("-q", "--quiet", action="store_true", help="only print the before/after summary")
+    a = p.parse_args(argv)
+
+    sb.ensure_built()
+    before = sb.load()
+    cwd = a.cwd or str(sb.home)
+    for i in range(1, a.count + 1):
+        # `--flag=value` keeps values that start with '-' from being parsed as flags.
+        r = sb.run(["tick", f"--cmd={a.command}", f"--cwd={cwd}", f"--exit-code={a.exit_code}"])
+        out = r.stdout.rstrip()
+        if out and not a.quiet:
+            print(f"[{i}/{a.count}] {out}" if a.count > 1 else out)
+        if r.returncode != 0:
+            note(f"tick {i} exited {r.returncode}")
+            break
+        if not sb.save_path.exists():
+            break
+    print(describe_delta(before, sb.load_or_none()))
+
+
+def _walk(data, dotted: str):
+    """Return (parent, last_key) for a dotted path like character.inventory.0.power."""
+    keys = dotted.split(".")
+    node = data
+    for key in keys[:-1]:
+        node = _child(node, key, dotted)
+    return node, keys[-1]
+
+
+def _child(node, key: str, dotted: str):
+    if isinstance(node, list):
+        try:
+            return node[int(key)]
+        except (ValueError, IndexError):
+            die(f"{dotted}: bad list index {key!r} (len {len(node)})")
+    if isinstance(node, dict):
+        if key not in node:
+            die(f"{dotted}: no key {key!r}; available: {', '.join(sorted(node))}")
+        return node[key]
+    die(f"{dotted}: cannot descend into {type(node).__name__} at {key!r}")
+
+
+RELATIVE_TIME = re.compile(r"^@now(?:-(\d+)([mhd]))?$")
+AGE = re.compile(r"^(?:0|\d+[mhd])$")
+TIME_UNITS = {"m": "minutes", "h": "hours", "d": "days"}
+
+
+def utc_stamp(delta: datetime.timedelta = datetime.timedelta()) -> str:
+    moment = datetime.datetime.now(datetime.timezone.utc) - delta
+    return moment.isoformat().replace("+00:00", "Z")
+
+
+def parse_value(raw: str):
+    """JSON if it parses, `@now` / `@now-3d` (m/h/d) as a UTC timestamp, else a bare string."""
+    stamp = RELATIVE_TIME.match(raw)
+    if raw.startswith("@now") and not stamp:
+        die(f"bad timestamp {raw!r}: use @now or @now-<N><m|h|d>, e.g. @now-25h")
+    if stamp:
+        amount, unit = int(stamp.group(1) or 0), stamp.group(2) or "m"
+        return utc_stamp(datetime.timedelta(**{TIME_UNITS[unit]: amount}))
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw  # bare strings: character.name=Bob
+
+
+def cmd_set(sb: Sandbox, argv: list[str]) -> None:
+    if not argv or any("=" not in a for a in argv):
+        die(
+            "usage: sq-sandbox set dotted.path=VALUE ... — VALUE is JSON, @now / @now-25h / @now-2d, or a bare string "
+            "(e.g. character.level=60 character.inventory=[] active_boss=null quest_refreshed=@now-1d)"
+        )
+    previous = sb.load_raw()
+    data = json.loads(previous)
+    for assignment in argv:
+        dotted, _, raw = assignment.partition("=")
+        value = parse_value(raw)
+        parent, last = _walk(data, dotted)
+        if isinstance(parent, list):
+            _child(parent, last, dotted)  # validates the index
+            parent[int(last)] = value
+        elif isinstance(parent, dict):
+            if last not in parent:
+                die(f"{dotted}: no key {last!r}; available: {', '.join(sorted(parent))}")
+            parent[last] = value
+        else:
+            die(f"{dotted}: parent is a {type(parent).__name__}")
+    sb.save_checked(data, previous)
+    print(describe_delta(None, data))
+
+
+def cmd_boss(sb: Sandbox, argv: list[str]) -> None:
+    p = argparse.ArgumentParser(prog="sq-sandbox boss", description="Spawn a world boss now (roster from `sq bestiary --json`).")
+    p.add_argument("name", nargs="*", help="boss name or unique substring (default: first in the roster)")
+    p.add_argument("--age", default="0m", help="how long ago it spawned, e.g. 25h to test the 24h flee (default 0m)")
+    a = p.parse_args(argv)
+
+    sb.ensure_built()
+    previous = sb.load_raw()
+    data = json.loads(previous)
+    roster = json.loads(sb.run(["bestiary", "--json"]).stdout)["bosses"]
+    wanted = " ".join(a.name).lower()
+    matches = [b for b in roster if wanted in b["name"].lower()] if wanted else roster[:1]
+    if len(matches) != 1:
+        die(f"boss {wanted!r} matched {len(matches)}; roster: {', '.join(b['name'] for b in roster)}")
+    if not AGE.match(a.age):
+        die(f"--age {a.age!r}: use N followed by m, h or d (e.g. 25h)")
+    spawned_at = parse_value("@now" if a.age == "0" else f"@now-{a.age}")
+    boss = matches[0]
+    data["active_boss"] = {
+        "name": boss["name"],
+        "hp": boss["hp"],
+        "max_hp": boss["hp"],
+        "attack": boss["attack"],
+        "xp_reward": boss["xp_reward"],
+        "gold_reward": boss["gold_reward"],
+        "spawned_at": spawned_at,
+        "dex_mod": boss.get("dex_mod", 0),
+        "dmg_dealt_total": 0,
+        "dmg_taken_total": 0,
+    }
+    sb.save_checked(data, previous)
+    print(describe_delta(None, data))
+
+
+def cmd_show(sb: Sandbox, argv: list[str]) -> None:
+    data = sb.load()
+    if argv:
+        parent, last = _walk(data, argv[0])
+        data = _child(parent, last, argv[0])
+    print(json.dumps(data, indent=2))
+
+
+def cmd_tty(sb: Sandbox, argv: list[str]) -> None:
+    p = argparse.ArgumentParser(
+        prog="sq-sandbox tty",
+        description="Run sq under a pseudo-terminal (required by `sq arena`) and type scripted lines "
+        "whenever output goes idle. When the lines run out, sends Ctrl-C (or Ctrl-D with --eof).",
+    )
+    p.add_argument("--input", "-i", action="append", default=[], help="a line to type; repeat in order")
+    p.add_argument("--idle", type=float, default=None, help="seconds of silence before typing the next line (default 0.6, or 2.5 with --paced)")
+    p.add_argument("--timeout", type=float, default=180.0)
+    p.add_argument("--eof", action="store_true", help="send Ctrl-D instead of Ctrl-C once inputs are exhausted")
+    p.add_argument("--raw", action="store_true", help="keep ANSI colour codes")
+    p.add_argument("sq_args", nargs=argparse.REMAINDER, help="-- then the sq arguments, e.g. -- arena")
+    a = p.parse_args(argv)
+    sq_args = a.sq_args[1:] if a.sq_args[:1] == ["--"] else a.sq_args
+    if not sq_args:
+        die("usage: sq-sandbox tty [--input LINE]... -- <sq args>")
+    idle = a.idle if a.idle is not None else (2.5 if sb.paced else 0.6)
+
+    sb.check_sq_args(sq_args)
+    sb.ensure_built()
+    sb.prepare()
+    pid, fd = pty.fork()
+    if pid == 0:  # child
+        try:
+            os.chdir(sb.workdir)
+            os.execve(str(sb.binary), [str(sb.binary), *sq_args], sb.env())
+        finally:
+            os._exit(127)
+
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 120, 0, 0))
+    pending = list(a.input)
+    last_activity = time.monotonic()
+    deadline = last_activity + a.timeout
+    stage = "inputs"  # inputs → signalled → killed
+    status = None
+
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    carry = ""
+
+    def emit(chunk: bytes, final: bool = False) -> None:
+        # Decode incrementally so multi-byte characters split across reads survive,
+        # and hold back an escape sequence cut off at the end of a read.
+        nonlocal carry
+        text = carry + decoder.decode(chunk, final=final)
+        carry = ""
+        if not a.raw:
+            esc = text.rfind("\x1b")
+            if esc != -1 and not final and not ANSI_RE.match(text, esc) and len(text) - esc < 32:
+                carry, text = text[esc:], text[:esc]
+            text = ANSI_RE.sub("", text)
+        sys.stdout.write(text.replace("\r\n", "\n").replace("\r", ""))
+        sys.stdout.flush()
+
+    while True:
+        if time.monotonic() > deadline:
+            os.kill(pid, signal.SIGKILL)
+            note(f"timeout after {a.timeout:.0f}s; killed sq")
+            break
+        ready, _, _ = select.select([fd], [], [], 0.05)
+        if ready:
+            try:
+                chunk = os.read(fd, 65536)
+            except OSError:  # EIO once the child side closes (Linux)
+                chunk = b""
+            if not chunk:
+                break
+            emit(chunk)
+            last_activity = time.monotonic()
+            continue
+        done, st = os.waitpid(pid, os.WNOHANG)
+        if done:
+            status = st
+            break
+        if time.monotonic() - last_activity < idle:
+            continue
+        if pending:
+            line = pending.pop(0)
+            os.write(fd, line.encode() + b"\n")
+        elif stage == "inputs":
+            os.write(fd, b"\x04" if a.eof else b"\x03")
+            note(f"inputs exhausted; sent {'Ctrl-D' if a.eof else 'Ctrl-C'}")
+            stage = "signalled"
+        else:
+            os.kill(pid, signal.SIGKILL)
+            note("sq did not exit after the signal; killed it")
+            break
+        last_activity = time.monotonic()
+
+    if status is None:
+        _, status = os.waitpid(pid, 0)
+    emit(b"", final=True)
+    os.close(fd)
+    code = os.waitstatus_to_exitcode(status)
+    note(f"sq exited {code}; state: {describe_delta(None, sb.load_or_none())}")
+    sys.exit(0 if code in (0, -signal.SIGINT, 130) else code)
+
+
+def cmd_run(sb: Sandbox, argv: list[str], explicit: bool) -> None:
+    if not explicit and argv[:1] == ["init"]:
+        die("`sq init` is interactive; use `dev-tools/sq-sandbox new` (or `run init` with piped answers)")
+    sb.check_sq_args(argv)
+    if argv[:1] == ["arena"] or argv[:1] == ["tournament"]:
+        die("the arena needs a TTY; use: dev-tools/sq-sandbox tty --input <tier> ... -- arena")
+    sb.ensure_built()
+    no_save_needed = {"help", "items", "bestiary", "hook", "-h", "--help", "-V", "--version"}
+    if argv and argv[0] not in no_save_needed and not sb.save_path.exists():
+        note("no sandbox character yet; create one with: dev-tools/sq-sandbox new")
+    sys.exit(sb.stream(argv))
+
+
+def main(argv: list[str]) -> None:
+    home = Path(os.environ.get("SQ_SANDBOX_HOME") or DEFAULT_HOME)
+    release = paced = False
+    build = True
+    workdir = None
+    while argv and argv[0].startswith("--") and argv[0] not in ("--help", "--version"):
+        flag = argv.pop(0)
+        if flag == "--release":
+            release = True
+        elif flag == "--no-build":
+            build = False
+        elif flag == "--paced":
+            paced = True
+        elif flag in ("--home", "--in"):
+            if not argv:
+                die(f"{flag} needs a directory")
+            value = Path(argv.pop(0))
+            if flag == "--home":
+                home = value
+            else:
+                workdir = value
+        elif flag == "--":
+            break
+        else:
+            die(f"unknown wrapper option {flag} (sq's own flags go after the command)")
+
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return
+
+    sb = Sandbox(home, release=release, build=build, workdir=workdir, paced=paced)
+    command, rest = argv[0], argv[1:]
+    if command in ("path", "reset") and rest:
+        if rest in (["-h"], ["--help"]):
+            print(f"usage: dev-tools/sq-sandbox [--home DIR] {command}")
+            return
+        die(f"`{command}` takes no arguments (wrapper options such as --home go before the command)")
+    if command == "path":
+        sb.prepare()  # guarantees an existing, marked sandbox directory
+        print(sb.home)
+    elif command == "reset":
+        sb.wipe()
+        note(f"wiped {sb.home}")
+    elif command == "new":
+        cmd_new(sb, rest)
+    elif command == "tick":
+        cmd_tick(sb, rest)
+    elif command == "set":
+        cmd_set(sb, rest)
+    elif command == "show":
+        cmd_show(sb, rest)
+    elif command == "boss":
+        cmd_boss(sb, rest)
+    elif command == "tty":
+        cmd_tty(sb, rest)
+    elif command == "run":
+        cmd_run(sb, rest, explicit=True)
+    else:
+        cmd_run(sb, argv, explicit=False)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
